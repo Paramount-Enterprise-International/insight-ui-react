@@ -1,34 +1,41 @@
-import type { IErrorContext, IErrors, IFormControlErrorMessage } from './form.types';
+import type {
+  IErrorContext,
+  IErrors,
+  IFormControlErrorMessage,
+} from './form.types';
 
 type MinMaxLengthError = { requiredLength: number; actualLength: number };
 
 // ---------- type guards ----------
-function isRecord(v: unknown): v is Record<string, unknown> {
+export function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
-function hasNumber(
+export function hasNumber(
   obj: Record<string, unknown>,
   key: string
 ): obj is Record<string, unknown> & Record<string, number> {
   return typeof obj[key] === 'number';
 }
 
-function asMinMaxLengthError(err: unknown): MinMaxLengthError | null {
+export function asMinMaxLengthError(err: unknown): MinMaxLengthError | null {
   if (!isRecord(err)) return null;
   if (!hasNumber(err, 'requiredLength')) return null;
   if (!hasNumber(err, 'actualLength')) return null;
   return { requiredLength: err.requiredLength, actualLength: err.actualLength };
 }
 
-function readNumber(err: unknown, key: 'min' | 'max'): number | null {
+export function readNumber(err: unknown, key: 'min' | 'max'): number | null {
   if (!isRecord(err)) return null;
   const v = err[key];
   return typeof v === 'number' ? v : null;
 }
 
 // ---------- defaults ----------
-const DEFAULT_ERROR_FACTORIES: Record<string, (ctx: IErrorContext) => string> = {
+export const DEFAULT_ERROR_FACTORIES: Record<
+  string,
+  (ctx: IErrorContext) => string
+> = {
   required: ({ label }) => `${label || 'This field'} is required.`,
   requiredTrue: ({ label }) => `Please confirm ${label || 'this field'}.`,
 
@@ -117,13 +124,15 @@ export function isControlRequired(args: {
   return hasCustomRequired || hasRequiredError;
 }
 
-function interpolate(tpl: string, ctx: IErrorContext): string {
+export function interpolate(tpl: string, ctx: IErrorContext): string {
   const err = isRecord(ctx.error) ? ctx.error : {};
 
   const map: Record<string, unknown> = {
     label: ctx.label || 'This field',
-    requiredLength: typeof err.requiredLength === 'number' ? err.requiredLength : undefined,
-    actualLength: typeof err.actualLength === 'number' ? err.actualLength : undefined,
+    requiredLength:
+      typeof err.requiredLength === 'number' ? err.requiredLength : undefined,
+    actualLength:
+      typeof err.actualLength === 'number' ? err.actualLength : undefined,
     min: typeof err.min === 'number' ? err.min : undefined,
     max: typeof err.max === 'number' ? err.max : undefined,
     ...err,

@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
-
-export type IFormControlErrorMessage = Record<string, string>;
+import type { IFormControlErrorMessage } from '../shared';
 
 function resolveErrorMessage(
   label: string,

@@ -13,6 +13,7 @@ import {
   type IInputMask,
 } from '../input';
 import { ISelect, type ISelectChange } from '../select';
+import type { IFormControlErrorMessage } from '../shared/form.types';
 
 // -----------------------------
 // Types
@@ -529,8 +530,6 @@ export function IDatepicker(props: IDatepickerProps) {
 // -----------------------------
 // FC wrapper (same pattern as fc-select)
 // -----------------------------
-
-export type IFormControlErrorMessage = Record<string, string>;
 
 function resolveErrorMessage(
   label: string,

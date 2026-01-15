@@ -14,6 +14,7 @@ import {
   type IInputAddonButton,
   type IInputAddonLoading,
 } from '../input';
+import type { IFormControlErrorMessage } from '../shared';
 
 export type ISelectChange<T> = {
   value: T | null;
@@ -683,8 +684,6 @@ export const ISelect = forwardRef(function ISelectInner<T = unknown>(
 }) as <T = unknown>(
   props: ISelectProps<T> & { ref?: React.Ref<ISelectRef> }
 ) => JSX.Element;
-
-export type IFormControlErrorMessage = Record<string, string>;
 
 function resolveErrorMessage(
   label: string,

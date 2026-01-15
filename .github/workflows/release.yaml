@@ -1,0 +1,157 @@
+name: Build & Publish @insight/ui-react from Release Tag
+
+on:
+  release:
+    types: [published]
+
+env:
+  BUILD_BRANCH: build
+  MAIN_BRANCH: main
+
+permissions:
+  contents: write
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          echo "Tag from release: $TAG"
+
+          if [[ ! "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag '$TAG' does not look like x.y.z (e.g. 1.0.2)."
+            exit 1
+          fi
+
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install
+
+      - name: Sync package version to tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          jq ".version = \"${VERSION}\"" "package.json" > "package.tmp"
+          mv "package.tmp" "package.json"
+          cat package.json
+
+      # ✅ Build only the library entry
+      - name: Build React library
+        run: |
+          npm run build:lib
+          test -d dist
+          echo "dist contents:"
+          ls -la dist
+
+      # Package the installable artifacts
+      - name: Prepare build artifacts
+        run: |
+          rm -rf release-tmp
+          mkdir -p release-tmp/dist
+
+          cp -R dist/. release-tmp/dist/
+          cp package.json release-tmp/
+          cp README.md release-tmp/ 2>/dev/null || true
+          cp LICENSE release-tmp/ 2>/dev/null || true
+
+          # Optional: include a minimal README if none exists
+          if [ ! -f "release-tmp/README.md" ]; then
+            cat > release-tmp/README.md << 'EOF'
+          # @insight/ui-react
+          Built artifacts branch.
+          EOF
+          fi
+
+          echo "Artifacts in release-tmp:"
+          ls -la release-tmp
+          ls -la release-tmp/dist
+
+      - name: Checkout or create build branch
+        run: |
+          git fetch origin "$BUILD_BRANCH" || true
+
+          if git show-ref --quiet "refs/heads/$BUILD_BRANCH"; then
+            git switch "$BUILD_BRANCH"
+          else
+            git switch -c "$BUILD_BRANCH"
+          fi
+
+      - name: Replace build branch contents with artifacts
+        run: |
+          git rm -rf . || true
+          cp -R release-tmp/* .
+
+          rm -rf node_modules
+          find . -type d -name "node_modules" -prune -exec rm -rf {} \;
+
+          echo "Resulting tree on $BUILD_BRANCH:"
+          ls -la
+          ls -la dist
+
+      - name: Commit and push build branch
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add .
+          if git diff --cached --quiet; then
+            echo "🟡 No changes to commit on $BUILD_BRANCH"
+          else
+            git commit -m "release: @insight/ui-react v${VERSION}"
+            git push origin "$BUILD_BRANCH" --force
+          fi
+
+      - name: Update tags to point at built artifacts
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git fetch --tags origin
+
+          git tag -f "$VERSION"
+          git push origin "$VERSION" --force
+
+          git tag -f latest
+          git push origin latest --force
+
+      - name: Merge release source branch back into main
+        run: |
+          SRC_REF="${{ github.event.release.target_commitish }}"
+          MAIN_BRANCH="${{ env.MAIN_BRANCH }}"
+
+          if [ "$SRC_REF" = "$MAIN_BRANCH" ]; then
+            echo "Release source is already '$MAIN_BRANCH'. Nothing to merge."
+            exit 0
+          fi
+
+          git fetch origin "$MAIN_BRANCH"
+
+          if git ls-remote --exit-code origin "$SRC_REF" >/dev/null 2>&1; then
+            git fetch origin "$SRC_REF":"$SRC_REF"
+          fi
+
+          if git show-ref --quiet "refs/heads/$MAIN_BRANCH"; then
+            git switch "$MAIN_BRANCH"
+          else
+            git switch -c "$MAIN_BRANCH" "origin/$MAIN_BRANCH"
+          fi
+
+          git merge --no-ff "$SRC_REF" -m "chore: merge release $SRC_REF into $MAIN_BRANCH"
+          git push origin "$MAIN_BRANCH"

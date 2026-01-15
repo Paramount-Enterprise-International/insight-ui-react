@@ -8,6 +8,8 @@
  * - connect(listener) subscription API
  */
 
+import { isRecord } from '../shared';
+
 export type ISortDirection = 'asc' | 'desc' | '';
 
 export type ISortState = {
@@ -54,9 +56,9 @@ export type IGridDataSourceConfig = {
 
 type Listener<T> = (rows: T[]) => void;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object';
-}
+// function isRecord(value: unknown): value is Record<string, unknown> {
+//   return value !== null && typeof value === 'object';
+// }
 
 export class IGridDataSource<T = unknown> {
   private _rawData: T[] = [];

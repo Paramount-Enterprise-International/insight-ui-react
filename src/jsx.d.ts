@@ -221,6 +221,26 @@ declare module 'react' {
         React.HTMLAttributes<HTMLElement>,
         HTMLElement
       >;
+
+      'ih-sidebar': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+
+      'ih-content': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+
+      'ih-menu': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+
+      'ih-root': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
     }
   }
 }
