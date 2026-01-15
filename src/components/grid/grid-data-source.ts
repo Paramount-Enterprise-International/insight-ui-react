@@ -56,9 +56,11 @@ export type IGridDataSourceConfig = {
 
 type Listener<T> = (rows: T[]) => void;
 
-// function isRecord(value: unknown): value is Record<string, unknown> {
-//   return value !== null && typeof value === 'object';
-// }
+/** ✅ Sorting accessor must be comparable */
+export type IGridSortAccessor<T> = (
+  data: T,
+  columnId: string
+) => string | number;
 
 export class IGridDataSource<T = unknown> {
   private _rawData: T[] = [];
@@ -222,17 +224,25 @@ export class IGridDataSource<T = unknown> {
     return target.includes(filter);
   };
 
-  // can be customized by consumer
-  sortAccessor: (
-    data: T,
-    columnId: string
-  ) => string | number | null | undefined = (data, columnId) => {
-    // if T is not an object, return undefined
-    if (!isRecord(data)) return undefined;
+  /**
+   * ✅ must always return comparable primitive (string|number)
+   * Normalize:
+   * - non-record → ''
+   * - null/undefined → ''
+   * - string/number → itself
+   * - everything else → String(value)
+   */
+  sortAccessor: IGridSortAccessor<T> = (data, columnId) => {
+    if (!isRecord(data)) return '';
 
     const v = data[columnId];
+
     if (typeof v === 'string' || typeof v === 'number') return v;
-    if (v === null || v === undefined) return v;
+    if (v === null || v === undefined) return '';
+
+    // (optional) handle Date nicely
+    if (v instanceof Date) return v.getTime();
+
     return String(v);
   };
 
@@ -325,9 +335,6 @@ export class IGridDataSource<T = unknown> {
       const f = this._filter;
 
       if (this._recursive) {
-        // recursive filter returns unknown[]; we keep behavior:
-        // - pruning preserves structure
-        // - caller expects T[], so we cast similarly to Angular implementation
         data = this._filterRecursiveArray(data as unknown[], f) as T[];
       } else {
         data = data.filter((row) => this.filterPredicate(row, f));
@@ -345,12 +352,8 @@ export class IGridDataSource<T = unknown> {
 
           const dir = direction === 'asc' ? 1 : -1;
 
-          const aValue = this.sortAccessor(a, active) ?? null;
-          const bValue = this.sortAccessor(b, active) ?? null;
-
-          if (aValue === null && bValue === null) continue;
-          if (aValue === null) return -1 * dir;
-          if (bValue === null) return 1 * dir;
+          const aValue = this.sortAccessor(a, active);
+          const bValue = this.sortAccessor(b, active);
 
           if (aValue < bValue) return -1 * dir;
           if (aValue > bValue) return 1 * dir;
