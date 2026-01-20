@@ -1,4 +1,4 @@
-/* ih-shell.angular-dom.tsx */
+// host.tsx
 import React, {
   memo,
   useCallback,
@@ -9,50 +9,15 @@ import React, {
   useState,
   type JSX,
 } from 'react';
-import {
-  Outlet,
-  useLocation,
-  useMatches,
-  useNavigate,
-  type UIMatch,
-} from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import type { IBreadcrumbItem, IMenu, IUser } from './host-api.types';
 
-/* =========================================
- * Types
- * ========================================= */
-
-export type BreadcrumbItem = { label: string; url: string };
-
-export type Menu = {
-  menuId: number;
-  menuName: string;
-  route?: string | null;
-  menuTypeId: number;
-  parentId: number;
-  sequence: number;
-  icon?: string | null;
-  child?: Menu[];
-  level: number;
-  visibility?: string;
-  selected?: boolean;
-  openInId?: number;
-  versionCode?: string;
-  applicationCode?: string;
-  applicationUrl?: string;
-};
-
-export type User = {
-  employeeCode: string;
-  fullName: string;
-  userImagePath: string;
-};
-
-/* =========================================
- * Highlight (pipe replacement)
- * ========================================= */
+/* =========================================================
+ * Highlight (Angular pipe replacement)
+ * ========================================================= */
 
 function escapeHtml(input: string): string {
-  return input
+  return (input ?? '')
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -78,8 +43,9 @@ function highlightSearchHtml(text: string, rawTerm: string): string {
       break;
     }
     out += escapeHtml(safeText.slice(i, idx));
-    // match your Angular markup: <span class="highlight-search">...</span>
-    out += `<span class="highlight-search">${escapeHtml(safeText.slice(idx, idx + term.length))}</span>`;
+    out += `<span class="highlight-search">${escapeHtml(
+      safeText.slice(idx, idx + term.length)
+    )}</span>`;
     i = idx + term.length;
   }
 
@@ -98,120 +64,75 @@ const Highlighted = memo(function Highlighted(props: {
 });
 
 /* =========================================
- * Breadcrumbs
- * - Use route handle: { title: string }
+ * Breadcrumb helpers
  * ========================================= */
 
-type RouteHandleWithTitle = { title?: string };
+function normalizeCrumbs(
+  items: IBreadcrumbItem[] | null | undefined
+): IBreadcrumbItem[] {
+  if (!items?.length) return [];
+  return items.filter((x): x is IBreadcrumbItem => !!x?.label);
+}
 
-function buildBreadcrumbsFromMatches(matches: UIMatch[]): BreadcrumbItem[] {
-  const crumbs: BreadcrumbItem[] = [];
-
-  for (const m of matches) {
-    const handle = (m.handle ?? {}) as RouteHandleWithTitle;
-    const label = handle.title;
-    const url = m.pathname || '/';
-    if (label) crumbs.push({ label, url });
-  }
-
-  return crumbs;
+function isPlainLeftClick(e: React.MouseEvent): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
 }
 
 /* =========================================
- * Filtering (same rules as Angular)
- * ========================================= */
-
-function filterMenuTree(menus: Menu[], rawTerm: string): Menu[] {
-  const term = (rawTerm ?? '').trim().toLowerCase();
-  if (!term) return menus;
-
-  const filtered: Menu[] = [];
-  for (const menu of menus) {
-    const result = filterMenuBranch(menu, term);
-    if (result) filtered.push(result);
-  }
-  return filtered;
-}
-
-/**
- * Rules:
- * - If THIS node matches → keep it and ALL of its original children.
- * - Else, if any CHILD matches → keep this node but ONLY the matching branches.
- * - Else → return null.
- */
-function filterMenuBranch(menu: Menu, term: string): Menu | null {
-  const name = (menu.menuName ?? '').toLowerCase();
-  const selfMatches = name.includes(term);
-
-  const originalChildren = menu.child ?? [];
-
-  const filteredChildren: Menu[] = [];
-  for (const child of originalChildren) {
-    const childResult = filterMenuBranch(child, term);
-    if (childResult) filteredChildren.push(childResult);
-  }
-
-  const childMatches = filteredChildren.length > 0;
-  if (!selfMatches && !childMatches) return null;
-
-  const childrenToUse = selfMatches ? originalChildren : filteredChildren;
-
-  const cloned: Menu = { ...menu, child: childrenToUse };
-
-  // expand groups that match / contain matches
-  if (+cloned.menuTypeId === 3 && (selfMatches || childMatches)) {
-    cloned.visibility = 'expanded';
-  }
-
-  return cloned;
-}
-
-function flattenNavigableMenus(menus: Menu[]): Menu[] {
-  const result: Menu[] = [];
-
-  const visit = (menu: Menu) => {
-    const children = menu.child ?? [];
-    const hasChildren = children.length > 0;
-
-    const isLeaf =
-      +menu.menuTypeId === 3 &&
-      (!hasChildren || menu.visibility === 'no-child');
-    if (isLeaf) result.push(menu);
-
-    for (const c of children) visit(c);
-  };
-
-  for (const m of menus) visit(m);
-  return result;
-}
-
-/* =========================================
- * IHContent - renders <ih-content> host tag
+ * IHContent (wrapper)
  * ========================================= */
 
 export function IHContent(props: {
+  title?: string | null;
+  breadcrumbs?: IBreadcrumbItem[] | null;
   onSidebarToggled?: (visible: boolean) => void;
+  defaultSidebarVisible?: boolean;
+
+  /**
+   * Optional:
+   * - If provided, this wrapper will use it (MF host mode)
+   * - Otherwise it will use react-router navigate() (standalone mode)
+   */
+  onNavigate?: (url: string) => void;
 }) {
-  const { onSidebarToggled } = props;
+  const nav = useNavigate();
 
-  const matches = useMatches();
-  const breadcrumbs = useMemo(
-    () => buildBreadcrumbsFromMatches(matches),
-    [matches]
+  const crumbs = useMemo(
+    () => normalizeCrumbs(props.breadcrumbs),
+    [props.breadcrumbs]
   );
-  const pageTitle = breadcrumbs.length
-    ? breadcrumbs[breadcrumbs.length - 1].label
-    : 'Insight';
+  const title =
+    props.title ?? (crumbs.length ? crumbs[crumbs.length - 1].label : null);
 
-  const [sidebarVisibility, setSidebarVisibility] = useState(true);
+  const [sidebarVisibility, setSidebarVisibility] = useState(
+    props.defaultSidebarVisible ?? true
+  );
 
   const toggleSidebar = useCallback(() => {
     setSidebarVisibility((prev) => {
       const next = !prev;
-      onSidebarToggled?.(next);
+      props.onSidebarToggled?.(next);
       return next;
     });
-  }, [onSidebarToggled]);
+  }, [props]);
+
+  const go = useCallback(
+    (url: string) => {
+      if (props.onNavigate) return props.onNavigate(url);
+      nav(url);
+    },
+    [nav, props.onNavigate]
+  );
+
+  const onCrumbClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
+      if (!isPlainLeftClick(e)) return; // allow new tab, etc.
+      e.preventDefault();
+      if (url.startsWith('/')) go(url);
+      else window.location.href = url;
+    },
+    [go]
+  );
 
   return (
     <ih-content>
@@ -223,30 +144,38 @@ export function IHContent(props: {
             <img alt="sidebar-right" src="/svgs/sidebar-right.svg" />
           )}
         </a>
-        <h1>{pageTitle || 'Insight'}</h1>
+
+        <h1>{title || 'Insight'}</h1>
       </div>
 
       <div className="ih-content-breadcrumbs">
-        {breadcrumbs.length > 0 ? (
-          breadcrumbs.map((b, idx) => {
+        {crumbs.length > 0 ? (
+          crumbs.map((b, idx) => {
             const first = idx === 0;
-            const last = idx === breadcrumbs.length - 1;
+            const last = idx === crumbs.length - 1;
 
             if (!last) {
               return (
-                <React.Fragment key={b.url}>
+                <React.Fragment key={`${b.label}-${idx}`}>
                   {!first ? (
-                    // Angular output is <a> anyway; keep <a>
-                    <a
-                      className="ih-content-breadcrumb ih-content-breadcrumb__link"
-                      href={b.url}>
-                      {b.label}
-                    </a>
+                    b.url ? (
+                      <a
+                        className="ih-content-breadcrumb ih-content-breadcrumb__link"
+                        href={b.url}
+                        onClick={(e) => onCrumbClick(e, b.url!)}>
+                        {b.label}
+                      </a>
+                    ) : (
+                      <span className="ih-content-breadcrumb ih-content-breadcrumb__link">
+                        {b.label}
+                      </span>
+                    )
                   ) : (
                     <span className="ih-content-breadcrumb ih-content-breadcrumb__first">
                       {b.label}
                     </span>
                   )}
+
                   <span className="ih-content-breadcrumb ih-content-breadcrumb__separator">
                     {'>'}
                   </span>
@@ -256,7 +185,7 @@ export function IHContent(props: {
 
             return (
               <span
-                key={b.url}
+                key={`${b.label}-${idx}`}
                 className="ih-content-breadcrumb ih-content-breadcrumb__current">
                 {b.label}
               </span>
@@ -264,26 +193,85 @@ export function IHContent(props: {
           })
         ) : (
           <span className="ih-content-breadcrumb ih-content-breadcrumb__first">
-            {' '}
-            Home{' '}
+            Home
           </span>
         )}
       </div>
 
       <div className="ih-content-body scroll scroll-y">
-        {/* React Router still needs Outlet, but DOM around it matches Angular */}
         <Outlet />
       </div>
     </ih-content>
   );
 }
 
-/* =========================================
- * IHMenu - renders <ih-menu> host tag for recursion
- * ========================================= */
+/* =========================================================
+ * Filtering (same rules as Angular)
+ * ========================================================= */
+
+function filterMenuTree(menus: IMenu[], rawTerm: string): IMenu[] {
+  const term = (rawTerm ?? '').trim().toLowerCase();
+  if (!term) return menus;
+
+  const filtered: IMenu[] = [];
+  for (const menu of menus) {
+    const result = filterMenuBranch(menu, term);
+    if (result) filtered.push(result);
+  }
+  return filtered;
+}
+
+function filterMenuBranch(menu: IMenu, term: string): IMenu | null {
+  const name = (menu.menuName ?? '').toLowerCase();
+  const selfMatches = name.includes(term);
+
+  const originalChildren = menu.child ?? [];
+
+  const filteredChildren: IMenu[] = [];
+  for (const child of originalChildren) {
+    const childResult = filterMenuBranch(child, term);
+    if (childResult) filteredChildren.push(childResult);
+  }
+
+  const childMatches = filteredChildren.length > 0;
+  if (!selfMatches && !childMatches) return null;
+
+  const childrenToUse = selfMatches ? originalChildren : filteredChildren;
+  const cloned: IMenu = { ...menu, child: childrenToUse };
+
+  if (+cloned.menuTypeId === 3 && (selfMatches || childMatches)) {
+    cloned.visibility = 'expanded';
+  }
+
+  return cloned;
+}
+
+function flattenNavigableMenus(menus: IMenu[]): IMenu[] {
+  const result: IMenu[] = [];
+
+  const visit = (menu: IMenu) => {
+    const children = menu.child ?? [];
+    const hasChildren = children.length > 0;
+
+    const isLeaf =
+      +menu.menuTypeId === 3 &&
+      (!hasChildren || menu.visibility === 'no-child');
+
+    if (isLeaf) result.push(menu);
+
+    for (const c of children) visit(c);
+  };
+
+  for (const m of menus) visit(m);
+  return result;
+}
+
+/* =========================================================
+ * IHMenu (recursive)
+ * ========================================================= */
 
 type IHMenuProps = {
-  menu?: Menu;
+  menu?: IMenu;
   filter: string;
   selectedMenuId: number | null;
   onToggleGroup: (menuId: number) => void;
@@ -294,7 +282,6 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   const navigate = useNavigate();
 
   const menuItemRef = useRef<HTMLElement | null>(null);
-
   const hasChild = !!menu?.child?.length;
 
   const isSelected = useMemo(() => {
@@ -306,10 +293,10 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     const children = menu.child ?? [];
     const hasChildren = children.length > 0;
 
-    // same leaf rule
     const isLeaf =
       +menu.menuTypeId === 3 &&
       (!hasChildren || menu.visibility === 'no-child');
+
     return isLeaf;
   }, [menu, selectedMenuId]);
 
@@ -324,9 +311,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
   const clickGroup = useCallback(() => {
     if (!menu) return;
-    if (menu.visibility !== 'no-child') {
-      onToggleGroup(menu.menuId);
-    }
+    if (menu.visibility !== 'no-child') onToggleGroup(menu.menuId);
   }, [menu, onToggleGroup]);
 
   const renderIndent = (level: number) => {
@@ -335,7 +320,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   };
 
   const onLeafNavigate = useCallback(
-    (m: Menu) => {
+    (m: IMenu) => {
       if (m.applicationCode === 'INS5' && m.route) {
         navigate(m.route);
       } else if (m.applicationUrl) {
@@ -349,104 +334,94 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
   return (
     <ih-menu>
-      {(() => {
-        const isModule = +menu.menuTypeId === 2;
-        const isType3 = +menu.menuTypeId === 3;
-
-        return (
-          <li
-            className={[
-              isModule ? 'is-module' : '',
-              isModule ? (menu.visibility ?? '') : '',
-            ]
-              .filter(Boolean)
-              .join(' ')}>
-            {isModule ? (
-              <small>
+      <li
+        className={[
+          +menu.menuTypeId === 2 ? 'is-module' : '',
+          +menu.menuTypeId === 2 ? (menu.visibility ?? '') : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}>
+        {+menu.menuTypeId === 2 ? (
+          <small>
+            <Highlighted text={menu.menuName} term={filter} />
+          </small>
+        ) : +menu.menuTypeId === 3 ? (
+          hasChild ? (
+            <div onClick={clickGroup}>
+              {menu.level > 0 ? renderIndent(menu.level) : null}
+              <i className={menu.icon ?? ''}></i>
+              <h6>
                 <Highlighted text={menu.menuName} term={filter} />
-              </small>
-            ) : isType3 ? (
-              hasChild ? (
-                // group with children
-                <div onClick={clickGroup}>
-                  {menu.level > 0 ? renderIndent(menu.level) : null}
-                  <i className={menu.icon ?? ''}></i>
-                  <h6>
-                    <Highlighted text={menu.menuName} term={filter} />
-                  </h6>
-                  <i
-                    className={
-                      menu.visibility === 'expanded'
-                        ? 'fas fa-angle-up'
-                        : 'fas fa-angle-down'
-                    }></i>
-                </div>
-              ) : (
-                // leaf item
-                <a
-                  ref={(el) => {
-                    menuItemRef.current = el as unknown as HTMLElement | null;
-                  }}
-                  className={isSelected ? 'is-selected' : ''}
-                  href={
-                    menu.applicationCode === 'INS5'
-                      ? (menu.route ?? '#')
-                      : (menu.applicationUrl ?? '#')
-                  }
-                  onClick={(e) => {
-                    // Keep <a> in DOM, but do SPA nav for INS5
-                    if (menu.applicationCode === 'INS5') {
-                      e.preventDefault();
-                      onLeafNavigate(menu);
-                    }
-                    // external link: allow default navigation if applicationUrl exists
-                    if (
-                      menu.applicationCode !== 'INS5' &&
-                      !menu.applicationUrl
-                    ) {
-                      e.preventDefault();
-                      onLeafNavigate(menu);
-                    }
-                  }}>
-                  {menu.level > 0 ? renderIndent(menu.level) : null}
-                  <i className={menu.icon ?? ''}></i>
-                  <h6>
-                    <Highlighted text={menu.menuName} term={filter} />
-                  </h6>
-                </a>
-              )
-            ) : null}
-
-            {hasChild ? (
-              <ul
+              </h6>
+              <i
                 className={
-                  +menu.menuTypeId === 3 ? (menu.visibility ?? '') : ''
-                }>
-                {(menu.child ?? []).map((m) => (
-                  <IHMenu
-                    key={m.menuId}
-                    menu={m}
-                    filter={filter}
-                    selectedMenuId={selectedMenuId}
-                    onToggleGroup={onToggleGroup}
-                  />
-                ))}
-              </ul>
-            ) : null}
-          </li>
-        );
-      })()}
+                  menu.visibility === 'expanded'
+                    ? 'fas fa-angle-up'
+                    : 'fas fa-angle-down'
+                }></i>
+            </div>
+          ) : (
+            <a
+              ref={(el) => {
+                menuItemRef.current = el as unknown as HTMLElement | null;
+              }}
+              className={isSelected ? 'is-selected' : ''}
+              href={
+                menu.applicationCode === 'INS5'
+                  ? (menu.route ?? '#')
+                  : (menu.applicationUrl ?? '#')
+              }
+              onClick={(e) => {
+                // keep open in new tab, etc
+                if (!isPlainLeftClick(e)) return;
+
+                // SPA nav for INS5
+                if (menu.applicationCode === 'INS5') {
+                  e.preventDefault();
+                  onLeafNavigate(menu);
+                  return;
+                }
+
+                // external link: allow normal navigation if url exists
+                if (menu.applicationCode !== 'INS5' && !menu.applicationUrl) {
+                  e.preventDefault();
+                  onLeafNavigate(menu);
+                }
+              }}>
+              {menu.level > 0 ? renderIndent(menu.level) : null}
+              <i className={menu.icon ?? ''}></i>
+              <h6>
+                <Highlighted text={menu.menuName} term={filter} />
+              </h6>
+            </a>
+          )
+        ) : null}
+
+        {hasChild ? (
+          <ul className={+menu.menuTypeId === 3 ? (menu.visibility ?? '') : ''}>
+            {(menu.child ?? []).map((m) => (
+              <IHMenu
+                key={m.menuId}
+                menu={m}
+                filter={filter}
+                selectedMenuId={selectedMenuId}
+                onToggleGroup={onToggleGroup}
+              />
+            ))}
+          </ul>
+        ) : null}
+      </li>
     </ih-menu>
   );
 });
 
-/* =========================================
- * IHSidebar - renders <ih-sidebar> host tag
- * ========================================= */
+/* =========================================================
+ * IHSidebar
+ * ========================================================= */
 
 export type IHSidebarProps = {
-  user?: User | null;
-  menus: Menu[];
+  user?: IUser | null;
+  menus: IMenu[];
   visible?: boolean;
   footerText?: string;
 };
@@ -457,7 +432,7 @@ export function IHSidebar(props: IHSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // init query params
+  // init query params (same behavior)
   const initialFilter = useMemo(() => {
     const sp = new URLSearchParams(location.search);
     return sp.get('menu-filter') ?? '';
@@ -468,8 +443,7 @@ export function IHSidebar(props: IHSidebarProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedMenuId, setSelectedMenuId] = useState<number | null>(null);
 
-  // keep local copy so toggling visibility rerenders
-  const [menuTree, setMenuTree] = useState<Menu[]>(menus);
+  const [menuTree, setMenuTree] = useState<IMenu[]>(menus);
 
   useEffect(() => {
     setMenuTree(menus);
@@ -479,6 +453,7 @@ export function IHSidebar(props: IHSidebarProps) {
     () => filterMenuTree(menuTree, menuFilter),
     [menuTree, menuFilter]
   );
+
   const navigableMenus = useMemo(
     () => flattenNavigableMenus(filteredMenus),
     [filteredMenus]
@@ -500,7 +475,6 @@ export function IHSidebar(props: IHSidebarProps) {
     [location.search, navigate]
   );
 
-  // keep selection logic same as Angular
   useEffect(() => {
     const hasFilter = !!menuFilter.trim();
 
@@ -595,7 +569,7 @@ export function IHSidebar(props: IHSidebarProps) {
   );
 
   const onToggleGroup = useCallback((menuId: number) => {
-    const update = (list: Menu[]): Menu[] =>
+    const update = (list: IMenu[]): IMenu[] =>
       list.map((m) => {
         if (m.menuId === menuId) {
           if (m.visibility !== 'no-child') {
@@ -613,7 +587,7 @@ export function IHSidebar(props: IHSidebarProps) {
   }, []);
 
   return (
-    <ih-sidebar>
+    <ih-sidebar className={!visible ? 'hidden' : undefined}>
       <div className="ih-sidebar-header">
         {user ? (
           <>
@@ -655,9 +629,6 @@ export function IHSidebar(props: IHSidebarProps) {
       <div className="ih-sidebar-footer">
         <small>{footerText}</small>
       </div>
-
-      {/* match Angular behavior: host can be hidden by class if you want */}
-      {!visible ? <style>{`ih-sidebar { display: none; }`}</style> : null}
     </ih-sidebar>
   );
 }
