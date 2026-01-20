@@ -1,7 +1,12 @@
 /* ih-root-layout.tsx */
 import { useCallback, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { IHContent, IHSidebar, type Menu, type User } from './components/host';
+import {
+  IHContent,
+  IHSidebar,
+  type IMenu,
+  type IUser,
+} from './components/host';
 
 /**
  * This component mimics Angular:
@@ -25,7 +30,7 @@ export function IHRootLayout() {
   }, []);
 
   // TODO: replace with your real user + menus data source
-  const user: User = useMemo(
+  const user: IUser = useMemo(
     () => ({
       employeeCode: 'PL1378',
       fullName: 'Dylan',
@@ -35,7 +40,7 @@ export function IHRootLayout() {
     []
   );
 
-  const menus: Menu[] = useMemo(() => {
+  const menus: IMenu[] = useMemo(() => {
     // TODO: plug in your real menu tree.
     // Keeping minimal example so structure works.
     return [];
