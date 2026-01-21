@@ -10,7 +10,9 @@ import React, {
   type JSX,
 } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
-import type { IBreadcrumbItem, IMenu, IUser } from './host-api.types';
+import { IHostApiProvider, useHostApiOptional } from './host-api.context';
+import type { IBreadcrumbItem, IHostApi, IMenu, IUser } from './host-api.types';
+import { IHostUiProvider, useHostUi } from './host-ui.context';
 
 /* =========================================================
  * Highlight (Angular pipe replacement)
@@ -59,7 +61,7 @@ const Highlighted = memo(function Highlighted(props: {
 }) {
   const { text, term, as = 'span' } = props;
   const html = useMemo(() => highlightSearchHtml(text, term), [text, term]);
-  const Tag = as as any;
+  const Tag: React.ElementType = as; // ✅ avoid `any`
   return <Tag dangerouslySetInnerHTML={{ __html: html }} />;
 });
 
@@ -101,6 +103,7 @@ export function IHContent(props: {
     () => normalizeCrumbs(props.breadcrumbs),
     [props.breadcrumbs]
   );
+
   const title =
     props.title ?? (crumbs.length ? crumbs[crumbs.length - 1].label : null);
 
@@ -149,46 +152,41 @@ export function IHContent(props: {
       </div>
 
       <div className="ih-content-breadcrumbs">
-        {crumbs.length > 0 ? (
+        {crumbs.length ? (
           crumbs.map((b, idx) => {
-            const first = idx === 0;
             const last = idx === crumbs.length - 1;
+            const clickable = !last && !!b.url;
 
-            if (!last) {
-              return (
-                <React.Fragment key={`${b.label}-${idx}`}>
-                  {!first ? (
-                    b.url ? (
-                      <a
-                        className="ih-content-breadcrumb ih-content-breadcrumb__link"
-                        href={b.url}
-                        onClick={(e) => onCrumbClick(e, b.url!)}>
-                        {b.label}
-                      </a>
-                    ) : (
-                      <span className="ih-content-breadcrumb ih-content-breadcrumb__link">
-                        {b.label}
-                      </span>
-                    )
-                  ) : (
-                    <span className="ih-content-breadcrumb ih-content-breadcrumb__first">
-                      {b.label}
-                    </span>
-                  )}
+            return (
+              <React.Fragment key={`${b.label}-${idx}`}>
+                {clickable ? (
+                  <a
+                    className="ih-content-breadcrumb ih-content-breadcrumb__link"
+                    href={b.url}
+                    onClick={(e) => onCrumbClick(e, b.url!)}>
+                    {b.label}
+                  </a>
+                ) : (
+                  <span
+                    className={[
+                      'ih-content-breadcrumb',
+                      last
+                        ? 'ih-content-breadcrumb__current'
+                        : 'ih-content-breadcrumb__link',
+                      idx === 0 ? 'ih-content-breadcrumb__first' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}>
+                    {b.label}
+                  </span>
+                )}
 
+                {!last ? (
                   <span className="ih-content-breadcrumb ih-content-breadcrumb__separator">
                     {'>'}
                   </span>
-                </React.Fragment>
-              );
-            }
-
-            return (
-              <span
-                key={`${b.label}-${idx}`}
-                className="ih-content-breadcrumb ih-content-breadcrumb__current">
-                {b.label}
-              </span>
+                ) : null}
+              </React.Fragment>
             );
           })
         ) : (
@@ -202,6 +200,25 @@ export function IHContent(props: {
         <Outlet />
       </div>
     </ih-content>
+  );
+}
+
+/**
+ * IHContentLayout
+ * - Reads title/breadcrumbs from Host UI context
+ * - Uses hostApi.navigate when available (MF host mode),
+ *   otherwise IHContent falls back to react-router navigate()
+ */
+export function IHContentLayout() {
+  const ui = useHostUi();
+  const hostApi = useHostApiOptional();
+
+  return (
+    <IHContent
+      title={ui.title}
+      breadcrumbs={ui.breadcrumbs}
+      onNavigate={hostApi ? (url) => void hostApi.navigate(url) : undefined}
+    />
   );
 }
 
@@ -630,5 +647,35 @@ export function IHSidebar(props: IHSidebarProps) {
         <small>{footerText}</small>
       </div>
     </ih-sidebar>
+  );
+}
+
+/* =========================================================
+ * HostShell (bridge host api -> host ui)
+ * ========================================================= */
+
+function HostApiBridge(props: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+  const ui = useHostUi();
+
+  const hostApi = useMemo<IHostApi>(
+    () => ({
+      navigate: (url) => navigate(url),
+      setTitle: (t) => ui.setTitle(t),
+      setBreadcrumbs: (b) => ui.setBreadcrumbs(b),
+    }),
+    [navigate, ui]
+  );
+
+  return (
+    <IHostApiProvider hostApi={hostApi}>{props.children}</IHostApiProvider>
+  );
+}
+
+export function HostShell(props: { children: React.ReactNode }) {
+  return (
+    <IHostUiProvider>
+      <HostApiBridge>{props.children}</HostApiBridge>
+    </IHostUiProvider>
   );
 }

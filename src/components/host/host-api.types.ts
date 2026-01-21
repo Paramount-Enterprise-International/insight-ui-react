@@ -1,3 +1,4 @@
+// host-api.types.ts
 export type IBreadcrumbItem = {
   label: string;
   url?: string; // undefined means current / non-clickable
