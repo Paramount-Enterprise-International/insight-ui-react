@@ -1,39 +1,15 @@
-// IRouter.tsx
+// router.tsx  (IRouter)
 import React, { Suspense, lazy, useEffect, useMemo } from 'react';
-import {
-  Navigate,
-  Outlet,
-  Route,
-  Routes,
-  useMatches,
-  useNavigate,
-  type UIMatch,
-} from 'react-router-dom';
+import type { UIMatch } from 'react-router-dom';
+import { Navigate, Outlet, Route, Routes, useMatches } from 'react-router-dom';
+import { useHostApiOptional } from './host-api.context';
+import type { IBreadcrumbItem } from './host-api.types';
 import type { IRoute, IRoutes } from './router.types';
-
-export type IRouterBreadcrumbItem = {
-  label: string;
-  url: string;
-};
-
-export type IRouterHostApi = {
-  setPageTitle?: (title: string) => void;
-  setBreadcrumbs?: (items: IRouterBreadcrumbItem[]) => void;
-
-  /** Optional: expose navigate to host/remotes */
-  setNavigate?: (navigate: (to: string) => void) => void;
-};
 
 export type IRouterProps = {
   routes: IRoutes;
-
   loading?: React.ReactNode;
   notFound?: React.ReactNode;
-
-  /** Optional: integrate with shell/host API */
-  hostApi?: IRouterHostApi;
-
-  /** Optional: redirect from index route */
   redirectIndexTo?: string;
 };
 
@@ -43,7 +19,6 @@ type IRouterHandle = {
 };
 
 function normalizePath(path?: string) {
-  // Allow Angular-ish '' while still supporting standard strings.
   if (path === '' || path == null) return undefined;
   return path;
 }
@@ -56,26 +31,25 @@ function readHandle(handle: unknown): IRouterHandle {
   return {};
 }
 
-/**
- * Build breadcrumbs using ONLY fields that exist on UIMatch across versions:
- * - pathname
- * - handle
- */
 function buildBreadcrumbs(
   matches: UIMatch<unknown, unknown>[]
-): IRouterBreadcrumbItem[] {
-  const crumbs: IRouterBreadcrumbItem[] = [];
+): IBreadcrumbItem[] {
+  const items: IBreadcrumbItem[] = [];
 
   for (const m of matches) {
     const { title, breadcrumb } = readHandle(m.handle);
     const label = breadcrumb ?? title;
     if (!label) continue;
 
-    const url = m.pathname ?? '/';
-    crumbs.push({ label, url });
+    items.push({ label, url: m.pathname });
   }
 
-  return crumbs;
+  // current page = non-clickable
+  if (items.length) {
+    items[items.length - 1] = { ...items[items.length - 1], url: undefined };
+  }
+
+  return items;
 }
 
 function makeElement(r: IRoute) {
@@ -86,7 +60,6 @@ function makeElement(r: IRoute) {
     return <C />;
   }
 
-  // If a route has children but no element, provide an Outlet wrapper.
   if (r.children?.length) return <Outlet />;
 
   return null;
@@ -124,34 +97,21 @@ function renderRouteTree(routes: IRoutes): React.ReactNode {
   });
 }
 
-function IRouterMetaSync({ hostApi }: { hostApi?: IRouterHostApi }) {
+function IRouterMetaSync() {
+  const hostApi = useHostApiOptional();
   const matches = useMatches();
 
   useEffect(() => {
     if (!hostApi) return;
 
-    // Title: last match wins
     const last = matches[matches.length - 1];
-    const { title: lastTitle } = readHandle(last?.handle);
-    if (lastTitle && hostApi.setPageTitle) hostApi.setPageTitle(lastTitle);
+    const { title } = readHandle(last?.handle);
 
-    // Breadcrumbs
-    if (hostApi.setBreadcrumbs) {
-      hostApi.setBreadcrumbs(buildBreadcrumbs(matches));
-    }
+    hostApi.setTitle(title ?? null);
+
+    const crumbs = buildBreadcrumbs(matches);
+    hostApi.setBreadcrumbs(crumbs.length ? crumbs : null);
   }, [matches, hostApi]);
-
-  return null;
-}
-
-function IRouterExposeNavigate({ hostApi }: { hostApi?: IRouterHostApi }) {
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (hostApi?.setNavigate) {
-      hostApi.setNavigate((to) => navigate(to));
-    }
-  }, [hostApi, navigate]);
 
   return null;
 }
@@ -161,7 +121,6 @@ export function IRouter(props: IRouterProps) {
     routes,
     loading = <div style={{ padding: 16 }}>Loading…</div>,
     notFound = <div style={{ padding: 16 }}>Not Found</div>,
-    hostApi,
     redirectIndexTo,
   } = props;
 
@@ -169,8 +128,7 @@ export function IRouter(props: IRouterProps) {
 
   return (
     <Suspense fallback={loading}>
-      <IRouterMetaSync hostApi={hostApi} />
-      <IRouterExposeNavigate hostApi={hostApi} />
+      <IRouterMetaSync />
 
       <Routes>
         {redirectIndexTo ? (

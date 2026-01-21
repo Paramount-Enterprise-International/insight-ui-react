@@ -23,3 +23,8 @@ export function useHostApi(): IHostApi {
     );
   return api;
 }
+
+/** For components like IRouter (won’t crash standalone mode) */
+export function useHostApiOptional(): IHostApi | null {
+  return useContext(IHostApiContext);
+}
