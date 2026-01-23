@@ -17,6 +17,10 @@ export type ISectionTabsHeight =
   | null
   | undefined;
 
+/* =========================
+ * Helpers (match Angular)
+ * ========================= */
+
 function isTruthyAttr(v: any): boolean {
   if (v === null || v === undefined) return false;
   const s = String(v).trim().toLowerCase();
@@ -28,42 +32,43 @@ function isTruthyAttr(v: any): boolean {
 function parseBadge(v: any): { enabled: boolean; value: number | null } {
   if (!isTruthyAttr(v)) return { enabled: false, value: null };
 
-  const s = String(v).trim().toLowerCase();
+  const raw = String(v).trim();
+  if (raw === '' || raw.toLowerCase() === 'true')
+    return { enabled: true, value: null };
 
-  if (s === '' || s === 'true') return { enabled: true, value: null };
-
-  const n = Number(s);
-  if (!Number.isNaN(n)) return { enabled: true, value: n };
+  const n = Number(raw);
+  // Angular: finite integer >= 0, else dot
+  if (Number.isFinite(n) && Number.isInteger(n) && n >= 0) {
+    return { enabled: true, value: n };
+  }
 
   return { enabled: true, value: null };
 }
 
 function parseTabsHeight(v: any): number | null {
+  // null => wrap (default)
   if (v === null || v === undefined) return null;
 
   const s = String(v).trim().toLowerCase();
-
   if (s === '' || s === 'wrap' || s === 'auto') return null;
 
+  // allow "300", "300px"
   if (s.endsWith('px')) {
     const n = Number(s.slice(0, -2).trim());
-    return Number.isNaN(n) ? null : n;
+    return Number.isFinite(n) && n > 0 ? n : null;
   }
 
   const n = Number(s);
-  return Number.isNaN(n) ? null : n;
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function clampIndex(index: number, len: number): number {
-  if (len <= 0) return 0;
-  if (index < 0) return 0;
-  if (index >= len) return len - 1;
-  return index;
+function isValidIndex(index: any, len: number): index is number {
+  return Number.isInteger(index) && index >= 0 && index < len;
 }
 
-// -----------------------------
-// ISection (shell components)
-// -----------------------------
+/* =========================
+ * ISection (shell components)
+ * ========================= */
 
 export function ISection(props: React.HTMLAttributes<HTMLElement>) {
   return <i-section {...props} />;
@@ -97,15 +102,22 @@ export function ISectionFooter(props: React.HTMLAttributes<HTMLElement>) {
   return <i-section-footer {...props} />;
 }
 
-// -----------------------------
-// ISectionTab (declarative)
-// -----------------------------
+/* =========================
+ * ISectionTab (declarative)
+ * ========================= */
 
 export type ISectionTabProps = {
   title?: string;
   opened?: boolean;
   badge?: ISectionTabBadge;
+
+  /**
+   * If provided, overrides the default header (Angular parity:
+   * <i-section-tab-header> replaces default header template).
+   */
   header?: React.ReactNode;
+
+  /** Content of the tab */
   children?: React.ReactNode;
 };
 
@@ -120,9 +132,40 @@ type NormalizedTab = {
   opened: boolean;
   badgeEnabled: boolean;
   badgeValue: number | null;
+
+  /** Resolved header node: custom header OR default header template */
   headerNode: React.ReactNode;
+
   contentNode: React.ReactNode;
 };
+
+function DefaultHeader(props: {
+  title: string;
+  badgeEnabled: boolean;
+  badgeValue: number | null;
+}) {
+  const { title, badgeEnabled, badgeValue } = props;
+
+  return (
+    <>
+      <span className="i-section-tab-title">{title}</span>
+
+      {badgeEnabled ? (
+        <span
+          className={[
+            'i-section-tab-badge',
+            badgeValue !== null ? 'has-number' : null,
+          ]
+            .filter(Boolean)
+            .join(' ')}>
+          {badgeValue !== null ? (
+            <span className="i-section-tab-badge-number">{badgeValue}</span>
+          ) : null}
+        </span>
+      ) : null}
+    </>
+  );
+}
 
 function normalizeTab(
   node: React.ReactNode,
@@ -142,7 +185,19 @@ function normalizeTab(
   const badgeEnabled = parsed.enabled;
   const badgeValue = parsed.value;
 
-  const headerNode = props.header ?? null;
+  // Angular parity:
+  // - header template overrides default header template
+  const headerNode =
+    props.header !== undefined && props.header !== null ? (
+      props.header
+    ) : (
+      <DefaultHeader
+        title={title}
+        badgeEnabled={badgeEnabled}
+        badgeValue={badgeValue}
+      />
+    );
+
   const contentNode = props.children ?? null;
 
   return {
@@ -156,12 +211,15 @@ function normalizeTab(
   };
 }
 
-// -----------------------------
-// ISectionTabs
-// -----------------------------
+/* =========================
+ * ISectionTabs
+ * ========================= */
 
 export type ISectionTabsProps = React.HTMLAttributes<HTMLElement> & {
+  /** optional controlled mode */
   selectedIndex?: number | null;
+
+  /** ✅ on* prefix (Angular parity) */
   onSelectedIndexChange?: (index: number) => void;
 
   /**
@@ -192,37 +250,42 @@ export function ISectionTabs(props: ISectionTabsProps) {
   }, [children]);
 
   const openedIndex = useMemo(() => tabs.findIndex((t) => t.opened), [tabs]);
-
-  const isControlled = selectedIndex !== null && selectedIndex !== undefined;
-
-  const initialIndex = useMemo(() => {
-    if (isControlled) return clampIndex(selectedIndex as number, tabs.length);
-    if (openedIndex >= 0) return clampIndex(openedIndex, tabs.length);
-    return 0;
-  }, [isControlled, openedIndex, selectedIndex, tabs.length]);
-
-  const [activeIndex, setActiveIndex] = useState<number>(initialIndex);
-
-  useEffect(() => {
-    // sync on children change or controlled index change
-    const next = isControlled
-      ? clampIndex(selectedIndex as number, tabs.length)
-      : openedIndex >= 0
-        ? clampIndex(openedIndex, tabs.length)
-        : 0;
-
-    setActiveIndex(next);
-  }, [isControlled, selectedIndex, openedIndex, tabs.length]);
-
   const contentHeightPx = useMemo(() => parseTabsHeight(height), [height]);
   const isFixedHeight = contentHeightPx !== null;
 
+  // Angular parity:
+  // "controlled" only if selectedIndex is valid for current tabs
+  const hasValidControlledIndex = useMemo(
+    () =>
+      selectedIndex !== null &&
+      selectedIndex !== undefined &&
+      isValidIndex(selectedIndex, tabs.length),
+    [selectedIndex, tabs.length]
+  );
+
+  const computeNextIndex = useCallback((): number => {
+    if (hasValidControlledIndex) return selectedIndex as number;
+    if (openedIndex >= 0 && isValidIndex(openedIndex, tabs.length))
+      return openedIndex;
+    return 0;
+  }, [hasValidControlledIndex, selectedIndex, openedIndex, tabs.length]);
+
+  const [activeIndex, setActiveIndex] = useState<number>(() =>
+    computeNextIndex()
+  );
+
+  useEffect(() => {
+    // Sync when children change or selectedIndex changes.
+    setActiveIndex(computeNextIndex());
+  }, [computeNextIndex]);
+
   const activeTab = tabs[activeIndex] ?? null;
 
-  const selectIndex = useCallback(
+  const setActive = useCallback(
     (index: number, emit: boolean) => {
-      const next = clampIndex(index, tabs.length);
-      setActiveIndex(next);
+      if (!isValidIndex(index, tabs.length)) return;
+
+      setActiveIndex(index);
 
       if (emit) {
         onSelectedIndexChange?.(index);
@@ -231,31 +294,36 @@ export function ISectionTabs(props: ISectionTabsProps) {
     [onSelectedIndexChange, tabs.length]
   );
 
+  const activateByIndex = useCallback(
+    (index: number) => {
+      setActive(index, true);
+    },
+    [setActive]
+  );
+
   return (
     <i-section-tabs className={className} {...rest}>
-      <div className="i-section-tabs-header">
-        {tabs.map((tab, index) => (
-          <button
-            key={tab.key}
-            type="button"
-            className={[
-              'i-section-tab',
-              index === activeIndex ? 'opened' : null,
-            ]
-              .filter(Boolean)
-              .join(' ')}
-            onClick={() => selectIndex(index, true)}>
-            <span className="i-section-tab-title">{tab.title}</span>
+      {/* Angular DOM: .i-section-tabs-headers / .i-section-tabs-header */}
+      <div className="i-section-tabs-headers" role="tablist">
+        {tabs.map((tab, index) => {
+          const isActive = index === activeIndex;
 
-            {tab.badgeEnabled ? (
-              <span className="i-section-tab-badge">
-                {tab.badgeValue !== null ? tab.badgeValue : null}
-              </span>
-            ) : null}
-
-            {tab.headerNode}
-          </button>
-        ))}
+          return (
+            <button
+              key={tab.key}
+              className={['i-section-tabs-header', isActive ? 'active' : null]
+                .filter(Boolean)
+                .join(' ')}
+              role="tab"
+              type="button"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => activateByIndex(index)}>
+              {/* Angular parity: render ONLY headerTpl */}
+              {tab.headerNode}
+            </button>
+          );
+        })}
       </div>
 
       <div
