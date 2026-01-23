@@ -17,6 +17,8 @@ export type IButtonProps = Omit<
 > & {
   disabled?: boolean;
   loading?: boolean;
+
+  /** Used for submit/reset behavior (host is NOT a native <button>) */
   type?: IButtonType;
 
   loadingText?: string;
@@ -26,7 +28,7 @@ export type IButtonProps = Omit<
   /** ✅ autocomplete for aliases + allow raw FA class strings */
   icon?: IIconInput;
 
-  /** Angular-ish naming: expose native event */
+  /** Angular naming */
   onClick?: (event: MouseEvent) => void;
 
   children?: React.ReactNode;
@@ -62,6 +64,9 @@ export function IButton(props: IButtonProps) {
     if (isBlocked) {
       event.preventDefault();
       event.stopPropagation();
+
+      // Angular parity: stopImmediatePropagation when blocked
+      (event.nativeEvent as any)?.stopImmediatePropagation?.();
       return;
     }
 
@@ -77,6 +82,7 @@ export function IButton(props: IButtonProps) {
         const requestSubmit = (
           form as HTMLFormElement & { requestSubmit?: () => void }
         ).requestSubmit;
+
         if (typeof requestSubmit === 'function') requestSubmit.call(form);
         else form.submit();
       } else {
@@ -87,7 +93,7 @@ export function IButton(props: IButtonProps) {
 
   const handleKeyDown: React.KeyboardEventHandler<HTMLElement> = (event) => {
     if (isBlocked) {
-      event.preventDefault();
+      // Angular returns; React default is fine — no extra behavior needed
       return;
     }
 
@@ -112,7 +118,7 @@ export function IButton(props: IButtonProps) {
       className={className}
       variant={variant}
       size={size}
-      type={type}
+      // Angular parity: do NOT reflect `type` as an attribute on the host
       tabIndex={disabled ? -1 : 0}
       aria-disabled={disabled ? 'true' : undefined}
       aria-busy={loading ? 'true' : undefined}

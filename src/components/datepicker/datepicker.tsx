@@ -6,18 +6,21 @@ import React, {
   useState,
 } from 'react';
 import { IButton } from '../button';
-import {
-  IInput,
-  type IInputAddonButton,
-  type IInputAddons,
-  type IInputMask,
-} from '../input';
+import { IInput, type IInputAddonButton, type IInputMask } from '../input';
 import { ISelect, type ISelectChange } from '../select';
 import type { IFormControlErrorMessage } from '../shared/form.types';
 
-// -----------------------------
-// Types
-// -----------------------------
+/* =========================================
+ * Types (match Angular)
+ * ========================================= */
+
+export type IDatepickerPanelPosition =
+  | 'bottom left'
+  | 'bottom right'
+  | 'top left'
+  | 'top right';
+
+type IMonthOption = { value: number; label: string };
 
 type IDatepickerDay = {
   date: Date;
@@ -26,121 +29,45 @@ type IDatepickerDay = {
   isSelected: boolean;
 };
 
-type IMonthOption = { value: number; label: string };
-
-export type IDatepickerPanelPosition =
-  | 'top'
-  | 'bottom'
-  | 'left'
-  | 'right'
-  | 'top left'
-  | 'top right'
-  | 'bottom left'
-  | 'bottom right';
-
 export type IDatepickerProps = React.HTMLAttributes<HTMLElement> & {
   placeholder?: string;
   disabled?: boolean;
-
-  /** purely visual invalid state */
   invalid?: boolean;
-
-  /** display / parse format: supports yyyy, MM, dd */
   format?: string;
-
   panelPosition?: IDatepickerPanelPosition;
 
-  /** Date model */
-  value?: Date | null;
+  /** Angular parity: accepts Date | string | null */
+  value?: Date | string | null;
 
-  /** React callback */
-  onChange?: (value: Date | null) => void;
-
-  /** optional open state changes */
-  onOpenChange?: (open: boolean) => void;
+  /** Angular parity event name */
+  onChanged?: (value: Date | null) => void;
 };
 
-// -----------------------------
-// Utils
-// -----------------------------
+export type IFCDatepickerProps = React.HTMLAttributes<HTMLElement> & {
+  label?: string;
+  placeholder?: string;
+  format?: string;
+  panelPosition?: IDatepickerPanelPosition;
 
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
+  value?: Date | string | null;
+  onChanged?: (v: Date | null) => void;
 
-function isSameDate(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
+  disabled?: boolean;
 
-function formatDateByFormat(date: Date, fmt: string): string {
-  const yyyy = String(date.getFullYear()).padStart(4, '0');
-  const MM = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
+  /** React-style validation (Angular derives from forms) */
+  required?: boolean;
+  invalid?: boolean;
 
-  return (fmt || 'dd/MM/yyyy')
-    .replace(/yyyy/g, yyyy)
-    .replace(/MM/g, MM)
-    .replace(/dd/g, dd);
-}
+  /** Angular-like template map */
+  errorMessage?: IFormControlErrorMessage;
 
-/**
- * Lightweight parser that maps numeric parts into yyyy/MM/dd tokens order.
- * (Works well with dd/MM/yyyy, yyyy-MM-dd, etc.)
- */
-function parseInputDate(value: string, fmt: string): Date | null {
-  if (!value) return null;
+  /** which key to render when invalid (default: 'required') */
+  errorKey?: string;
+};
 
-  const format = fmt || 'yyyy-MM-dd';
-
-  const parts = value.match(/\d+/g);
-  if (!parts || parts.length < 3) return null;
-
-  const tokens = format.match(/(yyyy|MM|dd)/g) || ['yyyy', 'MM', 'dd'];
-
-  let year: number | undefined;
-  let month: number | undefined;
-  let day: number | undefined;
-
-  tokens.forEach((t, idx) => {
-    const p = parts[idx];
-    if (!p) return;
-    const n = Number(p);
-
-    if (t === 'yyyy') year = n;
-    else if (t === 'MM') month = n;
-    else if (t === 'dd') day = n;
-  });
-
-  // keep your semantics: 0 or undefined => invalid
-  if (!year || !month || !day) return null;
-
-  const date = new Date(year, month - 1, day);
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return null;
-  }
-
-  return startOfDay(date);
-}
-
-function panelPositionClass(
-  panelPosition: IDatepickerPanelPosition | undefined
-): string {
-  const value = (panelPosition || 'bottom left').trim();
-  const normalized = value.replace(/\s+/g, '-');
-  return `i-datepicker-panel--${normalized}`;
-}
-
-// -----------------------------
-// Constants
-// -----------------------------
+/* =========================================
+ * Constants (match Angular)
+ * ========================================= */
 
 const MONTHS: IMonthOption[] = [
   { value: 0, label: 'January' },
@@ -159,9 +86,142 @@ const MONTHS: IMonthOption[] = [
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// -----------------------------
-// Component
-// -----------------------------
+function noop(): void {}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isSameDate(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+function parseInputDate(value: string, format: string): Date | null {
+  if (!value) return null;
+
+  const fmt = format || 'yyyy-MM-dd';
+  const parts = value.match(/\d+/g);
+  if (!parts || parts.length < 3) return null;
+
+  const tokens = fmt.match(/(yyyy|MM|dd)/g) || ['yyyy', 'MM', 'dd'];
+
+  let year: number | undefined;
+  let month: number | undefined;
+  let day: number | undefined;
+
+  tokens.forEach((t, idx) => {
+    const p = parts[idx];
+    if (!p) return;
+    const n = Number(p);
+
+    if (t === 'yyyy') year = n;
+    else if (t === 'MM') month = n;
+    else if (t === 'dd') day = n;
+  });
+
+  if (!year || !month || !day) return null;
+
+  const date = new Date(year, month - 1, day);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+
+  return startOfDay(date);
+}
+
+function formatDateLocal(date: Date, format: string): string {
+  const fmt = format || 'yyyy-MM-dd';
+
+  const yyyy = String(date.getFullYear());
+  const MM = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+
+  return fmt.replace(/yyyy/g, yyyy).replace(/MM/g, MM).replace(/dd/g, dd);
+}
+
+function normalizeToDate(
+  value: Date | string | null | undefined,
+  format: string
+): Date | null {
+  if (value instanceof Date) return startOfDay(value);
+  if (typeof value === 'string' && value.trim()) {
+    return parseInputDate(value.trim(), format);
+  }
+  return null;
+}
+
+function panelPositionClass(
+  panelPosition: IDatepickerPanelPosition | undefined
+): string {
+  const value = (panelPosition || 'bottom left').trim();
+  const normalized = value.replace(/\s+/g, '-');
+  return `i-datepicker-panel--${normalized}`;
+}
+
+function ensureYearRange(focusYear: number, currentYears: number[]): number[] {
+  if (
+    !currentYears.length ||
+    focusYear < currentYears[0] ||
+    focusYear > currentYears[currentYears.length - 1]
+  ) {
+    const start = focusYear - 50;
+    const end = focusYear + 10;
+    const arr: number[] = [];
+    for (let y = start; y <= end; y++) arr.push(y);
+    return arr;
+  }
+  return currentYears;
+}
+
+function buildCalendar(
+  viewYear: number,
+  viewMonth: number,
+  selected: Date | null
+): IDatepickerDay[][] {
+  const firstOfMonth = new Date(viewYear, viewMonth, 1);
+
+  // Monday = 0 (Angular: (getDay()+6)%7)
+  const startDay = (firstOfMonth.getDay() + 6) % 7;
+  const startDate = new Date(viewYear, viewMonth, 1 - startDay);
+
+  const weeks: IDatepickerDay[][] = [];
+  const current = new Date(startDate);
+
+  const today = startOfDay(new Date());
+  const selectedDay = selected ? startOfDay(selected) : null;
+
+  for (let w = 0; w < 6; w++) {
+    const row: IDatepickerDay[] = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(current);
+      const inCurrentMonth = date.getMonth() === viewMonth;
+
+      row.push({
+        date,
+        inCurrentMonth,
+        isToday: isSameDate(date, today),
+        isSelected: selectedDay ? isSameDate(date, selectedDay) : false,
+      });
+
+      current.setDate(current.getDate() + 1);
+    }
+    weeks.push(row);
+  }
+
+  return weeks;
+}
+
+/* =========================================
+ * IDatepicker
+ * ========================================= */
 
 export function IDatepicker(props: IDatepickerProps) {
   const {
@@ -171,269 +231,117 @@ export function IDatepicker(props: IDatepickerProps) {
     format = 'dd/MM/yyyy',
     panelPosition = 'bottom left',
     value = null,
-    onChange,
-    onOpenChange,
-    ...hostProps
+    onChanged = noop,
+    className,
+    ...rest
   } = props;
 
   const hostRef = useRef<HTMLElement | null>(null);
-  const inputElRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
+  const [modelValue, setModelValue] = useState<Date | null>(null);
+  const [displayText, setDisplayText] = useState<string>('');
   const [isOpen, setIsOpen] = useState(false);
 
-  // input text shown to user (controlled by typing OR external value)
-  const [displayText, setDisplayText] = useState<string>(() =>
-    value ? formatDateByFormat(startOfDay(value), format) : ''
+  const [viewYear, setViewYear] = useState(0);
+  const [viewMonth, setViewMonth] = useState(0);
+  const [years, setYears] = useState<number[]>([]);
+
+  const weeks = useMemo(
+    () => buildCalendar(viewYear, viewMonth, modelValue),
+    [viewYear, viewMonth, modelValue]
   );
-
-  // calendar view (month/year)
-  const today = useMemo(() => startOfDay(new Date()), []);
-  const [viewYear, setViewYear] = useState<number>(() =>
-    value ? value.getFullYear() : today.getFullYear()
-  );
-  const [viewMonth, setViewMonth] = useState<number>(() =>
-    value ? value.getMonth() : today.getMonth()
-  );
-
-  const [years, setYears] = useState<number[]>(() => {
-    const focusYear = value ? value.getFullYear() : today.getFullYear();
-    const start = focusYear - 50;
-    const end = focusYear + 10;
-    const arr: number[] = [];
-    for (let y = start; y <= end; y++) arr.push(y);
-    return arr;
-  });
-
-  const ensureYearRange = useCallback((focusYear: number) => {
-    setYears((prev) => {
-      if (
-        prev.length &&
-        focusYear >= prev[0] &&
-        focusYear <= prev[prev.length - 1]
-      ) {
-        return prev;
-      }
-      const start = focusYear - 50;
-      const end = focusYear + 10;
-      const arr: number[] = [];
-      for (let y = start; y <= end; y++) arr.push(y);
-      return arr;
-    });
-  }, []);
-
-  const updateViewFromDate = useCallback(
-    (d: Date) => {
-      const sd = startOfDay(d);
-      const y = sd.getFullYear();
-      const m = sd.getMonth();
-      setViewYear(y);
-      setViewMonth(m);
-      ensureYearRange(y);
-    },
-    [ensureYearRange]
-  );
-
-  // sync display + view from external value changes
-  useEffect(() => {
-    if (value) {
-      const d = startOfDay(value);
-      setDisplayText(formatDateByFormat(d, format));
-      updateViewFromDate(d);
-    } else {
-      // keep input empty when controlled value is null
-      setDisplayText('');
-      updateViewFromDate(today);
-    }
-  }, [value, format, updateViewFromDate, today]);
-
-  // ✅ Keep Angular ngOnInit-like behavior:
-  // If empty on mount, show today visually (but DO NOT call onChange)
-  useEffect(() => {
-    if (!value && !displayText) {
-      setDisplayText(formatDateByFormat(today, format));
-      updateViewFromDate(today);
-    }
-    // run once (Angular-ish)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const weeks: IDatepickerDay[][] = useMemo(() => {
-    const year = viewYear;
-    const month = viewMonth;
-
-    const firstOfMonth = new Date(year, month, 1);
-    const startDay = (firstOfMonth.getDay() + 6) % 7; // Monday=0
-    const startDate = new Date(year, month, 1 - startDay);
-
-    const selected = value ? startOfDay(value) : null;
-
-    const out: IDatepickerDay[][] = [];
-    const cur = new Date(startDate);
-
-    for (let w = 0; w < 6; w++) {
-      const row: IDatepickerDay[] = [];
-      for (let i = 0; i < 7; i++) {
-        const date = new Date(cur);
-        row.push({
-          date,
-          inCurrentMonth: date.getMonth() === month,
-          isToday: isSameDate(date, today),
-          isSelected: selected ? isSameDate(date, selected) : false,
-        });
-        cur.setDate(cur.getDate() + 1);
-      }
-      out.push(row);
-    }
-
-    return out;
-  }, [viewYear, viewMonth, value, today]);
 
   const monthSelected = useMemo(
     () => MONTHS.find((m) => m.value === viewMonth) ?? null,
     [viewMonth]
   );
 
-  const mask: IInputMask = useMemo(() => ({ type: 'date', format }), [format]);
+  const dateMask: IInputMask = useMemo(
+    () => ({ type: 'date', format }),
+    [format]
+  );
 
-  const focusInput = useCallback(() => {
-    inputElRef.current?.focus();
+  // Cache the real <input> inside <i-input> (Angular queries DOM too)
+  const refreshInputRef = useCallback(() => {
+    const host = hostRef.current;
+    const input = host?.querySelector?.(
+      'i-input input'
+    ) as HTMLInputElement | null;
+    if (input) inputRef.current = input;
   }, []);
 
-  const setOpen = useCallback(
-    (next: boolean) => {
-      setIsOpen(next);
-      onOpenChange?.(next);
-    },
-    [onOpenChange]
-  );
+  // writeValue parity
+  useEffect(() => {
+    const next = normalizeToDate(value, format);
+
+    setModelValue(next);
+    setDisplayText(next ? formatDateLocal(next, format) : '');
+
+    const baseDate =
+      next ?? parseInputDate(displayText, format) ?? startOfDay(new Date());
+
+    setViewYear(baseDate.getFullYear());
+    setViewMonth(baseDate.getMonth());
+    setYears((prev) => ensureYearRange(baseDate.getFullYear(), prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, format]);
+
+  // ngOnInit parity: default to today visually
+  useEffect(() => {
+    if (!modelValue && !displayText) {
+      const today = startOfDay(new Date());
+      setModelValue(today);
+      setDisplayText(formatDateLocal(today, format));
+      setViewYear(today.getFullYear());
+      setViewMonth(today.getMonth());
+      setYears((p) => ensureYearRange(today.getFullYear(), p));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Ensure we can focus input after mount and whenever popup toggles
+  useEffect(() => {
+    refreshInputRef();
+  }, [refreshInputRef, isOpen, displayText]);
+
+  const initViewFromModel = useCallback(() => {
+    let base: Date;
+
+    if (modelValue) base = startOfDay(modelValue);
+    else if (displayText)
+      base = parseInputDate(displayText, format) ?? startOfDay(new Date());
+    else base = startOfDay(new Date());
+
+    setViewYear(base.getFullYear());
+    setViewMonth(base.getMonth());
+    setYears((p) => ensureYearRange(base.getFullYear(), p));
+  }, [displayText, format, modelValue]);
 
   const toggleOpen = useCallback(() => {
     if (disabled) return;
 
-    if (!isOpen) {
-      // when opening, sync calendar from current typed text
-      if (displayText) {
-        const parsed = parseInputDate(displayText, format);
-        updateViewFromDate(parsed ?? today);
-      } else if (value) {
-        updateViewFromDate(startOfDay(value));
-      } else {
-        updateViewFromDate(today);
+    setIsOpen((prev) => {
+      const next = !prev;
+
+      if (next) {
+        refreshInputRef();
+
+        const inputVal = inputRef.current?.value ?? '';
+        if (inputVal) {
+          const parsed = parseInputDate(inputVal, format);
+          if (parsed) {
+            setModelValue(parsed);
+            setDisplayText(formatDateLocal(parsed, format));
+          }
+        }
+
+        initViewFromModel();
       }
-    }
 
-    setOpen(!isOpen);
-  }, [
-    disabled,
-    isOpen,
-    displayText,
-    format,
-    value,
-    setOpen,
-    updateViewFromDate,
-    today,
-  ]);
-
-  const handleTypedInput = useCallback(
-    (raw: string) => {
-      setDisplayText(raw);
-
-      const parsed = parseInputDate(raw, format);
-      if (parsed) {
-        updateViewFromDate(parsed);
-        onChange?.(parsed);
-      } else {
-        onChange?.(null);
-      }
-    },
-    [format, onChange, updateViewFromDate]
-  );
-
-  const selectDay = useCallback(
-    (day: IDatepickerDay) => {
-      if (disabled) return;
-
-      const selected = startOfDay(day.date);
-      setDisplayText(formatDateByFormat(selected, format));
-      onChange?.(selected);
-
-      updateViewFromDate(selected);
-      setOpen(false);
-    },
-    [disabled, format, onChange, setOpen, updateViewFromDate]
-  );
-
-  const prevMonth = useCallback(() => {
-    let y = viewYear;
-    let m = viewMonth;
-
-    if (m === 0) {
-      m = 11;
-      y = y - 1;
-    } else {
-      m = m - 1;
-    }
-
-    setViewYear(y);
-    setViewMonth(m);
-    ensureYearRange(y);
-  }, [viewYear, viewMonth, ensureYearRange]);
-
-  const nextMonth = useCallback(() => {
-    let y = viewYear;
-    let m = viewMonth;
-
-    if (m === 11) {
-      m = 0;
-      y = y + 1;
-    } else {
-      m = m + 1;
-    }
-
-    setViewYear(y);
-    setViewMonth(m);
-    ensureYearRange(y);
-  }, [viewYear, viewMonth, ensureYearRange]);
-
-  const onMonthChange = useCallback((change: ISelectChange<IMonthOption>) => {
-    const row = change.value;
-    if (!row) return;
-
-    const month = row.value;
-    if (!Number.isInteger(month) || month < 0 || month > 11) return;
-
-    setViewMonth(month);
-  }, []);
-
-  const onYearChange = useCallback(
-    (change: ISelectChange<number>) => {
-      const year = change.value;
-      if (year === null) return; // ✅ important
-      if (!Number.isInteger(year)) return;
-
-      setViewYear(year);
-      ensureYearRange(year);
-    },
-    [ensureYearRange]
-  );
-
-  // close on outside click
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const onDocClick = (ev: MouseEvent) => {
-      const target = ev.target as Node | null;
-      const host = hostRef.current;
-      if (!host) return;
-
-      if (target && !host.contains(target)) {
-        setOpen(false);
-      }
-    };
-
-    document.addEventListener('click', onDocClick, true);
-    return () => document.removeEventListener('click', onDocClick, true);
-  }, [isOpen, setOpen]);
+      return next;
+    });
+  }, [disabled, format, initViewFromModel, refreshInputRef]);
 
   const appendAddon: IInputAddonButton = useMemo(
     () => ({
@@ -441,31 +349,147 @@ export function IDatepicker(props: IDatepickerProps) {
       icon: 'calendar',
       visible: true,
       variant: 'primary',
-      onClick: () => {
+      onClick: (): void => {
         toggleOpen();
-        focusInput();
+        refreshInputRef();
+        inputRef.current?.focus();
       },
     }),
-    [toggleOpen, focusInput]
+    [refreshInputRef, toggleOpen]
   );
 
-  const append: IInputAddons = appendAddon;
+  const handleInput = useCallback(
+    (raw: string) => {
+      setDisplayText(raw);
+
+      const parsed = parseInputDate(raw, format);
+      setModelValue(parsed);
+
+      if (parsed) {
+        setViewYear(parsed.getFullYear());
+        setViewMonth(parsed.getMonth());
+        setYears((p) => ensureYearRange(parsed.getFullYear(), p));
+      }
+
+      onChanged(parsed);
+    },
+    [format, onChanged]
+  );
+
+  // outside click close
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onDocClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      const host = hostRef.current;
+      if (host && target && !host.contains(target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('click', onDocClick);
+    return () => document.removeEventListener('click', onDocClick);
+  }, [isOpen]);
+
+  const prevMonth = useCallback(() => {
+    setViewMonth((m) => {
+      if (m === 0) {
+        setViewYear((y) => {
+          const ny = y - 1;
+          setYears((p) => ensureYearRange(ny, p));
+          return ny;
+        });
+        return 11;
+      }
+      return m - 1;
+    });
+  }, []);
+
+  const nextMonth = useCallback(() => {
+    setViewMonth((m) => {
+      if (m === 11) {
+        setViewYear((y) => {
+          const ny = y + 1;
+          setYears((p) => ensureYearRange(ny, p));
+          return ny;
+        });
+        return 0;
+      }
+      return m + 1;
+    });
+  }, []);
+
+  const onMonthChange = useCallback((change: ISelectChange<any>) => {
+    const row = change?.value;
+    if (!row) return;
+
+    const month =
+      typeof row === 'object' && row && 'value' in row
+        ? (row as IMonthOption).value
+        : row;
+
+    if (typeof month !== 'number') return;
+    if (month < 0 || month > 11) return;
+
+    setViewMonth(month);
+  }, []);
+
+  const onYearChange = useCallback((change: ISelectChange<number>) => {
+    const year = change.value;
+    if (typeof year !== 'number') return;
+
+    setViewYear(year);
+    setYears((p) => ensureYearRange(year, p));
+  }, []);
+
+  const selectDay = useCallback(
+    (day: IDatepickerDay) => {
+      if (disabled) return;
+
+      const selected = startOfDay(day.date);
+
+      setModelValue(selected);
+      setDisplayText(formatDateLocal(selected, format));
+
+      onChanged(selected);
+
+      setViewYear(selected.getFullYear());
+      setViewMonth(selected.getMonth());
+      setYears((p) => ensureYearRange(selected.getFullYear(), p));
+
+      setIsOpen(false);
+    },
+    [disabled, format, onChanged]
+  );
+
+  useEffect(() => {
+    setYears((p) =>
+      ensureYearRange(viewYear || startOfDay(new Date()).getFullYear(), p)
+    );
+  }, [viewYear]);
 
   return (
     <i-datepicker
-      {...hostProps}
       ref={(el) => {
-        hostRef.current = el as unknown as HTMLElement;
-      }}>
+        hostRef.current = el as any;
+        refreshInputRef();
+      }}
+      className={className}
+      {...rest}>
       <IInput
-        append={append}
-        mask={mask}
+        append={appendAddon}
+        mask={dateMask}
         invalid={invalid}
         placeholder={placeholder}
         readonly={disabled}
         value={displayText}
-        inputRef={inputElRef}
-        onInput={(e) => handleTypedInput((e.target as HTMLInputElement).value)}
+        onInput={(e) =>
+          handleInput((e.currentTarget as HTMLInputElement).value ?? '')
+        }
+        onBlur={() => {
+          // Angular calls onTouched; no external callback here (parity is fine)
+        }}
       />
 
       {isOpen ? (
@@ -477,14 +501,14 @@ export function IDatepicker(props: IDatepickerProps) {
           <div className="i-datepicker-header">
             <IButton icon="prev" size="xs" onClick={prevMonth} />
 
-            <ISelect<IMonthOption>
+            <ISelect
               className="i-date-picker-month-select"
               options={MONTHS}
               value={monthSelected}
               onOptionSelected={onMonthChange}
             />
 
-            <ISelect<number>
+            <ISelect
               className="i-date-picker-year-select"
               options={years}
               value={viewYear}
@@ -502,7 +526,7 @@ export function IDatepicker(props: IDatepickerProps) {
 
           <div className="i-datepicker-weeks">
             {weeks.map((week, wi) => (
-              <div key={wi} className="i-datepicker-week">
+              <div className="i-datepicker-week" key={`w-${wi}`}>
                 {week.map((d) => (
                   <div
                     key={d.date.getTime()}
@@ -527,9 +551,9 @@ export function IDatepicker(props: IDatepickerProps) {
   );
 }
 
-// -----------------------------
-// FC wrapper (same pattern as fc-select)
-// -----------------------------
+/* =========================================
+ * IFCDatepicker
+ * ========================================= */
 
 function resolveErrorMessage(
   label: string,
@@ -541,28 +565,6 @@ function resolveErrorMessage(
   return tpl.replaceAll('{label}', label || 'This field');
 }
 
-export type IFCDatepickerProps = React.HTMLAttributes<HTMLElement> & {
-  label?: string;
-  placeholder?: string;
-  format?: string;
-  panelPosition?: IDatepickerPanelPosition;
-
-  value?: Date | null;
-  onChange?: (v: Date | null) => void;
-
-  disabled?: boolean;
-
-  /** React-style validation */
-  required?: boolean;
-  invalid?: boolean;
-
-  /** Angular-like template map (same as fc-select) */
-  errorMessage?: IFormControlErrorMessage;
-
-  /** which key to render when invalid (default: 'required') */
-  errorKey?: string;
-};
-
 export function IFCDatepicker(props: IFCDatepickerProps) {
   const {
     label = '',
@@ -570,29 +572,49 @@ export function IFCDatepicker(props: IFCDatepickerProps) {
     format = 'dd/MM/yyyy',
     panelPosition = 'bottom left',
     value = null,
-    onChange,
+    onChanged = noop,
     disabled = false,
 
     required = false,
     invalid = false,
+
     errorMessage,
     errorKey = 'required',
 
-    ...hostProps
+    className,
+    ...rest
   } = props;
+
+  const hostRef = useRef<HTMLElement | null>(null);
 
   const resolvedErrorText = useMemo(() => {
     if (!invalid) return null;
+
     return (
       resolveErrorMessage(label || 'This field', errorKey, errorMessage) ??
       `${label || 'This field'} is invalid`
     );
   }, [invalid, label, errorKey, errorMessage]);
 
+  const focusInnerDatepicker = () => {
+    if (disabled) return;
+    const input = hostRef.current?.querySelector?.(
+      'i-datepicker i-input input'
+    ) as HTMLInputElement | null;
+    input?.focus();
+  };
+
   return (
-    <i-fc-datepicker {...hostProps}>
+    <i-fc-datepicker
+      ref={(el) => {
+        hostRef.current = el as any;
+      }}
+      className={className}
+      {...rest}>
       {label ? (
-        <label className="i-fc-datepicker__label">
+        <label
+          className="i-fc-datepicker__label"
+          onClick={focusInnerDatepicker}>
           {label} :{' '}
           {required ? (
             <span className="i-fc-datepicker__required">*</span>
@@ -607,7 +629,7 @@ export function IFCDatepicker(props: IFCDatepickerProps) {
         panelPosition={panelPosition}
         placeholder={placeholder}
         value={value}
-        onChange={onChange}
+        onChanged={onChanged}
       />
 
       {invalid && resolvedErrorText ? (
