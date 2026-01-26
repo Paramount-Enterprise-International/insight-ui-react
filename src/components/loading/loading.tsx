@@ -10,7 +10,11 @@ export function ILoading(props: ILoadingProps) {
   const { label = 'Loading..', light = false, className, ...rest } = props;
 
   return (
-    <i-loading className={className} light={light ? '' : undefined} {...rest}>
+    <i-loading
+      className={className}
+      // Angular: @HostBinding('attr.light') returns boolean -> attribute exists with "true" when enabled
+      light={light ? 'true' : undefined}
+      {...rest}>
       <div
         className={[
           'spinner-border',

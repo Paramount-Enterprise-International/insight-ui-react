@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import type { IFormControlErrorMessage } from '../shared';
 
 function resolveErrorMessage(
@@ -12,38 +12,57 @@ function resolveErrorMessage(
 }
 
 /* =========================
- * ITextarea
+ * ITextArea
  * ========================= */
 
-export type ITextareaProps = Omit<
+export type ITextAreaProps = Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
-  'value' | 'defaultValue' | 'onChange'
+  'value' | 'defaultValue' | 'onChange' | 'readOnly'
 > & {
-  value?: string; // ✅ no null
+  value?: string; // Angular allows null; React uses empty string as default
   invalid?: boolean;
+
+  disabled?: boolean;
+  readonly?: boolean;
+
+  rows?: number;
+  placeholder?: string;
 
   onChange?: (value: string) => void;
 };
 
-export function ITextarea(props: ITextareaProps) {
+export function ITextArea(props: ITextAreaProps) {
   const {
     value = '',
     invalid = false,
+
     disabled = false,
-    readOnly = false,
+    readonly = false,
+
     rows = 3,
     placeholder = '',
+
     onChange,
     ...rest
   } = props;
 
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Angular parity: click anywhere on <i-textarea> focuses the inner textarea
+  const handleHostClick = useCallback(() => {
+    if (!disabled) {
+      textareaRef.current?.focus();
+    }
+  }, [disabled]);
+
   return (
-    <i-textarea>
+    <i-textarea onClick={handleHostClick}>
       <textarea
         {...rest}
+        ref={textareaRef}
         aria-invalid={invalid ? 'true' : undefined}
         disabled={disabled}
-        readOnly={readOnly}
+        readOnly={readonly}
         rows={rows}
         placeholder={placeholder}
         value={value}
@@ -54,45 +73,51 @@ export function ITextarea(props: ITextareaProps) {
 }
 
 /* =========================
- * IFCTextarea
+ * IFCTextArea
  * ========================= */
 
-export type IFCTextareaProps = Omit<
+export type IFCTextAreaProps = Omit<
   React.HTMLAttributes<HTMLElement>,
   'onChange'
 > & {
+  // UI inputs (match Angular)
   label?: string;
   placeholder?: string;
-
-  value?: string; // ✅ no null
-  onChange?: (value: string) => void;
-
-  disabled?: boolean;
   readonly?: boolean;
   rows?: number;
-
-  required?: boolean;
-  invalid?: boolean;
-
   errorMessage?: IFormControlErrorMessage;
+
+  // Value (React-controlled)
+  value?: string;
+  onChange?: (value: string) => void;
+
+  /**
+   * React-only adapters (Angular derives these from NgControl/FormGroupDirective):
+   * Keep optional so React users can integrate with any form lib.
+   */
+  disabled?: boolean;
+  invalid?: boolean;
+  required?: boolean;
+
+  /** maps to errorMessage[errorKey]; Angular resolves by control error keys */
   errorKey?: string;
 };
 
-export function IFCTextarea(props: IFCTextareaProps) {
+export function IFCTextArea(props: IFCTextAreaProps) {
   const {
     label = '',
     placeholder = '',
+    readonly = false,
+    rows = 3,
+    errorMessage,
+
     value = '',
     onChange,
 
     disabled = false,
-    readonly = false,
-    rows = 3,
-
-    required = false,
     invalid = false,
+    required = false,
 
-    errorMessage,
     errorKey = 'required',
 
     ...hostProps
@@ -100,6 +125,7 @@ export function IFCTextarea(props: IFCTextareaProps) {
 
   const resolvedErrorText = useMemo(() => {
     if (!invalid) return null;
+
     return (
       resolveErrorMessage(label || 'This field', errorKey, errorMessage) ??
       `${label || 'This field'} is invalid`
@@ -115,13 +141,13 @@ export function IFCTextarea(props: IFCTextareaProps) {
         </label>
       ) : null}
 
-      <ITextarea
+      <ITextArea
         placeholder={placeholder}
+        readonly={readonly}
+        rows={rows}
         value={value}
         invalid={invalid}
         disabled={disabled}
-        readOnly={readonly}
-        rows={rows}
         onChange={(v) => onChange?.(v)}
       />
 

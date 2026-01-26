@@ -12,3 +12,4 @@ export * from './section';
 export * from './select';
 export * from './shared';
 export * from './textarea';
+export * from './toggle';

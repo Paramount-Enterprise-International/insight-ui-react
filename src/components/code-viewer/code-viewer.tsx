@@ -1,7 +1,7 @@
-// code-viewer.tsx
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -140,18 +140,15 @@ function normalizeHljsLanguage(lang: string): string {
 }
 
 /**
- * Safer line counting:
- * - "" => 1 line
- * - trailing newline should not add a phantom extra visible line in many UIs,
- *   but line numbers typically still count it as an empty last line.
- * We'll keep it consistent with editors: split preserves last empty.
+ * Line counting aligned with Angular:
+ * - "" => 1
+ * - split('\n').length semantics
  */
 function countLines(text: string): number {
   if (text === null || text === undefined) return 1;
   const s = String(text);
-  // preserve trailing empty line
-  const parts = s.split('\n');
-  return Math.max(1, parts.length);
+  if (!s) return 1;
+  return s.split('\n').length;
 }
 
 // -----------------------------
@@ -207,11 +204,14 @@ export function ICodeViewer(props: ICodeViewerProps) {
   const [fileLanguage, setFileLanguage] = useState<string>('text');
   const languageOverride = (language ?? '').trim() || null;
 
+  const fileTrimmed = (file ?? '').trim();
+  const codePropString = (code ?? '').toString();
+
   const effectiveLanguage = useMemo(() => {
     if (languageOverride) return languageOverride;
-    if (file && file.trim()) return fileLanguage;
+    if (fileTrimmed) return fileLanguage;
     return 'text';
-  }, [languageOverride, fileLanguage, file]);
+  }, [languageOverride, fileLanguage, fileTrimmed]);
 
   const fileTypeLabel = useMemo(() => {
     const l = (effectiveLanguage || 'text').toUpperCase();
@@ -219,38 +219,37 @@ export function ICodeViewer(props: ICodeViewerProps) {
   }, [effectiveLanguage]);
 
   // raw code state
-  const [rawCode, setRawCode] = useState<string>(() => (code ?? '').toString());
+  const [rawCode, setRawCode] = useState<string>(() => codePropString);
 
-  // sync raw code from prop changes
+  // sync raw code from prop changes (explicit code wins)
   useEffect(() => {
-    setRawCode((code ?? '').toString());
-  }, [code]);
+    setRawCode(codePropString);
+  }, [codePropString]);
 
-  // projected content (if no code + no file)
-  const projectedText = useMemo(() => {
-    if ((code ?? '').toString()) return '';
-    if (file && file.trim()) return '';
+  // -----------------------------
+  // Projected content (Angular-like): read rendered textContent
+  // - only when code prop empty, file empty, and rawCode empty
+  // - useLayoutEffect to avoid "empty then fill" paint
+  // -----------------------------
+  const projectedRef = useRef<HTMLDivElement | null>(null);
 
-    const arr = React.Children.toArray(children);
+  useLayoutEffect(() => {
+    // Only project when:
+    // - no file
+    // - no explicit code
+    // - and current rawCode is empty (so we don't override)
+    if (fileTrimmed) return;
+    if (codePropString) return;
+    if (rawCode) return;
 
-    const joined = arr
-      .map((n) => {
-        if (typeof n === 'string' || typeof n === 'number') return String(n);
-        return '';
-      })
-      .join('');
+    const host = projectedRef.current;
+    if (!host) return;
 
-    return joined.trim();
-  }, [children, code, file]);
+    const text = (host.textContent ?? '').trim();
+    if (!text) return;
 
-  // apply projected text only when we are truly empty
-  useEffect(() => {
-    const codeProp = (code ?? '').toString();
-    const fileProp = (file ?? '').trim();
-    if (!codeProp && !fileProp && projectedText) {
-      setRawCode(projectedText);
-    }
-  }, [projectedText, code, file]);
+    setRawCode(text);
+  }, [children, fileTrimmed, codePropString, rawCode]);
 
   // highlight.js cache (shared per component instance)
   const hljsRef = useRef<any | null>(null);
@@ -317,7 +316,7 @@ export function ICodeViewer(props: ICodeViewerProps) {
 
   // load file when file changes
   useEffect(() => {
-    const f = (file ?? '').trim();
+    const f = fileTrimmed;
     if (!f) return;
 
     const seq = ++requestSeqRef.current;
@@ -352,7 +351,7 @@ export function ICodeViewer(props: ICodeViewerProps) {
         setError(`Failed to load: ${f}`);
       }
     })();
-  }, [file, onFileLoaded, languageOverride]);
+  }, [fileTrimmed, onFileLoaded, languageOverride]);
 
   // line numbers
   const lineNumberList = useMemo(() => {
@@ -440,8 +439,17 @@ export function ICodeViewer(props: ICodeViewerProps) {
     }
   }, [rawCode, loading]);
 
+  const needsProjectionHost = !fileTrimmed && !codePropString;
+
   return (
     <i-code-viewer {...rest}>
+      {/* Hidden projection host for Angular-like "projected content" extraction */}
+      {needsProjectionHost ? (
+        <div ref={projectedRef} aria-hidden="true" style={{ display: 'none' }}>
+          {children}
+        </div>
+      ) : null}
+
       <div
         className={[
           'i-code-viewer',

@@ -12,7 +12,10 @@ export type IIconSize = keyof typeof I_ICON_SIZES;
 export type IIconInput = IIconName | (string & {});
 
 export type IIconProps = Omit<React.HTMLAttributes<HTMLElement>, 'children'> & {
+  /** Icon alias (IIconName) or raw class string (e.g. "fa-solid fa-user") */
   icon: IIconInput;
+
+  /** Size class key (maps to i-icon-md, etc). Defaults to 'md' (Angular parity). */
   size?: IIconSize;
 };
 
@@ -27,8 +30,10 @@ export function IIcon(props: IIconProps) {
 
   const innerClass = `${baseClass} ${iconSizeClass}`.trim();
 
+  // Angular renders: <i-icon><i class="..."></i></i-icon>
+  // and DOES NOT set a size attribute on <i-icon>.
   return (
-    <i-icon className={className} size={size} {...rest}>
+    <i-icon className={className} {...rest}>
       <i className={innerClass} />
     </i-icon>
   );

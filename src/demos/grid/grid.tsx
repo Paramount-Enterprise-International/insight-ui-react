@@ -5,9 +5,9 @@ import {
   IGridColumn,
   IGridColumnGroup,
   IGridCustomColumn,
+  IGridDataSource,
   IGridExpandableRow,
 } from '../../components/grid/grid';
-import { IGridDataSource } from '../../components/grid/grid-data-source';
 import {
   ISection,
   ISectionBody,

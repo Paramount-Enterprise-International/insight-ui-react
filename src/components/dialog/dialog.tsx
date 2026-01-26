@@ -1,4 +1,4 @@
-// dialog.tsx
+// dialog.tsx (React) — full updated file (visible removed from action types)
 import React, {
   createContext,
   useCallback,
@@ -10,7 +10,7 @@ import React, {
 } from 'react';
 import { IButton, type IButtonVariant } from '../button/button';
 import { IIcon, type IIconName } from '../icon/icon';
-import { IFCTextarea } from '../textarea/textarea';
+import { IFCTextArea } from '../textarea/textarea';
 
 /* =========================================================
  * Types (matches Angular)
@@ -316,30 +316,25 @@ export type IDialogActionType = IDialogActionTypes['type'];
 export type IDialogActionCancel = {
   type: 'cancel';
   className?: string;
-  visible?: boolean;
 };
 
 export type IDialogActionSave = {
   type: 'save';
   className?: string;
-  visible?: boolean;
 };
 
 export type IDialogActionOK = {
   type: 'ok';
   className?: string;
-  visible?: boolean;
 };
 
 export type IDialogActionConfirm = {
   type: 'confirm';
   className?: string;
-  visible?: boolean;
 };
 
 export type IDialogActionCustom = {
   type: 'custom';
-  visible?: boolean;
   label: string;
   variant?: IButtonVariant;
   icon?: IIconName | string;
@@ -360,6 +355,7 @@ export type IDialogProps = React.HTMLAttributes<HTMLElement> & {
   title?: string;
   actions?: DialogAction[];
 
+  /** on* prefix (matches Angular Outputs) */
   onOk?: (value?: any) => void;
   onConfirm?: (value?: any) => void;
   onSave?: (value?: any) => void;
@@ -374,11 +370,6 @@ function normalizeActions(
   return (actions ?? ['save', 'cancel']).map((a) =>
     typeof a === 'string' ? ({ type: a } as IDialogActionObject) : a
   );
-}
-
-function isVisible(a: { visible?: boolean } | undefined): boolean {
-  if (!a) return false;
-  return a.visible === undefined ? true : !!a.visible;
 }
 
 export function IDialog(props: IDialogProps) {
@@ -417,12 +408,15 @@ export function IDialog(props: IDialogProps) {
     (a) => a.type === 'custom'
   ) as IDialogActionCustom[];
 
-  const hasAnyActions =
-    customActions.some(isVisible) ||
-    isVisible(okAction) ||
-    isVisible(confirmAction) ||
-    isVisible(saveAction) ||
-    isVisible(cancelAction);
+  // Angular renders actions block if actions.length > 0
+  const hasActionsBlock = (actions ?? []).length > 0;
+
+  const hasBuiltInActions = !!(
+    okAction ||
+    confirmAction ||
+    saveAction ||
+    cancelAction
+  );
 
   return (
     <i-dialog {...rest}>
@@ -430,65 +424,63 @@ export function IDialog(props: IDialogProps) {
 
       <div className="i-dialog-content">{children}</div>
 
-      {hasAnyActions ? (
+      {hasActionsBlock ? (
         <div className="i-dialog-actions">
-          {customActions.filter(isVisible).map((a, idx) => (
-            <IButton
-              key={idx}
-              icon={a.icon as any}
-              className={a.className}
-              variant={a.variant || 'primary'}
-              onClick={() => {
-                a.onClick?.();
-                onCustomAction?.(a);
-              }}>
-              {a.label}
-            </IButton>
-          ))}
+          {customActions.length > 0
+            ? customActions.map((a, idx) => (
+                <IButton
+                  key={idx}
+                  icon={a.icon as any}
+                  className={a.className}
+                  variant={a.variant || 'primary'}
+                  onClick={() => {
+                    // Angular: only emits onCustomAction (does NOT call a.onClick)
+                    onCustomAction?.(a);
+                  }}>
+                  {a.label}
+                </IButton>
+              ))
+            : null}
 
-          {(isVisible(okAction) ||
-            isVisible(confirmAction) ||
-            isVisible(saveAction) ||
-            isVisible(cancelAction)) &&
-          customActions.filter(isVisible).length > 0 ? (
+          {hasBuiltInActions && customActions.length > 0 ? (
             <span className="flex-fill" />
           ) : null}
 
-          {isVisible(okAction) ? (
+          {okAction ? (
             <IButton
               icon="check"
               variant="primary"
-              className={okAction?.className}
+              className={okAction.className}
               onClick={() => onOk?.()}>
               OK
             </IButton>
           ) : null}
 
-          {isVisible(confirmAction) ? (
+          {confirmAction ? (
             <IButton
               icon="save"
               variant="primary"
-              className={confirmAction?.className}
+              className={confirmAction.className}
               onClick={() => onConfirm?.()}>
               Confirm
             </IButton>
           ) : null}
 
-          {isVisible(saveAction) ? (
+          {saveAction ? (
             <IButton
               icon="save"
               variant="primary"
-              className={saveAction?.className}
+              className={saveAction.className}
               onClick={() => onSave?.()}>
               Save
             </IButton>
           ) : null}
 
-          {isVisible(cancelAction) ? (
+          {cancelAction ? (
             <IButton
               icon="cancel"
               variant="danger"
-              className={cancelAction?.className}
+              className={cancelAction.className}
               onClick={(e) => {
                 e.preventDefault();
                 dialogRef?.close(undefined); // Angular closes with undefined
@@ -611,7 +603,7 @@ export function IConfirm() {
             e.preventDefault();
             submit();
           }}>
-          <IFCTextarea
+          <IFCTextArea
             label="Reason"
             placeholder="Fill your reason here.."
             value={reason}
@@ -666,9 +658,9 @@ export function useIConfirmService() {
   );
 }
 
-/** DONT REMOVE THIS, ITS FOR REMINDER 
+/** DONT REMOVE THIS, ITS FOR REMINDER
   <IDialogProvider>
     <App />
     <IDialogOutlet />
-  </IDialogProvider> 
+  </IDialogProvider>
 */

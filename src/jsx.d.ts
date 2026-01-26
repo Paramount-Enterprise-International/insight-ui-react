@@ -12,7 +12,7 @@ declare module 'react' {
         import('react').HTMLAttributes<HTMLElement>,
         HTMLElement
       > & {
-        light?: '';
+        light?: '' | 'true';
       };
 
       'i-icon': import('react').DetailedHTMLProps<
@@ -238,6 +238,11 @@ declare module 'react' {
       >;
 
       'ih-root': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+
+      'i-toggle': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement>,
         HTMLElement
       >;

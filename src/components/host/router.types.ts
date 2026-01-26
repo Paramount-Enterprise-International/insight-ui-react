@@ -1,19 +1,21 @@
-// routes.types.ts  (make sure filename matches your imports everywhere)
+// router.types.ts
 import type React from 'react';
+
+export type IRouteComponent = React.ComponentType<unknown>;
+
+export type ILoadComponent = () => Promise<IRouteComponent>;
 
 export type IRoute = {
   path?: string;
   index?: boolean;
 
-  // meta
+  redirectTo?: string;
+
   title?: string;
   breadcrumb?: string;
 
-  // render strategy
   element?: React.ReactNode;
-
-  // eslint-safe lazy loader
-  loadComponent?: () => Promise<{ default: React.ComponentType<unknown> }>;
+  loadComponent?: ILoadComponent;
 
   children?: IRoutes;
 };
