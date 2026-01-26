@@ -1,11 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
 
 /* =========================================
  * Types
@@ -32,7 +25,7 @@ export type IToggleProps = Omit<
   /** Matches your convention */
   onChange?: (checked: boolean) => void;
 
-  /** Optional: if you want touched semantics */
+  /** Optional: touched semantics */
   onTouched?: () => void;
 
   /** Optional: pass through input name/value for forms */
@@ -40,17 +33,45 @@ export type IToggleProps = Omit<
   value?: string;
 };
 
+const INTERACTIVE_SELECTOR_PARTS = [
+  'a',
+  'button',
+  'input',
+  'textarea',
+  'select',
+  'label',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="switch"]',
+  '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])',
+] as const;
+
+const INTERACTIVE_SELECTOR = INTERACTIVE_SELECTOR_PARTS.join(',');
+
 function isInteractive(el: HTMLElement | null): boolean {
   if (!el) return false;
+
   const tag = el.tagName.toLowerCase();
-  return (
+  if (
     tag === 'a' ||
     tag === 'button' ||
     tag === 'input' ||
     tag === 'textarea' ||
     tag === 'select' ||
-    el.getAttribute('role') === 'button'
-  );
+    tag === 'label'
+  )
+    return true;
+
+  const role = el.getAttribute('role');
+  if (role === 'button' || role === 'link' || role === 'switch') return true;
+
+  if ((el as any).isContentEditable) return true;
+
+  const tabindex = el.getAttribute('tabindex');
+  if (tabindex != null && tabindex !== '-1') return true;
+
+  return false;
 }
 
 /* =========================================
@@ -81,10 +102,6 @@ export function IToggle(props: IToggleProps) {
 
   const currentChecked = isControlled ? !!checked : uncontrolledChecked;
 
-  useEffect(() => {
-    if (inputRef.current) inputRef.current.checked = currentChecked;
-  }, [currentChecked]);
-
   const hostClassName = useMemo(() => {
     return [
       'i-toggle',
@@ -108,7 +125,7 @@ export function IToggle(props: IToggleProps) {
   const handleNativeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       if (disabled) return;
-      emitChange(e.target.checked);
+      emitChange(!!e.target.checked);
     },
     [disabled, emitChange]
   );
@@ -124,15 +141,15 @@ export function IToggle(props: IToggleProps) {
       const target = e.target as HTMLElement | null;
 
       // let native input handle itself
-      if (target && target.tagName.toLowerCase() === 'input') return;
+      if (target?.tagName.toLowerCase() === 'input') return;
 
       // if clicking something interactive inside projected label, don't toggle
       if (
         target &&
-        (isInteractive(target) ||
-          target.closest('a,button,input,textarea,select,[role="button"]'))
-      )
+        (isInteractive(target) || target.closest(INTERACTIVE_SELECTOR))
+      ) {
         return;
+      }
 
       inputRef.current?.click();
     },
@@ -144,8 +161,6 @@ export function IToggle(props: IToggleProps) {
       {...rest}
       className={hostClassName}
       onClick={handleHostClick}
-      // These help when someone tabs to the host (rare) + screen readers:
-      // we still keep the real input for actual form behavior.
       role="switch"
       aria-checked={currentChecked}
       aria-disabled={disabled || undefined}>
