@@ -35,7 +35,10 @@ function matchSegment(routeSegment: string, urlSegment: string) {
  * Implicit index support:
  * If a route has children AND has element/loadComponent,
  * we inject an index child that renders the original content.
- * The parent becomes an <Outlet/> wrapper and should NOT contribute breadcrumbs.
+ *
+ * IMPORTANT:
+ * - We MUST NOT do this for root/layout routes like path "" (DevLayout), otherwise the layout disappears.
+ * - We DO want it for non-root pages like "example-1" that have children.
  */
 function expandImplicitIndexRoutes(routes: IRoutes): IRoutes {
   const walk = (list: IRoutes): IRoutes =>
@@ -48,7 +51,15 @@ function expandImplicitIndexRoutes(routes: IRoutes): IRoutes {
       const expandedChildren = walk(r.children ?? []);
 
       if (!hasOwnContent) {
-        // grouping/layout node
+        // grouping/layout node (already outlet-only)
+        return { ...r, children: expandedChildren };
+      }
+
+      // ✅ DO NOT rewrite index-like layout routes (path "" / undefined)
+      // This is what keeps DevLayout rendering in AppDev.
+      const p = r.path;
+      const isIndexLikeLayout = p == null || p === '';
+      if (isIndexLikeLayout) {
         return { ...r, children: expandedChildren };
       }
 
@@ -56,18 +67,17 @@ function expandImplicitIndexRoutes(routes: IRoutes): IRoutes {
 
       const implicitIndex: IRoute = {
         index: true,
-        // keep meta here (leaf), not on the parent
-        title: r.title,
-        breadcrumb: r.breadcrumb,
+        // ✅ NO meta here (parent keeps it so nested children show parent crumb)
+        title: undefined,
+        breadcrumb: undefined,
+        redirectTo: undefined,
         element: r.element,
         loadComponent: r.loadComponent,
       };
 
-      // parent becomes pure outlet wrapper and MUST NOT add crumb/meta
+      // ✅ parent becomes outlet wrapper but keeps meta
       const parent: IRoute = {
         ...r,
-        title: undefined,
-        breadcrumb: undefined,
         element: <Outlet />,
         loadComponent: undefined,
         children: hasExplicitIndex
@@ -130,7 +140,7 @@ function findMatchChain(
     const remaining = urlSegments.slice(routeSegments.length);
 
     if (remaining.length === 0) {
-      // exact match: if it has index child, prefer it
+      // exact match: if it has index child, include it (it renders the parent’s content)
       if (r.children?.length) {
         const indexChild = r.children.find((c) => c.index);
         if (indexChild) {
@@ -162,7 +172,7 @@ function buildBreadcrumbsFromChain(chain: MatchNode[]): IBreadcrumbItem[] {
     const label = m.route.breadcrumb ?? m.route.title;
     if (!label) continue;
 
-    // ✅ de-dupe consecutive labels (fixes "Reports > Reports")
+    // de-dupe consecutive labels
     const last = items[items.length - 1];
     if (last && last.label === label) continue;
 
@@ -199,7 +209,7 @@ function renderRouteTree(routes: IRoutes): React.ReactNode {
   return routes.map((r, idx) => {
     const element = makeElement(r);
 
-    // ✅ treat path "" redirect as index redirect
+    // treat path "" redirect as index redirect
     const isIndexLike = r.index === true || r.path === '' || r.path == null;
 
     if (isIndexLike) {

@@ -89,12 +89,6 @@ export function IHContent(props: {
   breadcrumbs?: IBreadcrumbItem[] | null;
   onSidebarToggled?: (visible: boolean) => void;
   defaultSidebarVisible?: boolean;
-
-  /**
-   * Optional:
-   * - If provided, this wrapper will use it (MF host mode)
-   * - Otherwise it will use react-router navigate() (standalone mode)
-   */
   onNavigate?: (url: string) => void;
 }) {
   const nav = useNavigate();
@@ -129,8 +123,9 @@ export function IHContent(props: {
 
   const onCrumbClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
-      if (!isPlainLeftClick(e)) return; // allow new tab, etc.
+      if (!isPlainLeftClick(e)) return;
       e.preventDefault();
+
       if (url.startsWith('/')) go(url);
       else window.location.href = url;
     },
@@ -154,8 +149,11 @@ export function IHContent(props: {
       <div className="ih-content-breadcrumbs">
         {crumbs.length ? (
           crumbs.map((b, idx) => {
+            const first = idx === 0;
             const last = idx === crumbs.length - 1;
-            const clickable = !last && !!b.url;
+
+            // ✅ first crumb is never clickable (Dashboard)
+            const clickable = !first && !last && !!b.url;
 
             return (
               <React.Fragment key={`${b.label}-${idx}`}>
@@ -173,7 +171,7 @@ export function IHContent(props: {
                       last
                         ? 'ih-content-breadcrumb__current'
                         : 'ih-content-breadcrumb__link',
-                      idx === 0 ? 'ih-content-breadcrumb__first' : '',
+                      first ? 'ih-content-breadcrumb__first' : '',
                     ]
                       .filter(Boolean)
                       .join(' ')}>
@@ -656,15 +654,15 @@ export function IHSidebar(props: IHSidebarProps) {
 
 function HostApiBridge(props: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const ui = useHostUi();
+  const { setTitle, setBreadcrumbs } = useHostUi(); // ✅ only grab stable setters
 
   const hostApi = useMemo<IHostApi>(
     () => ({
       navigate: (url) => navigate(url),
-      setTitle: (t) => ui.setTitle(t),
-      setBreadcrumbs: (b) => ui.setBreadcrumbs(b),
+      setTitle,
+      setBreadcrumbs,
     }),
-    [navigate, ui]
+    [navigate, setTitle, setBreadcrumbs] // ✅ stable deps
   );
 
   return (
