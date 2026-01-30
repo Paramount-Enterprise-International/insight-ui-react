@@ -1,19 +1,20 @@
 /* datepicker.tsx */
 /**
  * IDatepicker (React)
- * Version: 1.5.3
+ * Version: 1.5.4
  *
- * Parity with Angular IDatepicker 1.5.3
+ * Parity with Angular IDatepicker 1.5.3 + "smart controlled" fixes
  *
  * Fixes:
- * - ✅ IMPORTANT: prevent value from being wiped due to bubbled "input" events
- *   from inner month/year i-select inputs.
- *   -> Only handle input when event.target is the date input itself.
- * - Keep portal + positioning + flicker guard (hide panel until positioned).
- * - Portal panel to body to avoid overflow clipping (default true).
+ * - ✅ Prevent value wipe while typing in controlled mode:
+ *   - Do NOT emit onChanged(null) for partial/invalid typing (only emit null on clear)
+ *   - Echo-suppression while the inner input is focused (ignore prop echoes)
+ * - ✅ Keep bubbled "input" events from month/year i-select from wiping date:
+ *   -> only handle input when event.target is the date input itself.
+ * - Keep portal + positioning + flicker guard.
  *
  * Notes:
- * - Uses IInput mask { type:'date', format }
+ * - Uses IInput mask { type:'date', format } (ensure your React IInput mask supports smart keydown)
  * - Uses ISelect for month/year (ISelect already portals its own <i-options>)
  */
 
@@ -137,6 +138,14 @@ function isSameDate(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+function dateKey(d: Date | null): string | null {
+  if (!d) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function parseInputDate(value: string, format: string): Date | null {
@@ -298,6 +307,10 @@ export function IDatepicker(props: IDatepickerProps) {
   const [panelHidden, setPanelHidden] = useState(false);
   const wantsOpenRef = useRef(false);
 
+  // ✅ smart controlled echo suppression
+  const isEditingRef = useRef(false);
+  const lastEmittedKeyRef = useRef<string | null>(null);
+
   const weeks = useMemo(
     () => buildCalendar(viewYear, viewMonth, modelValue),
     [viewYear, viewMonth, modelValue]
@@ -328,32 +341,33 @@ export function IDatepicker(props: IDatepickerProps) {
     const host = hostRef.current;
     if (!host) return null;
 
-    // match Angular: prefer i-input host rect
     const iInput = host.querySelector('i-input') as HTMLElement | null;
     if (iInput?.getBoundingClientRect) return iInput.getBoundingClientRect();
 
     return (host as any).getBoundingClientRect?.() ?? null;
   };
 
-  // -------- writeValue parity --------
+  // -------- writeValue parity (SMART) --------
   useEffect(() => {
     const next = normalizeToDate(value, format);
+    const nextKey = dateKey(next);
+
+    // ✅ ignore "echo" while user is typing
+    if (isEditingRef.current && nextKey === lastEmittedKeyRef.current) {
+      setModelValue(next);
+      return;
+    }
 
     setModelValue(next);
     setDisplayText(next ? formatDateLocal(next, format) : '');
 
-    const base =
-      next ??
-      parseInputDate(next ? formatDateLocal(next, format) : '', format) ??
-      startOfDay(new Date());
-
+    const base = next ?? startOfDay(new Date());
     setViewYear(base.getFullYear());
     setViewMonth(base.getMonth());
     setYears((prev) => ensureYearRange(base.getFullYear(), prev));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, format]);
 
-  // ngOnInit parity: default visual today (only if consumer doesn't provide value)
+  // ngOnInit parity: default visual today (only if truly blank on mount)
   useEffect(() => {
     if (!modelValue && !displayText) {
       const today = startOfDay(new Date());
@@ -366,7 +380,6 @@ export function IDatepicker(props: IDatepickerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // keep years range sane when viewYear changes
   useEffect(() => {
     if (!viewYear) return;
     setYears((p) => ensureYearRange(viewYear, p));
@@ -556,7 +569,6 @@ export function IDatepicker(props: IDatepickerProps) {
   const openPanel = useCallback(() => {
     if (disabled) return;
     if (isOpen) return;
-
     setIsOpen(true);
   }, [disabled, isOpen]);
 
@@ -587,26 +599,19 @@ export function IDatepicker(props: IDatepickerProps) {
     [removeGlobalListeners]
   );
 
-  // initial open: portal + hide until positioned (flicker guard)
   useLayoutEffect(() => {
     if (!isOpen) return;
 
     wantsOpenRef.current = true;
 
-    // ensure DOM refs available
     refreshInnerInputRef();
-
-    // hide now
     setPanelHidden(true);
 
-    // apply portal marker class (CSS may rely on it)
     const panel = getPanelEl();
     if (panel && portalToBody)
       panel.classList.add('i-datepicker-panel--portaled');
 
     addGlobalListeners();
-
-    // position next frame then show
     scheduleReposition(() => setPanelHidden(false));
 
     return () => {
@@ -620,7 +625,6 @@ export function IDatepicker(props: IDatepickerProps) {
     scheduleReposition,
   ]);
 
-  // reposition on relevant changes while open
   useLayoutEffect(() => {
     if (!isOpen) return;
     scheduleReposition();
@@ -671,15 +675,33 @@ export function IDatepicker(props: IDatepickerProps) {
     (raw: string) => {
       setDisplayText(raw);
 
-      const parsed = parseInputDate(raw, format);
-      setModelValue(parsed);
+      const trimmed = raw.trim();
 
-      if (parsed) {
-        setViewYear(parsed.getFullYear());
-        setViewMonth(parsed.getMonth());
-        setYears((p) => ensureYearRange(parsed.getFullYear(), p));
+      // ✅ allow user clear
+      if (!trimmed) {
+        setModelValue(null);
+        lastEmittedKeyRef.current = null;
+        onChanged(null);
+
+        if (isOpen) scheduleReposition();
+        return;
       }
 
+      const parsed = parseInputDate(trimmed, format);
+
+      // ✅ CRITICAL: partial/invalid typing should NOT wipe external value
+      if (!parsed) {
+        if (isOpen) scheduleReposition();
+        return;
+      }
+
+      setModelValue(parsed);
+      setViewYear(parsed.getFullYear());
+      setViewMonth(parsed.getMonth());
+      setYears((p) => ensureYearRange(parsed.getFullYear(), p));
+
+      // record emission for echo suppression
+      lastEmittedKeyRef.current = dateKey(parsed);
       onChanged(parsed);
 
       if (isOpen) scheduleReposition();
@@ -696,6 +718,7 @@ export function IDatepicker(props: IDatepickerProps) {
       setModelValue(selected);
       setDisplayText(formatDateLocal(selected, format));
 
+      lastEmittedKeyRef.current = dateKey(selected);
       onChanged(selected);
 
       setViewYear(selected.getFullYear());
@@ -772,13 +795,11 @@ export function IDatepicker(props: IDatepickerProps) {
     const dateInput = inputElRef.current;
     if (!dateInput) return;
 
-    // only react if THIS input event is from the date input itself
     if (target !== dateInput) return;
 
     handleInput(dateInput.value ?? '');
   };
 
-  // close on outside click with Angular-like guard for portaled i-options
   useEffect(() => {
     if (!isOpen) return;
 
@@ -811,14 +832,12 @@ export function IDatepicker(props: IDatepickerProps) {
     return () => document.removeEventListener('click', onDocClick);
   }, [closePanel, isOpen]);
 
-  // cleanup on unmount
   useEffect(() => {
     return () => {
       closePanel(true);
     };
   }, [closePanel]);
 
-  // -------- render panel (portaled like Angular) --------
   const panelNode = (
     <i-datepicker-panel
       ref={(el) => {
@@ -894,7 +913,6 @@ export function IDatepicker(props: IDatepickerProps) {
         refreshInnerInputRef();
       }}
       className={className}
-      // capture to see bubbled input before it hits host bubbling handlers elsewhere
       onInput={onHostInputCapture as any}
       {...rest}>
       <IInput
@@ -904,13 +922,15 @@ export function IDatepicker(props: IDatepickerProps) {
         placeholder={placeholder}
         readonly={disabled}
         value={displayText}
-        // we intentionally don't rely on this for correctness (bubble problem),
-        // but it helps keep IInput controlled if it wires onInput internally.
-        onInput={() => {
-          /* handled via host capture + target check */
+        // ✅ editing tracking for echo suppression
+        onFocus={() => {
+          isEditingRef.current = true;
         }}
         onBlur={() => {
-          /* parity: touched; no external callback here */
+          isEditingRef.current = false;
+        }}
+        onInput={() => {
+          /* handled via host capture + target check */
         }}
       />
 
