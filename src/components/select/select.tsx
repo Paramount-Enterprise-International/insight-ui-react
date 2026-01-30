@@ -1,14 +1,27 @@
-// select.tsx (React)
-// ISelect - React parity for Angular ISelect (single-select only)
-// - opens on typing even if collapsed
-// - toggle behavior:
-//    - closed -> open
-//    - open + no results -> clear filter & show all (keep open)
-//    - open + has results -> close & restore selected display text
-//
-// NOTE: multi-select intentionally removed for now.
+/* select.tsx */
+/**
+ * ISelect (React)
+ * Version: 2.2.2
+ *
+ * Parity with Angular ISelect 2.2.2
+ *
+ * Fixes:
+ * - Render options container as <i-options> (not <div>)
+ * - Match dropdown width to visible control width (uses i-input host rect)
+ * - Keep portal-to-body + fixed positioning for overflow parents
+ * - ✅ Fix flicker: portal + measure + position BEFORE showing panel
+ *   -> options panel is hidden (visibility: hidden; pointer-events: none)
+ *      until first reposition pass completes on next animation frame.
+ */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { createPortal } from 'react-dom';
 import type { Observable } from 'rxjs';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
@@ -51,10 +64,19 @@ export type ISelectProps<T = any> = Omit<
 
   panelPosition?: ISelectPanelPosition;
 
-  /** provide list directly */
+  /** portal panel to body to avoid overflow clipping (default true) */
+  portalToBody?: boolean;
+
+  /** gap between trigger and panel (px) */
+  panelOffset?: number;
+
+  /** match dropdown width to control width (default true) */
+  matchTriggerWidth?: boolean;
+
+  /** Array options */
   options?: T[] | null;
 
-  /** or provide as observable */
+  /** Observable options */
   options$?: Observable<T[]> | null;
 
   /**
@@ -149,10 +171,17 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     placeholder = '',
     disabled = false,
     invalid = false,
+
     filterDelay = 200,
     panelPosition = 'bottom left',
+
+    portalToBody = true,
+    panelOffset = 6,
+    matchTriggerWidth = true,
+
     options = null,
     options$ = null,
+
     displayWith,
     filterPredicate = defaultFilterPredicate,
     renderOption,
@@ -170,6 +199,10 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
   // DOM
   const hostRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const panelRef = useRef<HTMLElement | null>(null);
+
+  // positioning raf
+  const rafRef = useRef<number>(0);
 
   // options
   const [rawOptions, setRawOptions] = useState<T[]>(() => options ?? []);
@@ -190,30 +223,31 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
   const [highlightIndex, setHighlightIndex] = useState<number>(-1);
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
+  // ✅ flicker control: hide panel until first reposition completes
+  const [panelHidden, setPanelHidden] = useState<boolean>(false);
+  const wantsOpenRef = useRef<boolean>(false);
+
   // Rx filter debounce (parity with Angular)
   const filterInput$ = useMemo(() => new Subject<string>(), []);
   const filterSubRef = useRef<Subscription | null>(null);
   const optionsSubRef = useRef<Subscription | null>(null);
 
-  // ---------- displayWith logic (parity-ish) ----------
+  // ---------- displayWith logic ----------
   const displayWithIsExplicit =
     displayWith !== undefined && displayWith !== null;
 
   const resolveDisplayText = (row: T | null): string => {
     if (row === null || row === undefined) return '';
 
-    // CASE 1: explicit function
     if (typeof displayWith === 'function' && displayWithIsExplicit) {
       return displayWith(row);
     }
 
-    // CASE 2: explicit string key (path)
     if (typeof displayWith === 'string') {
       const v = resolveByPath(row as any, displayWith);
       return v === null || v === undefined ? '' : String(v);
     }
 
-    // CASE 3A: auto-mapping when object
     if (!displayWithIsExplicit && typeof row === 'object') {
       const entries = Object.entries(row as any);
       if (!entries.length) return '';
@@ -224,7 +258,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
         : String(labelValue);
     }
 
-    // CASE 4: fallback
     return String(row as any);
   };
 
@@ -236,7 +269,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
 
   // ---------- subscribe options$ ----------
   useEffect(() => {
-    // direct options input always wins unless options$ is provided
     if (options$) {
       setIsLoading(true);
 
@@ -275,24 +307,8 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
       filterSubRef.current?.unsubscribe();
       filterSubRef.current = null;
     };
-  }, [filterInput$, filterDelay]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ---------- sync view text from model/options ----------
-  useEffect(() => {
-    // on init and when model/options change: keep displayText showing selected label (if closed)
-    if (!isOpen) {
-      setDisplayText(resolveDisplayText(modelValue));
-      setFilterText('');
-      setHighlightIndex(-1);
-    }
-    // keep filteredOptions in sync when open
-    if (isOpen) {
-      applyFilter(true, filterText);
-    } else {
-      setFilteredOptions(rawOptions);
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelValue, rawOptions]);
+  }, [filterInput$, filterDelay]);
 
   // ---------- derived ----------
   const panelPositionClass = useMemo(
@@ -301,7 +317,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
   );
 
   const hasNoResults = isOpen && !!filterText && filteredOptions.length === 0;
-
   const hasOptionsList = isOpen && filteredOptions.length > 0;
 
   // ---------- filter ----------
@@ -330,18 +345,238 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     });
   };
 
+  // ---------- sync view text from model/options ----------
+  useEffect(() => {
+    // when closed: show label; clear filter/highlight
+    if (!isOpen) {
+      setDisplayText(resolveDisplayText(modelValue));
+      setFilterText('');
+      setHighlightIndex(-1);
+      setFilteredOptions(rawOptions);
+      return;
+    }
+
+    // when open: keep filtering
+    applyFilter(true, filterText);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelValue, rawOptions, isOpen]);
+
+  // ---------- positioning ----------
+  const getAnchorRect = (): DOMRect | null => {
+    const host = hostRef.current;
+    if (!host) return null;
+
+    // ✅ prefer i-input host (matches Angular fix)
+    const iInput = host.querySelector('i-input') as HTMLElement | null;
+    if (iInput?.getBoundingClientRect) return iInput.getBoundingClientRect();
+
+    // fallback: i-select host
+    if ((host as any).getBoundingClientRect)
+      return host.getBoundingClientRect();
+
+    // last fallback: native input
+    const input = host.querySelector(
+      'i-input input'
+    ) as HTMLInputElement | null;
+    return input?.getBoundingClientRect?.() ?? null;
+  };
+
+  const repositionPanelNow = () => {
+    if (!wantsOpenRef.current) return;
+
+    const panel = panelRef.current;
+    const rect = getAnchorRect();
+    if (!panel || !rect) return;
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const gap = 8;
+
+    const pos = (panelPosition || 'bottom left').trim().toLowerCase();
+
+    // fixed positioning (Angular parity)
+    panel.style.position = 'fixed';
+    panel.style.zIndex = '2000';
+    panel.style.boxSizing = 'border-box';
+    panel.style.overflowY = 'auto';
+
+    // width matches trigger
+    if (matchTriggerWidth) {
+      panel.style.width = `${Math.round(rect.width)}px`;
+    } else {
+      panel.style.width = '';
+    }
+
+    // measure after width
+    const panelRect = panel.getBoundingClientRect();
+
+    const wantTop = pos.startsWith('top');
+    const wantBottom =
+      pos.startsWith('bottom') ||
+      (!pos.startsWith('top') &&
+        !pos.startsWith('left') &&
+        !pos.startsWith('right'));
+
+    const wantLeft = pos.includes('left') || pos === 'left';
+    const wantRight = pos.includes('right') || pos === 'right';
+    const alignRight = wantRight && !wantLeft;
+
+    // Horizontal clamp ok
+    let left = alignRight ? rect.right - panelRect.width : rect.left;
+    const maxLeft = Math.max(gap, vw - panelRect.width - gap);
+    left = Math.min(Math.max(gap, left), maxLeft);
+
+    // side positions
+    if (pos === 'left') {
+      left = rect.left - panelRect.width - panelOffset;
+      left = Math.min(Math.max(gap, left), maxLeft);
+
+      const top = Math.min(
+        Math.max(gap, rect.top),
+        Math.max(gap, vh - panelRect.height - gap)
+      );
+
+      panel.style.left = `${Math.round(left)}px`;
+      panel.style.top = `${Math.round(top)}px`;
+
+      const maxH = Math.max(60, vh - top - gap);
+      panel.style.maxHeight = `${Math.floor(maxH)}px`;
+      return;
+    }
+
+    if (pos === 'right') {
+      left = rect.right + panelOffset;
+      left = Math.min(Math.max(gap, left), maxLeft);
+
+      const top = Math.min(
+        Math.max(gap, rect.top),
+        Math.max(gap, vh - panelRect.height - gap)
+      );
+
+      panel.style.left = `${Math.round(left)}px`;
+      panel.style.top = `${Math.round(top)}px`;
+
+      const maxH = Math.max(60, vh - top - gap);
+      panel.style.maxHeight = `${Math.floor(maxH)}px`;
+      return;
+    }
+
+    // Top/Bottom: keep attached; constrain height (no vertical clamp)
+    const spaceBelow = vh - rect.bottom - panelOffset - gap;
+    const spaceAbove = rect.top - panelOffset - gap;
+
+    let side: 'top' | 'bottom' = wantTop && !wantBottom ? 'top' : 'bottom';
+
+    // flip if needed
+    if (
+      side === 'bottom' &&
+      panelRect.height > spaceBelow &&
+      spaceAbove > spaceBelow
+    ) {
+      side = 'top';
+    } else if (
+      side === 'top' &&
+      panelRect.height > spaceAbove &&
+      spaceBelow > spaceAbove
+    ) {
+      side = 'bottom';
+    }
+
+    const maxH = Math.max(60, side === 'bottom' ? spaceBelow : spaceAbove);
+    panel.style.maxHeight = `${Math.floor(maxH)}px`;
+
+    const top =
+      side === 'bottom'
+        ? rect.bottom + panelOffset
+        : rect.top - panelRect.height - panelOffset;
+
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
+  };
+
+  const scheduleReposition = (after?: () => void) => {
+    if (!wantsOpenRef.current) return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      repositionPanelNow();
+      after?.();
+    });
+  };
+
+  // ✅ Initial open: hide, then position on next frame, then show (flicker fix)
+  useLayoutEffect(() => {
+    if (!isOpen) {
+      wantsOpenRef.current = false;
+      setPanelHidden(false);
+      return;
+    }
+
+    wantsOpenRef.current = true;
+
+    // if no list, don't bother
+    if (!hasOptionsList) {
+      setPanelHidden(false);
+      return;
+    }
+
+    // hide immediately (prevents "wrong side" flash)
+    setPanelHidden(true);
+
+    // position next frame, then show
+    scheduleReposition(() => setPanelHidden(false));
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, hasOptionsList]);
+
+  // reposition on changes while open
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    if (!hasOptionsList) return;
+    scheduleReposition();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isOpen,
+    panelPosition,
+    matchTriggerWidth,
+    panelOffset,
+    filteredOptions.length,
+  ]);
+
+  // reposition on scroll/resize (capture=true catches nested scrolling)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const onAnyScroll = () => scheduleReposition();
+    const onResize = () => scheduleReposition();
+
+    window.addEventListener('scroll', onAnyScroll, true);
+    document.addEventListener('scroll', onAnyScroll, true);
+    window.addEventListener('resize', onResize, true);
+
+    return () => {
+      window.removeEventListener('scroll', onAnyScroll, true);
+      document.removeEventListener('scroll', onAnyScroll, true);
+      window.removeEventListener('resize', onResize, true);
+
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = 0;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
   // ---------- open/close ----------
   const scrollHighlightedIntoView = () => {
-    // defer until options rendered
     setTimeout(() => {
       if (!isOpen) return;
-      const host = hostRef.current;
-      if (!host) return;
 
-      const list = host.querySelector('.i-options') as HTMLElement | null;
-      if (!list) return;
+      const panel = panelRef.current;
+      if (!panel) return;
 
-      const items = list.querySelectorAll('.i-option');
+      const items = panel.querySelectorAll('.i-option');
       const el = items[highlightIndex] as HTMLElement | undefined;
       el?.scrollIntoView?.({ block: 'nearest' });
     });
@@ -353,13 +588,17 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
 
     setIsOpen(true);
 
-    // ensure filter applied
-    const term = filterText;
+    // compute list immediately (parity)
+    const term = filterText.toLowerCase().trim();
     const next = !term
       ? [...rawOptions]
-      : rawOptions.filter((row) =>
-          filterPredicate(row, term.toLowerCase().trim())
-        );
+      : rawOptions.filter((row) => {
+          try {
+            return filterPredicate(row, term);
+          } catch {
+            return false;
+          }
+        });
 
     setFilteredOptions(next);
 
@@ -368,7 +607,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
       return;
     }
 
-    // highlight selected row if present
     if (modelValue !== null && modelValue !== undefined) {
       const idx = next.indexOf(modelValue as T);
       if (idx >= 0) {
@@ -385,6 +623,20 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
   const closeDropdown = () => {
     setIsOpen(false);
     setHighlightIndex(-1);
+
+    // reset inline styles (nice hygiene; Angular restores panel DOM, we keep portal)
+    const panel = panelRef.current;
+    if (panel) {
+      panel.style.position = '';
+      panel.style.zIndex = '';
+      panel.style.left = '';
+      panel.style.top = '';
+      panel.style.width = '';
+      panel.style.maxHeight = '';
+      panel.style.overflowY = '';
+      panel.style.boxSizing = '';
+      panel.classList.remove('i-options--portaled');
+    }
   };
 
   const focus = () => {
@@ -397,10 +649,9 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     setDisplayText(val);
     setFilterText(val);
 
-    // open if collapsed, and show filtered options
     if (!isOpen) {
       setIsOpen(true);
-      // next tick after open: apply filter
+      // filter after state settles
       setTimeout(() => applyFilter(true, val), 0);
     } else {
       applyFilter(true, val);
@@ -410,12 +661,11 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
   const onHostInput: React.FormEventHandler<HTMLInputElement> = (e) => {
     if (disabled) return;
     const v = e.currentTarget.value ?? '';
-
     setIsLoading(true);
     filterInput$.next(v);
   };
 
-  // ---------- toggle behavior (matches your Angular) ----------
+  // ---------- toggle behavior ----------
   const toggleDropdown = (event?: React.MouseEvent) => {
     if (event) {
       event.preventDefault();
@@ -426,12 +676,11 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     if (!isOpen) {
       openDropdown();
     } else if (hasNoResults) {
-      // open + no results -> clear filter & show all, keep open
       setDisplayText('');
       setFilterText('');
       applyFilter(true, '');
+      scheduleReposition();
     } else {
-      // open + has results -> close and restore selected display text
       setDisplayText(resolveDisplayText(modelValue));
       setFilterText('');
       closeDropdown();
@@ -444,7 +693,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
   const emitChange = (row: T | null) => {
     const label = resolveDisplayText(row);
     const payload: ISelectChange<T> = { value: row, label };
-
     onChanged?.(payload);
     onOptionSelected?.(payload);
   };
@@ -452,28 +700,22 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
   const selectRow = (row: T) => {
     if (disabled) return;
 
-    if (!isControlled) {
-      setModelValue(row);
-    }
-    // for controlled, still update display immediately
-    setDisplayText(resolveDisplayText(row));
+    if (!isControlled) setModelValue(row);
+
+    const label = resolveDisplayText(row);
+    setDisplayText(label);
     setFilterText('');
-
-    // keep options list fresh
     applyFilter(true, '');
-
     emitChange(row);
+
     closeDropdown();
   };
 
   const isRowSelected = (row: T) => modelValue === row;
 
   const setActiveIndex = (idx: number) => {
-    if (idx < 0 || idx >= filteredOptions.length) {
-      setHighlightIndex(-1);
-    } else {
-      setHighlightIndex(idx);
-    }
+    if (idx < 0 || idx >= filteredOptions.length) setHighlightIndex(-1);
+    else setHighlightIndex(idx);
   };
 
   const moveHighlight = (delta: number) => {
@@ -524,7 +766,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
       case 'Escape':
         if (isOpen) {
           event.preventDefault();
-          // close and restore selected text (same as toggle close path)
           setDisplayText(resolveDisplayText(modelValue));
           setFilterText('');
           closeDropdown();
@@ -533,17 +774,21 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     }
   };
 
-  // ---------- outside click ----------
+  // ---------- outside click (host + panel) ----------
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!isOpen) return;
 
       const target = e.target as Node | null;
-      const host = hostRef.current;
-      if (!host) return;
+      if (!target) return;
 
-      if (target && !host.contains(target)) {
-        // close and restore
+      const host = hostRef.current;
+      const panel = panelRef.current;
+
+      const insideHost = !!host && host.contains(target);
+      const insidePanel = !!panel && panel.contains(target);
+
+      if (!insideHost && !insidePanel) {
         setDisplayText(resolveDisplayText(modelValue));
         setFilterText('');
         closeDropdown();
@@ -553,13 +798,11 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     document.addEventListener('click', onDocClick);
     return () => document.removeEventListener('click', onDocClick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, modelValue, rawOptions]);
+  }, [isOpen, modelValue]);
 
   // ---------- append addon ----------
   const appendAddon: IInputAddonButton | IInputAddonLoading = useMemo(() => {
-    if (isLoading) {
-      return { type: 'loading', visible: true };
-    }
+    if (isLoading) return { type: 'loading', visible: true };
 
     return {
       type: 'button',
@@ -569,20 +812,68 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
       onClick: () => toggleDropdown(),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    isLoading,
-    isOpen,
-    disabled,
-    hasNoResults,
-    modelValue,
-    displayText,
-    filterText,
-  ]);
+  }, [isLoading, isOpen]);
+
+  // ---------- render options (as <i-options>) ----------
+  const optionsNode = hasOptionsList ? (
+    <i-options
+      ref={(el) => {
+        panelRef.current = el as any;
+
+        // keep a class marker like Angular does
+        if (panelRef.current) {
+          if (portalToBody)
+            panelRef.current.classList.add('i-options--portaled');
+          else panelRef.current.classList.remove('i-options--portaled');
+        }
+      }}
+      className={`i-options scroll scroll-y ${panelPositionClass}`}
+      style={
+        panelHidden
+          ? {
+              visibility: 'hidden',
+              pointerEvents: 'none',
+            }
+          : undefined
+      }>
+      {filteredOptions.map((row, idx) => (
+        <div
+          key={(row as any)?.id ?? `${idx}-${String(row)}`}
+          className={[
+            'i-option',
+            highlightIndex === idx ? 'active' : null,
+            isRowSelected(row) ? 'selected' : null,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          onMouseEnter={() => setActiveIndex(idx)}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            selectRow(row);
+          }}>
+          <div className="i-option-label">
+            {renderOption ? (
+              renderOption(row)
+            ) : (
+              <span>{highlightParts(resolveDisplayText(row), filterText)}</span>
+            )}
+          </div>
+
+          {isRowSelected(row) ? (
+            <span className="i-option-check">
+              <IIcon icon="check" />
+            </span>
+          ) : null}
+        </div>
+      ))}
+    </i-options>
+  ) : null;
 
   return (
     <i-select
       {...hostProps}
-      className={className}
+      className={className as any}
       ref={(el) => {
         hostRef.current = el as any;
       }}
@@ -597,44 +888,11 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
         onInput={onHostInput}
       />
 
-      {hasOptionsList ? (
-        <div className={`i-options scroll scroll-y ${panelPositionClass}`}>
-          {filteredOptions.map((row, idx) => (
-            <div
-              key={(row as any)?.id ?? `${idx}-${String(row)}`}
-              className={[
-                'i-option',
-                highlightIndex === idx ? 'active' : null,
-                isRowSelected(row) ? 'selected' : null,
-              ]
-                .filter(Boolean)
-                .join(' ')}
-              onMouseEnter={() => setActiveIndex(idx)}
-              onMouseDown={(e) => {
-                // prevent blur (Angular uses mousedown too)
-                e.preventDefault();
-                e.stopPropagation();
-                selectRow(row);
-              }}>
-              <div className="i-option-label">
-                {renderOption ? (
-                  renderOption(row)
-                ) : (
-                  <span>
-                    {highlightParts(resolveDisplayText(row), filterText)}
-                  </span>
-                )}
-              </div>
-
-              {isRowSelected(row) ? (
-                <span className="i-option-check">
-                  <IIcon icon="check" />
-                </span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : null}
+      {portalToBody
+        ? optionsNode
+          ? createPortal(optionsNode, document.body)
+          : null
+        : optionsNode}
     </i-select>
   );
 }

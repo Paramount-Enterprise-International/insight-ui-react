@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import { IIcon, type IIconInput } from '../icon';
 
 export type IPillSize = '2xs' | 'xs' | 'sm' | 'md' | 'lg';
 export type IPillVariant =
@@ -9,6 +10,7 @@ export type IPillVariant =
   | 'danger';
 
 export type IPillProps = Omit<React.HTMLAttributes<HTMLElement>, 'onClick'> & {
+  icon?: IIconInput;
   size?: IPillSize;
   variant?: IPillVariant;
 
@@ -25,6 +27,7 @@ export type IPillProps = Omit<React.HTMLAttributes<HTMLElement>, 'onClick'> & {
 };
 
 export function IPill({
+  icon,
   size = 'md',
   variant = 'default',
   disabled = false,
@@ -64,13 +67,15 @@ export function IPill({
 
   return (
     <i-pill
-      // base class for "i-pill, .i-pill" selector group
+      // base class for the "i-pill, .i-pill" selector group
       class={['i-pill', className].filter(Boolean).join(' ')}
       size={size}
       variant={variant}
       aria-disabled={disabled ? 'true' : undefined}
       onClick={handleHostClick}
       {...(rest as any)}>
+      {icon ? <IIcon icon={icon} size={size} /> : null}
+
       <span className="i-pill__content">{children}</span>
 
       {closable ? (
