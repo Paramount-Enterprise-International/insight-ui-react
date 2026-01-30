@@ -76,12 +76,54 @@ export type UseInputMaskOptions = {
   enableDefault?: boolean;
 };
 
+/* =========================================
+ * Helpers
+ * ========================================= */
+
+function clamp(n: number, min: number, max: number): number {
+  if (n < min) return min;
+  if (n > max) return max;
+  return n;
+}
+
+function normalizeArray<T>(v: T | T[] | undefined): T[] {
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
+function countDigitsBeforePos(value: string, pos: number): number {
+  let n = 0;
+  for (let i = 0; i < Math.min(pos, value.length); i++) {
+    if (/\d/.test(value[i])) n++;
+  }
+  return n;
+}
+
+function caretPosAfterDigits(value: string, digitCount: number): number {
+  if (digitCount <= 0) return 0;
+
+  let seen = 0;
+  for (let i = 0; i < value.length; i++) {
+    if (/\d/.test(value[i])) {
+      seen++;
+      if (seen === digitCount) return i + 1;
+    }
+  }
+  return value.length;
+}
+
 /**
  * React counterpart for Angular IInputMaskDirective:
  * - attaches listeners to the native <input/>
  * - formats and constrains value based on the mask
  *
- * NOTE: this is intentionally “best effort parity”.
+ * Enhancements (parity with your latest Angular fixes):
+ * - ✅ digit typing at segment boundaries does NOT create "012"/"111" artifacts
+ *   -> overwrite / roll within segment (like a spinbox segment)
+ * - ✅ month capped to 12 while typing
+ * - ✅ day clamped by (month,year) while typing (when segment complete)
+ * - ✅ year max 4 digits (until year 10000 exists 😄)
+ * - ✅ paste normalization for date/time
  */
 export function useInputMask(
   inputRef: React.RefObject<HTMLInputElement | null>,
@@ -120,12 +162,12 @@ export function useInputMask(
 
     const setValue = (
       v: string,
-      opts?: { anchorPos?: number; emit?: boolean }
+      o?: { anchorPos?: number; emit?: boolean }
     ) => {
       const old = el.value ?? '';
       if (v === old) return;
 
-      const prevPos = opts?.anchorPos ?? el.selectionStart ?? old.length;
+      const prevPos = o?.anchorPos ?? el.selectionStart ?? old.length;
 
       el.value = v;
 
@@ -133,9 +175,7 @@ export function useInputMask(
       const newPos = Math.max(0, Math.min(v.length, prevPos + delta));
       safeSetSelectionRange(newPos, newPos);
 
-      if (opts?.emit !== false) {
-        dispatchInput();
-      }
+      if (o?.emit !== false) dispatchInput();
     };
 
     const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -230,7 +270,7 @@ export function useInputMask(
     };
 
     /* =========================================
-     * Date helpers (ported)
+     * Date helpers
      * ========================================= */
 
     const daysInMonth = (year: number, month1: number) =>
@@ -326,6 +366,7 @@ export function useInputMask(
         if (ch === 'd') result += String(day).padStart(len, '0');
         else if (ch === 'M') result += String(month).padStart(len, '0');
         else {
+          // ✅ cap year digits at token length (we'll keep yyyy=4)
           let s = String(year);
           if (s.length < len) s = s.padStart(len, '0');
           else if (s.length > len) s = s.slice(-len);
@@ -342,17 +383,21 @@ export function useInputMask(
       const { tokens, seps } = splitDateFormat(format);
       if (!tokens.length) return digits;
 
+      // enforce max digits for yyyy-MM-dd style too
+      const totalDigits = tokens.reduce((a, t) => a + t.length, 0);
+      const d8 = digits.replace(/\D/g, '').slice(0, totalDigits);
+
       const firstSep = seps[1] ?? '';
       const secondSep = seps[2] ?? '';
 
-      if (digits.length <= 2) {
-        if (digits.length === 2 && firstSep) return digits + firstSep;
-        return digits;
+      if (d8.length <= 2) {
+        if (d8.length === 2 && firstSep) return d8 + firstSep;
+        return d8;
       }
 
-      if (digits.length <= 4) {
-        const dRaw = digits.slice(0, 2);
-        const mRaw = digits.slice(2);
+      if (d8.length <= 4) {
+        const dRaw = d8.slice(0, 2);
+        const mRaw = d8.slice(2);
 
         let res = dRaw;
         if (firstSep) res += firstSep;
@@ -364,20 +409,21 @@ export function useInputMask(
         return res;
       }
 
-      const dStr = digits.slice(0, 2);
-      const mStr = digits.slice(2, 4);
-      const yStr = digits.slice(4, 8);
+      const dStr = d8.slice(0, 2);
+      const mStr = d8.slice(2, 4);
+      const yStr = d8.slice(4, 8); // yyyy
 
       let day = Number(dStr || '1');
       let month = Number(mStr || '1');
-      const year = Number(yStr || '2000');
+      let year = Number(yStr || '2000');
 
-      if (month < 1) month = 1;
-      if (month > 12) month = 12;
+      month = clamp(month, 1, 12);
 
-      const maxDay = daysInMonth(year > 0 ? year : 2000, month);
-      if (day < 1) day = 1;
-      if (day > maxDay) day = maxDay;
+      if (!Number.isFinite(year) || year <= 0) year = 2000;
+      year = Math.min(year, 9999);
+
+      const maxDay = daysInMonth(year, month);
+      day = clamp(day, 1, maxDay);
 
       return formatDateFromParts(day, month, year, format);
     };
@@ -407,18 +453,23 @@ export function useInputMask(
         closed: boolean;
         out: string;
       };
+
       const parts: Part[] = [];
 
       for (let i = 0; i < tokens.length; i++) {
         const tok = tokens[i];
         const ch = tok[0];
         const len = tok.length;
-        const rawSeg = (rawSegs[i] ?? '').replace(/\D/g, '');
+
+        // ✅ cap year input to 4 digits (yyyy)
+        const rawSegFull = (rawSegs[i] ?? '').replace(/\D/g, '');
+        const rawSeg = rawSegFull.slice(0, len);
 
         const kind: PartKind =
           ch === 'd' ? 'day' : ch === 'M' ? 'month' : 'year';
         const closed = rawSeg.length >= len;
-        parts.push({ kind, raw: rawSeg.slice(0, len), len, closed, out: '' });
+
+        parts.push({ kind, raw: rawSeg, len, closed, out: '' });
       }
 
       const dayPart = parts.find((p) => p.kind === 'day');
@@ -429,44 +480,53 @@ export function useInputMask(
 
       if (monthPart && monthPart.closed && monthPart.raw) {
         let m = Number(monthPart.raw);
-        if (m < 1) m = 1;
-        if (m > 12) m = 12;
+        if (!Number.isFinite(m)) m = 1;
+        m = clamp(m, 1, 12);
         monthNumForClamp = m;
       }
 
       let yearForCalc = 2000;
       if (yearPart && yearPart.closed && yearPart.raw) {
-        const y = Number(yearPart.raw);
-        yearForCalc = y > 0 ? y : 2000;
+        let y = Number(yearPart.raw);
+        if (!Number.isFinite(y) || y <= 0) y = 2000;
+        y = Math.min(y, 9999);
+        yearForCalc = y;
       }
 
       if (monthPart) {
         if (monthPart.closed && monthPart.raw) {
           let m = monthNumForClamp ?? Number(monthPart.raw);
-          if (m < 1) m = 1;
-          if (m > 12) m = 12;
+          if (!Number.isFinite(m)) m = 1;
+          m = clamp(m, 1, 12);
           monthPart.out = String(m).padStart(monthPart.len, '0');
           monthNumForClamp = m;
-        } else monthPart.out = monthPart.raw;
+        } else {
+          monthPart.out = monthPart.raw;
+        }
       }
 
       if (dayPart) {
         if (dayPart.closed && dayPart.raw) {
           let d = Number(dayPart.raw);
+          if (!Number.isFinite(d)) d = 1;
+
           const monthForDay = monthNumForClamp !== null ? monthNumForClamp : 1;
           const maxDay = daysInMonth(yearForCalc, monthForDay);
 
-          if (d < 1) d = 1;
-          if (d > maxDay) d = maxDay;
-
+          d = clamp(d, 1, maxDay);
           dayPart.out = String(d).padStart(dayPart.len, '0');
-        } else dayPart.out = dayPart.raw;
+        } else {
+          dayPart.out = dayPart.raw;
+        }
       }
 
-      if (yearPart) yearPart.out = yearPart.raw;
+      if (yearPart) {
+        // keep partial year as typed, but already capped to len
+        yearPart.out = yearPart.raw;
+      }
 
       const outSegs = parts.map((p) => p.out);
-      const hasDigits = parts.map((p) => p.raw.length > 0);
+      const hasDigitsArr = parts.map((p) => p.raw.length > 0);
 
       let result = seps[0] ?? '';
       for (let i = 0; i < parts.length; i++) {
@@ -476,7 +536,7 @@ export function useInputMask(
           const sepFmt = seps[i + 1] ?? '';
           const hadRawSep = i < rawSeps.length;
           const segClosed = parts[i].closed;
-          const nextHasDigits = hasDigits[i + 1];
+          const nextHasDigits = hasDigitsArr[i + 1];
 
           if (sepFmt && (hadRawSep || segClosed || nextHasDigits)) {
             result += sepFmt;
@@ -509,97 +569,232 @@ export function useInputMask(
         else year = n;
       }
 
-      if (month < 1) month = 1;
-      if (month > 12) month = 12;
+      month = clamp(month, 1, 12);
 
-      const maxDay = daysInMonth(year > 0 ? year : 2000, month);
-      if (day < 1) day = 1;
-      if (day > maxDay) day = maxDay;
+      if (!Number.isFinite(year) || year <= 0) year = 2000;
+      year = Math.min(year, 9999);
+
+      const maxDay = daysInMonth(year, month);
+      day = clamp(day, 1, maxDay);
 
       return formatDateFromParts(day, month, year, format);
     };
 
-    const adjustDateSegmentByArrow = (key: 'ArrowUp' | 'ArrowDown') => {
-      if (type !== 'date' || !fmt) return;
+    const normalizePastedDate = (text: string, format: string): string => {
+      const nums = text.match(/\d+/g) ?? [];
+      if (!nums.length) return '';
 
-      const format = fmt;
-      const value = el.value ?? '';
-
-      const segments = getDateSegments(value, format);
-      if (!segments.length) return;
-
-      const caret = el.selectionStart ?? value.length;
-
-      let idx = segments.findIndex((s) => caret >= s.start && caret <= s.end);
-      if (idx === -1) {
-        idx = segments.findIndex((s) => caret < s.start);
-        if (idx === -1) idx = segments.length - 1;
-        if (idx > 0 && caret > segments[idx - 1].end) idx = idx - 1;
-      }
-      if (idx < 0) idx = 0;
+      const { tokens } = splitDateFormat(format);
 
       let day = 1;
       let month = 1;
       let year = 2000;
 
-      for (const seg of segments) {
-        const n = seg.raw ? Number(seg.raw) : NaN;
-        if (Number.isNaN(n)) continue;
+      if (nums.length >= 3) {
+        const a = nums[0] ?? '';
+        const b = nums[1] ?? '';
+        const c = nums[2] ?? '';
 
-        if (seg.kind === 'day') day = n;
-        else if (seg.kind === 'month') month = n;
-        else year = n;
-      }
+        const aNum = Number(a);
+        const bNum = Number(b);
+        const cNum = Number(c);
 
-      if (month < 1) month = 1;
-      if (month > 12) month = 12;
-
-      let maxDay = daysInMonth(year > 0 ? year : 2000, month);
-      if (day < 1) day = 1;
-      if (day > maxDay) day = maxDay;
-
-      const seg = segments[idx];
-
-      if (seg.kind === 'day') {
-        if (key === 'ArrowUp') {
-          day = day + 1;
-          if (day > maxDay) day = 1;
+        // If first looks like year
+        if (a.length === 4) {
+          year = aNum;
+          month = bNum;
+          day = cNum;
+        } else if (c.length === 4) {
+          // common dd/mm/yyyy
+          day = aNum;
+          month = bNum;
+          year = cNum;
         } else {
-          day = day - 1;
-          if (day < 1) day = maxDay;
-        }
-      } else if (seg.kind === 'month') {
-        if (key === 'ArrowUp') {
-          month = month + 1;
-          if (month > 12) month = 1;
-        } else {
-          month = month - 1;
-          if (month < 1) month = 12;
+          // fallback: map tokens
+          tokens.forEach((t, i) => {
+            const raw = nums[i] ?? '';
+            const n = Number(raw);
+            if (!Number.isFinite(n)) return;
+
+            if (t[0] === 'd') day = n;
+            else if (t[0] === 'M') month = n;
+            else year = n;
+          });
         }
       } else {
-        if (key === 'ArrowUp') year = year + 1;
-        else {
-          year = year - 1;
-          if (year < 0) year = 0;
+        // digits-only paste fallback
+        const digits = nums.join('').replace(/\D/g, '');
+        return applyDateMaskDigitsOnly(digits, format);
+      }
+
+      if (!Number.isFinite(year) || year <= 0) year = 2000;
+      year = Math.min(year, 9999);
+
+      month = clamp(month, 1, 12);
+      const maxDay = daysInMonth(year, month);
+      day = clamp(day, 1, maxDay);
+
+      return formatDateFromParts(day, month, year, format);
+    };
+
+    /**
+     * ✅ The critical enhancement:
+     * When typing a digit at a boundary like "31/01|/2026", you want "31/12/2026"
+     * NOT "31/012/2026". So we treat date as digits-only buffer (ddMMyyyy),
+     * compute which segment caret is in, and overwrite/roll within that segment.
+     */
+    const handleDateDigitKeydown = (digitChar: string) => {
+      if (type !== 'date') return false;
+
+      const format = fmt || 'dd/MM/yyyy';
+      const { tokens } = splitDateFormat(format);
+      if (!tokens.length) return false;
+
+      // tokens expected dd / MM / yyyy (lengths 2/2/4)
+      const lens = tokens.map((t) => t.length);
+      const totalDigits = lens.reduce((a, b) => a + b, 0);
+
+      // Start from current value -> digits-only (capped)
+      const currentDigits = (el.value ?? '')
+        .replace(/\D/g, '')
+        .slice(0, totalDigits);
+
+      // Convert caret position in masked string into digit index
+      const caret = el.selectionStart ?? (el.value ?? '').length;
+      const digitCursor = countDigitsBeforePos(el.value ?? '', caret);
+
+      // Build digit ranges per token
+      const ranges: Array<{
+        start: number;
+        end: number;
+        kind: 'day' | 'month' | 'year';
+      }> = [];
+      let acc = 0;
+      for (const tok of tokens) {
+        const kind: 'day' | 'month' | 'year' =
+          tok[0] === 'd' ? 'day' : tok[0] === 'M' ? 'month' : 'year';
+        const len = tok.length;
+        ranges.push({ start: acc, end: acc + len, kind });
+        acc += len;
+      }
+
+      let idx = ranges.findIndex((r) => digitCursor < r.end);
+      if (idx === -1) idx = ranges.length - 1;
+      if (idx > 0 && digitCursor === ranges[idx].start) idx = idx - 1;
+
+      const r = ranges[idx];
+      const tokenLen = r.end - r.start;
+
+      const tokenDigits = currentDigits.slice(r.start, r.end);
+      const isFull = tokenDigits.length >= tokenLen;
+
+      let rel = digitCursor - r.start;
+      rel = clamp(rel, 0, tokenLen);
+
+      let newToken = tokenDigits;
+
+      // Insert/overwrite/roll behavior
+      if (!isFull) {
+        // insert (until token full)
+        newToken = (
+          tokenDigits.slice(0, rel) +
+          digitChar +
+          tokenDigits.slice(rel)
+        ).slice(0, tokenLen);
+      } else {
+        if (digitCursor >= r.end) {
+          // caret is on boundary after segment: roll
+          newToken = tokenDigits.slice(1) + digitChar;
+        } else {
+          // overwrite at caret
+          newToken = (
+            tokenDigits.slice(0, rel) +
+            digitChar +
+            tokenDigits.slice(rel + 1)
+          ).slice(0, tokenLen);
         }
       }
 
-      maxDay = daysInMonth(year > 0 ? year : 2000, month);
-      if (day > maxDay) day = maxDay;
+      const before = currentDigits.slice(0, r.start);
+      const after = currentDigits.slice(r.end);
+      let nextDigits = (before + newToken + after).slice(0, totalDigits);
 
-      const newValue = formatDateFromParts(day, month, year, format);
+      // Clamp month/day when segment completes; cap year to 4 digits
+      const monthRange = ranges.find((x) => x.kind === 'month');
+      const yearRange = ranges.find((x) => x.kind === 'year');
 
-      // set value and reselect same segment
-      el.value = newValue;
+      const monthRaw = monthRange
+        ? nextDigits.slice(monthRange.start, monthRange.end)
+        : '';
+      const yearRaw = yearRange
+        ? nextDigits.slice(yearRange.start, yearRange.end)
+        : '';
+
+      // Month clamp when month segment complete (2 digits)
+      if (r.kind === 'month' && newToken.length === 2) {
+        let m = Number(newToken);
+        if (!Number.isFinite(m)) m = 1;
+        m = clamp(m, 1, 12);
+
+        nextDigits =
+          nextDigits.slice(0, r.start) +
+          String(m).padStart(2, '0') +
+          nextDigits.slice(r.end);
+        nextDigits = nextDigits.slice(0, totalDigits);
+      }
+
+      // Day clamp when day segment complete (2 digits)
+      if (r.kind === 'day' && newToken.length === 2) {
+        let d = Number(newToken);
+        if (!Number.isFinite(d)) d = 1;
+
+        let m = Number(monthRaw);
+        if (!Number.isFinite(m) || m < 1) m = 1;
+        m = clamp(m, 1, 12);
+
+        let y = Number(yearRaw);
+        if (!Number.isFinite(y) || y <= 0) y = 2000;
+        y = Math.min(y, 9999);
+
+        const maxDay = daysInMonth(y, m);
+        d = clamp(d, 1, maxDay);
+
+        nextDigits =
+          nextDigits.slice(0, r.start) +
+          String(d).padStart(2, '0') +
+          nextDigits.slice(r.end);
+        nextDigits = nextDigits.slice(0, totalDigits);
+      }
+
+      // Year cap (yyyy = 4)
+      if (yearRange) {
+        const y = nextDigits.slice(yearRange.start, yearRange.end).slice(0, 4);
+        nextDigits =
+          nextDigits.slice(0, yearRange.start) +
+          y +
+          nextDigits.slice(yearRange.end);
+        nextDigits = nextDigits.slice(0, totalDigits);
+      }
+
+      const masked = applyDateMaskDigitsOnly(nextDigits, format);
+
+      // Determine next caret position in "digit space"
+      const didRollAtEnd = isFull && digitCursor >= r.end;
+      const nextDigitCursor = didRollAtEnd
+        ? r.end
+        : Math.min(totalDigits, digitCursor + 1);
+
+      el.value = masked;
       dispatchInput();
 
-      const newSegments = getDateSegments(newValue, format);
-      const newSeg = newSegments[idx] ?? newSegments[newSegments.length - 1];
-      if (newSeg) safeSetSelectionRange(newSeg.start, newSeg.end);
+      const nextCaret = caretPosAfterDigits(masked, nextDigitCursor);
+      safeSetSelectionRange(nextCaret, nextCaret);
+
+      return true;
     };
 
     /* =========================================
-     * Time helpers (ported)
+     * Time helpers
      * ========================================= */
 
     const splitTimeFormat = (format: string) => {
@@ -718,14 +913,9 @@ export function useInputMask(
         else second = n;
       }
 
-      if (hour < 0) hour = 0;
-      if (hour > 23) hour = 23;
-
-      if (minute < 0) minute = 0;
-      if (minute > 59) minute = 59;
-
-      if (second < 0) second = 0;
-      if (second > 59) second = 59;
+      hour = clamp(hour, 0, 23);
+      minute = clamp(minute, 0, 59);
+      second = clamp(second, 0, 59);
 
       return formatTimeFromParts(hour, minute, second, format);
     };
@@ -734,6 +924,9 @@ export function useInputMask(
       const { tokens, seps } = splitTimeFormat(format);
       if (!tokens.length) return digits;
 
+      const totalDigits = tokens.reduce((a, t) => a + t.length, 0);
+      const d = digits.replace(/\D/g, '').slice(0, totalDigits);
+
       const firstSep = seps[1] ?? '';
       const secondSep = seps[2] ?? '';
 
@@ -741,14 +934,14 @@ export function useInputMask(
       const hasSeconds = tokens.length >= 3 && tokens[2][0] === 's';
 
       if (hasMinutes && !hasSeconds) {
-        if (digits.length <= 2) {
-          if (digits.length === 2 && firstSep) return digits + firstSep;
-          return digits;
+        if (d.length <= 2) {
+          if (d.length === 2 && firstSep) return d + firstSep;
+          return d;
         }
 
-        if (digits.length <= 4) {
-          const hRaw = digits.slice(0, 2);
-          const mRaw = digits.slice(2);
+        if (d.length <= 4) {
+          const hRaw = d.slice(0, 2);
+          const mRaw = d.slice(2);
 
           let res = hRaw;
           if (firstSep) res += firstSep;
@@ -757,30 +950,27 @@ export function useInputMask(
           return res;
         }
 
-        const hStr = digits.slice(0, 2);
-        const mStr = digits.slice(2, 4);
+        const hStr = d.slice(0, 2);
+        const mStr = d.slice(2, 4);
 
         let hour = Number(hStr || '0');
         let minute = Number(mStr || '0');
 
-        if (hour < 0) hour = 0;
-        if (hour > 23) hour = 23;
-
-        if (minute < 0) minute = 0;
-        if (minute > 59) minute = 59;
+        hour = clamp(hour, 0, 23);
+        minute = clamp(minute, 0, 59);
 
         return formatTimeFromParts(hour, minute, 0, format);
       }
 
       if (hasMinutes && hasSeconds) {
-        if (digits.length <= 2) {
-          if (digits.length === 2 && firstSep) return digits + firstSep;
-          return digits;
+        if (d.length <= 2) {
+          if (d.length === 2 && firstSep) return d + firstSep;
+          return d;
         }
 
-        if (digits.length <= 4) {
-          const hRaw = digits.slice(0, 2);
-          const mRaw = digits.slice(2);
+        if (d.length <= 4) {
+          const hRaw = d.slice(0, 2);
+          const mRaw = d.slice(2);
 
           let res = hRaw;
           if (firstSep) res += firstSep;
@@ -793,10 +983,10 @@ export function useInputMask(
           return res;
         }
 
-        if (digits.length <= 6) {
-          const hRaw = digits.slice(0, 2);
-          const mRaw = digits.slice(2, 4);
-          const sRaw = digits.slice(4);
+        if (d.length <= 6) {
+          const hRaw = d.slice(0, 2);
+          const mRaw = d.slice(2, 4);
+          const sRaw = d.slice(4);
 
           let res = hRaw;
           if (firstSep) res += firstSep;
@@ -807,27 +997,22 @@ export function useInputMask(
           return res;
         }
 
-        const hStr = digits.slice(0, 2);
-        const mStr = digits.slice(2, 4);
-        const sStr = digits.slice(4, 6);
+        const hStr = d.slice(0, 2);
+        const mStr = d.slice(2, 4);
+        const sStr = d.slice(4, 6);
 
         let hour = Number(hStr || '0');
         let minute = Number(mStr || '0');
         let second = Number(sStr || '0');
 
-        if (hour < 0) hour = 0;
-        if (hour > 23) hour = 23;
-
-        if (minute < 0) minute = 0;
-        if (minute > 59) minute = 59;
-
-        if (second < 0) second = 0;
-        if (second > 59) second = 59;
+        hour = clamp(hour, 0, 23);
+        minute = clamp(minute, 0, 59);
+        second = clamp(second, 0, 59);
 
         return formatTimeFromParts(hour, minute, second, format);
       }
 
-      return digits;
+      return d;
     };
 
     const applyTimeMask = (raw: string, format: string) => {
@@ -842,9 +1027,238 @@ export function useInputMask(
         return applyTimeMaskDigitsOnly(digits, format);
       }
 
-      // separator-typed path: keep it simple (digits + separators)
-      // (Angular does more clamping while typing; we already clamp on blur/enter/arrow)
+      // keep only digits + ":" while typing separators
       return raw.replace(/[^\d:]/g, '');
+    };
+
+    const normalizePastedTime = (text: string, format: string): string => {
+      const nums = text.match(/\d+/g) ?? [];
+      if (!nums.length) return '';
+
+      const { tokens } = splitTimeFormat(format);
+
+      let hour = 0;
+      let minute = 0;
+      let second = 0;
+
+      if (nums.length >= 2) {
+        tokens.forEach((t, i) => {
+          const raw = nums[i] ?? '';
+          const n = Number(raw);
+          if (!Number.isFinite(n)) return;
+
+          if (t[0] === 'H') hour = n;
+          else if (t[0] === 'm') minute = n;
+          else second = n;
+        });
+      } else {
+        // digits-only fallback
+        return applyTimeMaskDigitsOnly(
+          nums.join('').replace(/\D/g, ''),
+          format
+        );
+      }
+
+      hour = clamp(hour, 0, 23);
+      minute = clamp(minute, 0, 59);
+      second = clamp(second, 0, 59);
+
+      return formatTimeFromParts(hour, minute, second, format);
+    };
+
+    const handleTimeDigitKeydown = (digitChar: string) => {
+      if (type !== 'time') return false;
+
+      const format = fmt || 'HH:mm';
+      const { tokens } = splitTimeFormat(format);
+      if (!tokens.length) return false;
+
+      const lens = tokens.map((t) => t.length);
+      const totalDigits = lens.reduce((a, b) => a + b, 0);
+
+      const currentDigits = (el.value ?? '')
+        .replace(/\D/g, '')
+        .slice(0, totalDigits);
+
+      const caret = el.selectionStart ?? (el.value ?? '').length;
+      const digitCursor = countDigitsBeforePos(el.value ?? '', caret);
+
+      const ranges: Array<{
+        start: number;
+        end: number;
+        kind: 'hour' | 'minute' | 'second';
+      }> = [];
+      let acc = 0;
+      for (const tok of tokens) {
+        const kind: 'hour' | 'minute' | 'second' =
+          tok[0] === 'H' ? 'hour' : tok[0] === 'm' ? 'minute' : 'second';
+        const len = tok.length;
+        ranges.push({ start: acc, end: acc + len, kind });
+        acc += len;
+      }
+
+      let idx = ranges.findIndex((r) => digitCursor < r.end);
+      if (idx === -1) idx = ranges.length - 1;
+      if (idx > 0 && digitCursor === ranges[idx].start) idx = idx - 1;
+
+      const r = ranges[idx];
+      const tokenLen = r.end - r.start;
+
+      const tokenDigits = currentDigits.slice(r.start, r.end);
+      const isFull = tokenDigits.length >= tokenLen;
+
+      let rel = digitCursor - r.start;
+      rel = clamp(rel, 0, tokenLen);
+
+      let newToken = tokenDigits;
+
+      if (!isFull) {
+        newToken = (
+          tokenDigits.slice(0, rel) +
+          digitChar +
+          tokenDigits.slice(rel)
+        ).slice(0, tokenLen);
+      } else {
+        if (digitCursor >= r.end) newToken = tokenDigits.slice(1) + digitChar;
+        else
+          newToken = (
+            tokenDigits.slice(0, rel) +
+            digitChar +
+            tokenDigits.slice(rel + 1)
+          ).slice(0, tokenLen);
+      }
+
+      const before = currentDigits.slice(0, r.start);
+      const after = currentDigits.slice(r.end);
+      let nextDigits = (before + newToken + after).slice(0, totalDigits);
+
+      // Clamp completed segments
+      const read2 = (start: number, end: number) =>
+        Number(nextDigits.slice(start, end) || '0');
+
+      const hourR = ranges.find((x) => x.kind === 'hour');
+      const minR = ranges.find((x) => x.kind === 'minute');
+      const secR = ranges.find((x) => x.kind === 'second');
+
+      if (r.kind === 'hour' && newToken.length === 2 && hourR) {
+        let h = read2(hourR.start, hourR.end);
+        if (!Number.isFinite(h)) h = 0;
+        h = clamp(h, 0, 23);
+        nextDigits =
+          nextDigits.slice(0, hourR.start) +
+          String(h).padStart(2, '0') +
+          nextDigits.slice(hourR.end);
+      }
+
+      if (r.kind === 'minute' && newToken.length === 2 && minR) {
+        let m = read2(minR.start, minR.end);
+        if (!Number.isFinite(m)) m = 0;
+        m = clamp(m, 0, 59);
+        nextDigits =
+          nextDigits.slice(0, minR.start) +
+          String(m).padStart(2, '0') +
+          nextDigits.slice(minR.end);
+      }
+
+      if (r.kind === 'second' && newToken.length === 2 && secR) {
+        let s = read2(secR.start, secR.end);
+        if (!Number.isFinite(s)) s = 0;
+        s = clamp(s, 0, 59);
+        nextDigits =
+          nextDigits.slice(0, secR.start) +
+          String(s).padStart(2, '0') +
+          nextDigits.slice(secR.end);
+      }
+
+      const masked = applyTimeMaskDigitsOnly(nextDigits, format);
+
+      const didRollAtEnd = isFull && digitCursor >= r.end;
+      const nextDigitCursor = didRollAtEnd
+        ? r.end
+        : Math.min(totalDigits, digitCursor + 1);
+
+      el.value = masked;
+      dispatchInput();
+
+      const nextCaret = caretPosAfterDigits(masked, nextDigitCursor);
+      safeSetSelectionRange(nextCaret, nextCaret);
+
+      return true;
+    };
+
+    const adjustDateSegmentByArrow = (key: 'ArrowUp' | 'ArrowDown') => {
+      if (type !== 'date' || !fmt) return;
+
+      const format = fmt;
+      const value = el.value ?? '';
+
+      const segments = getDateSegments(value, format);
+      if (!segments.length) return;
+
+      const caret = el.selectionStart ?? value.length;
+
+      let idx = segments.findIndex((s) => caret >= s.start && caret <= s.end);
+      if (idx === -1) {
+        idx = segments.findIndex((s) => caret < s.start);
+        if (idx === -1) idx = segments.length - 1;
+        if (idx > 0 && caret > segments[idx - 1].end) idx = idx - 1;
+      }
+      if (idx < 0) idx = 0;
+
+      let day = 1;
+      let month = 1;
+      let year = 2000;
+
+      for (const seg of segments) {
+        const n = seg.raw ? Number(seg.raw) : NaN;
+        if (Number.isNaN(n)) continue;
+
+        if (seg.kind === 'day') day = n;
+        else if (seg.kind === 'month') month = n;
+        else year = n;
+      }
+
+      month = clamp(month, 1, 12);
+      if (!Number.isFinite(year) || year <= 0) year = 2000;
+      year = Math.min(year, 9999);
+
+      let maxDay = daysInMonth(year, month);
+      day = clamp(day, 1, maxDay);
+
+      const seg = segments[idx];
+
+      if (seg.kind === 'day') {
+        if (key === 'ArrowUp') {
+          day = day + 1;
+          if (day > maxDay) day = 1;
+        } else {
+          day = day - 1;
+          if (day < 1) day = maxDay;
+        }
+      } else if (seg.kind === 'month') {
+        if (key === 'ArrowUp') {
+          month = month + 1;
+          if (month > 12) month = 1;
+        } else {
+          month = month - 1;
+          if (month < 1) month = 12;
+        }
+      } else {
+        if (key === 'ArrowUp') year = Math.min(9999, year + 1);
+        else year = Math.max(0, year - 1);
+      }
+
+      maxDay = daysInMonth(year || 2000, month);
+      if (day > maxDay) day = maxDay;
+
+      const newValue = formatDateFromParts(day, month, year, format);
+
+      el.value = newValue;
+      dispatchInput();
+
+      const newSegments = getDateSegments(newValue, format);
+      const newSeg = newSegments[idx] ?? newSegments[newSegments.length - 1];
+      if (newSeg) safeSetSelectionRange(newSeg.start, newSeg.end);
     };
 
     const adjustTimeSegmentByArrow = (key: 'ArrowUp' | 'ArrowDown') => {
@@ -881,16 +1295,12 @@ export function useInputMask(
 
       const seg = segments[idx];
 
-      if (seg.kind === 'hour') {
-        if (key === 'ArrowUp') hour = (hour + 1) % 24;
-        else hour = (hour - 1 + 24) % 24;
-      } else if (seg.kind === 'minute') {
-        if (key === 'ArrowUp') minute = (minute + 1) % 60;
-        else minute = (minute - 1 + 60) % 60;
-      } else {
-        if (key === 'ArrowUp') second = (second + 1) % 60;
-        else second = (second - 1 + 60) % 60;
-      }
+      if (seg.kind === 'hour')
+        hour = key === 'ArrowUp' ? (hour + 1) % 24 : (hour - 1 + 24) % 24;
+      else if (seg.kind === 'minute')
+        minute = key === 'ArrowUp' ? (minute + 1) % 60 : (minute - 1 + 60) % 60;
+      else
+        second = key === 'ArrowUp' ? (second + 1) % 60 : (second - 1 + 60) % 60;
 
       const newValue = formatTimeFromParts(hour, minute, second, format);
 
@@ -940,8 +1350,53 @@ export function useInputMask(
       }
     };
 
+    const onPaste = (e: ClipboardEvent) => {
+      if (el.readOnly || el.disabled) return;
+      if (!mask) return;
+
+      const text = e.clipboardData?.getData('text') ?? '';
+      if (!text) return;
+
+      if (type === 'date' && fmt) {
+        e.preventDefault();
+        const next = normalizePastedDate(text, fmt);
+        el.value = next;
+        dispatchInput();
+        safeSetSelectionRange(next.length, next.length);
+        return;
+      }
+
+      if (type === 'time' && fmt) {
+        e.preventDefault();
+        const next = normalizePastedTime(text, fmt);
+        el.value = next;
+        dispatchInput();
+        safeSetSelectionRange(next.length, next.length);
+        return;
+      }
+    };
+
     const onKeydown = (e: KeyboardEvent) => {
       if (el.readOnly || el.disabled) return;
+
+      // ✅ digit enhancement first (prevents "012"/"111")
+      if (/\d/.test(e.key)) {
+        if (type === 'date') {
+          const ok = handleDateDigitKeydown(e.key);
+          if (ok) {
+            e.preventDefault();
+            return;
+          }
+        }
+
+        if (type === 'time') {
+          const ok = handleTimeDigitKeydown(e.key);
+          if (ok) {
+            e.preventDefault();
+            return;
+          }
+        }
+      }
 
       // Arrow segment adjust (Angular parity)
       if (
@@ -1024,12 +1479,14 @@ export function useInputMask(
     el.addEventListener('blur', onBlur);
     el.addEventListener('focus', onFocus);
     el.addEventListener('keydown', onKeydown);
+    el.addEventListener('paste', onPaste);
 
     return () => {
       el.removeEventListener('input', onInput);
       el.removeEventListener('blur', onBlur);
       el.removeEventListener('focus', onFocus);
       el.removeEventListener('keydown', onKeydown);
+      el.removeEventListener('paste', onPaste);
     };
   }, [inputRef, mask, enableDefault]);
 }
@@ -1112,11 +1569,6 @@ export type IInputProps = Omit<
   inputRef?: React.MutableRefObject<HTMLInputElement | null>;
 };
 
-function normalizeArray<T>(v: T | T[] | undefined): T[] {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
-
 /**
  * ✅ forwardRef supported:
  * <IInput ref={...} />
@@ -1147,7 +1599,7 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
 
     const innerRef = useRef<HTMLInputElement | null>(null);
 
-    // Mask parity
+    // Mask parity (+ enhancements)
     useInputMask(innerRef, mask);
 
     const prepends = useMemo(() => normalizeArray(prepend), [prepend]);
@@ -1156,9 +1608,7 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
     const setRefs = (node: HTMLInputElement | null) => {
       innerRef.current = node;
 
-      if (inputRef) {
-        inputRef.current = node;
-      }
+      if (inputRef) inputRef.current = node;
 
       if (!forwardedRef) return;
       if (typeof forwardedRef === 'function') forwardedRef(node);
@@ -1267,9 +1717,7 @@ export function IFCInput(props: IFCInputProps) {
   const innerRef = useRef<HTMLInputElement | null>(null);
 
   const focusInnerInput = () => {
-    if (!disabled) {
-      innerRef.current?.focus();
-    }
+    if (!disabled) innerRef.current?.focus();
   };
 
   return (
