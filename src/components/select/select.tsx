@@ -1,25 +1,32 @@
 /* select.tsx */
 /**
- * ISelect (React)
+ * ISelect + IFCSelect (React)
  * Version: 2.2.2
  *
- * Parity with Angular ISelect 2.2.2
+ * Parity with Angular ISelect 2.2.2 + Angular IFCSelect wrapper.
  *
- * Fixes:
+ * ISelect:
  * - Render options container as <i-options> (not <div>)
  * - Match dropdown width to visible control width (uses i-input host rect)
  * - Keep portal-to-body + fixed positioning for overflow parents
  * - ✅ Fix flicker: portal + measure + position BEFORE showing panel
- *   -> options panel is hidden (visibility: hidden; pointer-events: none)
- *      until first reposition pass completes on next animation frame.
+ * - ✅ Expose imperative handle (ref) with focus()
+ *
+ * IFCSelect:
+ * - Label + required indicator
+ * - Click label focuses inner select
+ * - Shows error text only when invalid and (submitted OR touched/dirty)
  */
 
 import React, {
+  forwardRef,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type JSX,
 } from 'react';
 import { createPortal } from 'react-dom';
 import type { Observable } from 'rxjs';
@@ -33,7 +40,7 @@ import {
 } from '../input';
 
 /* =========================================
- * Types
+ * Shared Types
  * ========================================= */
 
 export type ISelectChange<T = any> = {
@@ -50,6 +57,14 @@ export type ISelectPanelPosition =
   | 'top right'
   | 'bottom left'
   | 'bottom right';
+
+export type ISelectHandle = {
+  focus: () => void;
+};
+
+/* =========================================
+ * ISelect Props
+ * ========================================= */
 
 export type ISelectProps<T = any> = Omit<
   React.HTMLAttributes<HTMLElement>,
@@ -115,6 +130,80 @@ export type ISelectProps<T = any> = Omit<
 };
 
 /* =========================================
+ * IFCSelect Types
+ * ========================================= */
+
+export type IFormControlErrorMessage =
+  | string
+  | ((label: string) => string)
+  | {
+      required?: string;
+      invalid?: string;
+      [key: string]: string | undefined;
+    };
+
+/**
+ * Minimal "form control" state shape for React usage.
+ * Plug your actual form layer into this (Formik/RHF/custom).
+ */
+export type IReactFormControlState = {
+  invalid?: boolean;
+  touched?: boolean;
+  dirty?: boolean;
+  submitted?: boolean;
+  error?: any;
+  required?: boolean;
+};
+
+export type IFCSelectHandle = {
+  focus: () => void;
+};
+
+export type IFCSelectProps<T = any> = Omit<
+  React.HTMLAttributes<HTMLElement>,
+  'children' | 'onChange'
+> & {
+  label?: string;
+  placeholder?: string;
+
+  options?: T[] | null;
+  options$?: Observable<T[]> | null;
+
+  displayWith?: ((row: T | null) => string) | string;
+  filterDelay?: number;
+  filterPredicate?: (row: T, term: string) => boolean;
+
+  panelPosition?: ISelectPanelPosition;
+
+  /** form state input (your form layer provides this) */
+  control?: IReactFormControlState;
+
+  /** optional error message resolver / overrides */
+  errorMessage?: IFormControlErrorMessage;
+
+  disabled?: boolean;
+
+  /** controlled */
+  value?: T | null;
+
+  /** uncontrolled */
+  defaultValue?: T | null;
+
+  /** Event parity */
+  onChanged?: (change: ISelectChange<T>) => void;
+  onOptionSelected?: (change: ISelectChange<T>) => void;
+
+  /** Pass-through to ISelect if you need custom option renderer */
+  renderOption?: (row: T) => React.ReactNode;
+
+  /** Pass-through to ISelect if you need these */
+  portalToBody?: boolean;
+  panelOffset?: number;
+  matchTriggerWidth?: boolean;
+  invalid?: boolean;
+};
+
+/* =========================================
  * Helpers
  * ========================================= */
 
@@ -163,10 +252,55 @@ function highlightParts(text: string, term: string): React.ReactNode {
 }
 
 /* =========================================
+ * Error helpers (IFCSelect)
+ * ========================================= */
+
+function isControlRequired(
+  control?: IReactFormControlState,
+  errorMessage?: IFormControlErrorMessage
+): boolean {
+  if (control?.required !== undefined) return !!control.required;
+  if (typeof errorMessage === 'object' && errorMessage?.required) return true;
+  return false;
+}
+
+function resolveControlErrorMessage(
+  control: IReactFormControlState | undefined,
+  label: string,
+  errorMessage?: IFormControlErrorMessage
+): string | null {
+  if (!control?.error) return null;
+
+  if (typeof errorMessage === 'string') return errorMessage;
+  if (typeof errorMessage === 'function') return errorMessage(label);
+
+  if (typeof errorMessage === 'object' && errorMessage) {
+    if (control.error?.required && errorMessage.required)
+      return errorMessage.required;
+    if (errorMessage.invalid) return errorMessage.invalid;
+  }
+
+  if (typeof control.error === 'string') return control.error;
+
+  if (control.error?.message && typeof control.error.message === 'string') {
+    return control.error.message;
+  }
+
+  try {
+    return JSON.stringify(control.error);
+  } catch {
+    return 'Invalid value';
+  }
+}
+
+/* =========================================
  * ISelect
  * ========================================= */
 
-export function ISelect<T = any>(props: ISelectProps<T>) {
+export const ISelect = forwardRef(function ISelectInner<T = any>(
+  props: ISelectProps<T>,
+  ref: React.ForwardedRef<ISelectHandle>
+) {
   const {
     placeholder = '',
     disabled = false,
@@ -261,6 +395,20 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     return String(row as any);
   };
 
+  // ---------- imperative API (for IFCSelect label click parity) ----------
+  const focus = () => {
+    if (disabled) return;
+    inputRef.current?.focus?.();
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus,
+    }),
+    [disabled]
+  );
+
   // ---------- sync model from props ----------
   useEffect(() => {
     if (!isControlled) return;
@@ -347,7 +495,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
 
   // ---------- sync view text from model/options ----------
   useEffect(() => {
-    // when closed: show label; clear filter/highlight
     if (!isOpen) {
       setDisplayText(resolveDisplayText(modelValue));
       setFilterText('');
@@ -356,7 +503,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
       return;
     }
 
-    // when open: keep filtering
     applyFilter(true, filterText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modelValue, rawOptions, isOpen]);
@@ -366,15 +512,12 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     const host = hostRef.current;
     if (!host) return null;
 
-    // ✅ prefer i-input host (matches Angular fix)
     const iInput = host.querySelector('i-input') as HTMLElement | null;
     if (iInput?.getBoundingClientRect) return iInput.getBoundingClientRect();
 
-    // fallback: i-select host
     if ((host as any).getBoundingClientRect)
       return host.getBoundingClientRect();
 
-    // last fallback: native input
     const input = host.querySelector(
       'i-input input'
     ) as HTMLInputElement | null;
@@ -394,20 +537,17 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
 
     const pos = (panelPosition || 'bottom left').trim().toLowerCase();
 
-    // fixed positioning (Angular parity)
     panel.style.position = 'fixed';
     panel.style.zIndex = '2000';
     panel.style.boxSizing = 'border-box';
     panel.style.overflowY = 'auto';
 
-    // width matches trigger
     if (matchTriggerWidth) {
       panel.style.width = `${Math.round(rect.width)}px`;
     } else {
       panel.style.width = '';
     }
 
-    // measure after width
     const panelRect = panel.getBoundingClientRect();
 
     const wantTop = pos.startsWith('top');
@@ -421,12 +561,10 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     const wantRight = pos.includes('right') || pos === 'right';
     const alignRight = wantRight && !wantLeft;
 
-    // Horizontal clamp ok
     let left = alignRight ? rect.right - panelRect.width : rect.left;
     const maxLeft = Math.max(gap, vw - panelRect.width - gap);
     left = Math.min(Math.max(gap, left), maxLeft);
 
-    // side positions
     if (pos === 'left') {
       left = rect.left - panelRect.width - panelOffset;
       left = Math.min(Math.max(gap, left), maxLeft);
@@ -461,13 +599,11 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
       return;
     }
 
-    // Top/Bottom: keep attached; constrain height (no vertical clamp)
     const spaceBelow = vh - rect.bottom - panelOffset - gap;
     const spaceAbove = rect.top - panelOffset - gap;
 
     let side: 'top' | 'bottom' = wantTop && !wantBottom ? 'top' : 'bottom';
 
-    // flip if needed
     if (
       side === 'bottom' &&
       panelRect.height > spaceBelow &&
@@ -515,16 +651,12 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
 
     wantsOpenRef.current = true;
 
-    // if no list, don't bother
     if (!hasOptionsList) {
       setPanelHidden(false);
       return;
     }
 
-    // hide immediately (prevents "wrong side" flash)
     setPanelHidden(true);
-
-    // position next frame, then show
     scheduleReposition(() => setPanelHidden(false));
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -588,7 +720,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
 
     setIsOpen(true);
 
-    // compute list immediately (parity)
     const term = filterText.toLowerCase().trim();
     const next = !term
       ? [...rawOptions]
@@ -624,7 +755,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     setIsOpen(false);
     setHighlightIndex(-1);
 
-    // reset inline styles (nice hygiene; Angular restores panel DOM, we keep portal)
     const panel = panelRef.current;
     if (panel) {
       panel.style.position = '';
@@ -639,11 +769,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
     }
   };
 
-  const focus = () => {
-    if (disabled) return;
-    inputRef.current?.focus?.();
-  };
-
   // ---------- input behavior ----------
   const handleInputText = (val: string) => {
     setDisplayText(val);
@@ -651,7 +776,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
 
     if (!isOpen) {
       setIsOpen(true);
-      // filter after state settles
       setTimeout(() => applyFilter(true, val), 0);
     } else {
       applyFilter(true, val);
@@ -820,7 +944,6 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
       ref={(el) => {
         panelRef.current = el as any;
 
-        // keep a class marker like Angular does
         if (panelRef.current) {
           if (portalToBody)
             panelRef.current.classList.add('i-options--portaled');
@@ -895,4 +1018,130 @@ export function ISelect<T = any>(props: ISelectProps<T>) {
         : optionsNode}
     </i-select>
   );
-}
+}) as <T = any>(
+  props: ISelectProps<T> & { ref?: React.Ref<ISelectHandle> }
+) => JSX.Element;
+
+/* =========================================
+ * IFCSelect
+ * ========================================= */
+
+export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
+  props: IFCSelectProps<T>,
+  ref: React.ForwardedRef<IFCSelectHandle>
+) {
+  const {
+    label = '',
+    placeholder = '',
+
+    options = null,
+    options$ = null,
+
+    displayWith,
+    filterDelay = 200,
+    filterPredicate,
+
+    panelPosition = 'bottom left',
+
+    control,
+    errorMessage,
+
+    disabled = false,
+
+    value,
+    defaultValue = null,
+
+    onChanged,
+    onOptionSelected,
+
+    renderOption,
+
+    portalToBody = true,
+    panelOffset = 6,
+    matchTriggerWidth = true,
+
+    invalid = false,
+
+    className,
+    ...hostProps
+  } = props;
+
+  const innerSelectRef = useRef<ISelectHandle | null>(null);
+
+  const focusInnerSelect = () => {
+    if (!disabled) innerSelectRef.current?.focus();
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: focusInnerSelect,
+    }),
+    [disabled]
+  );
+
+  const controlInvalid = useMemo(() => {
+    if (!control) return false;
+
+    const inv = !!control.invalid;
+    if (!inv) return false;
+
+    if (control.submitted !== undefined) return inv && !!control.submitted;
+
+    return inv && (!!control.dirty || !!control.touched);
+  }, [control]);
+
+  const required = useMemo(
+    () => isControlRequired(control, errorMessage),
+    [control, errorMessage]
+  );
+
+  const resolvedErrorText = useMemo(
+    () => resolveControlErrorMessage(control, label, errorMessage),
+    [control, label, errorMessage]
+  );
+
+  return (
+    <i-fc-select {...hostProps} className={className as any}>
+      {label ? (
+        <label className="i-fc-select__label" onClick={focusInnerSelect}>
+          {label} :
+          {required ? <span className="i-fc-select__required">*</span> : null}
+        </label>
+      ) : null}
+
+      <ISelect<T>
+        ref={(api) => {
+          innerSelectRef.current = api ?? null;
+        }}
+        disabled={disabled}
+        invalid={invalid || controlInvalid}
+        placeholder={placeholder}
+        options={options}
+        options$={options$}
+        displayWith={displayWith}
+        filterDelay={filterDelay}
+        filterPredicate={filterPredicate as any}
+        panelPosition={panelPosition}
+        portalToBody={portalToBody}
+        panelOffset={panelOffset}
+        matchTriggerWidth={matchTriggerWidth}
+        renderOption={renderOption}
+        value={value}
+        defaultValue={defaultValue ?? undefined} // ✅ null -> undefined
+        onChanged={(change) => {
+          onChanged?.(change);
+        }}
+        onOptionSelected={(change) => {
+          onOptionSelected?.(change);
+        }}
+      />
+
+      {controlInvalid && resolvedErrorText ? (
+        <div className="i-fc-select__error">{resolvedErrorText}</div>
+      ) : null}
+    </i-fc-select>
+  );
+}) as <T = any>(
+  props: IFCSelectProps<T> & { ref?: React.Ref<IFCSelectHandle> }
+) => JSX.Element;
