@@ -128,6 +128,9 @@ function resolveFileUrl(file: string): string {
   const f = (file ?? '').trim();
   if (!f) return f;
 
+  // Optional QoL: allow "/public/xxx" (Vite serves public as "/xxx")
+  if (f.startsWith('/public/')) return f.slice('/public'.length);
+
   if (isAbsoluteUrl(f) || f.startsWith('/')) return f;
 
   const base = (import.meta as any).url as string;
@@ -234,10 +237,6 @@ export function ICodeViewer(props: ICodeViewerProps) {
   const projectedRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
-    // Only project when:
-    // - no file
-    // - no explicit code
-    // - and current rawCode is empty (so we don't override)
     if (fileTrimmed) return;
     if (codePropString) return;
     if (rawCode) return;
@@ -493,10 +492,11 @@ export function ICodeViewer(props: ICodeViewerProps) {
           {/* content row */}
           <div
             className={[
+              // ✅ Match Angular: always scroll classes here
               'i-code-viewer-content',
               'hljs',
-              scrollEffective ? 'scroll' : null,
-              scrollEffective ? 'scroll-y' : null,
+              'scroll',
+              'scroll-y',
             ]
               .filter(Boolean)
               .join(' ')}>
