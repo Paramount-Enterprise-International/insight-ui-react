@@ -37,9 +37,44 @@ function normalizeHref(input?: string | null): string | undefined {
   return s;
 }
 
-function routerLinkToHref(routerLink?: RouterLinkInput): string | undefined {
+function getBasePathname(): string {
+  // /docs/components  -> base should be /docs/components/
+  // /docs/components/ -> keep
+  if (typeof window === 'undefined') return '/';
+  const p = window.location?.pathname ?? '/';
+  return p.endsWith('/') ? p : `${p}/`;
+}
+
+function resolveRelativePath(relative: string, basePathname: string): string {
+  // Use URL resolution to correctly handle:
+  // - "button" -> /docs/components/button
+  // - "./button"
+  // - "../button"
+  // basePathname must end with "/"
+  try {
+    if (typeof window === 'undefined') {
+      // SSR fallback: treat as root-absolute
+      return relative.startsWith('/') ? relative : `/${relative}`;
+    }
+
+    const origin = window.location.origin;
+    const base = new URL(basePathname, origin);
+    const resolved = new URL(relative, base);
+    return resolved.pathname + resolved.search + resolved.hash;
+  } catch {
+    // fallback: best effort
+    if (relative.startsWith('/')) return relative;
+    return basePathname + relative.replace(/^\/+/, '');
+  }
+}
+
+function routerLinkToHref(
+  routerLink?: RouterLinkInput,
+  basePathname: string = '/'
+): string | undefined {
   if (routerLink === undefined || routerLink === null) return undefined;
 
+  // Array form: join as a path, then resolve relative unless it starts with "/"
   if (Array.isArray(routerLink)) {
     const parts = routerLink
       .flat()
@@ -47,12 +82,21 @@ function routerLinkToHref(routerLink?: RouterLinkInput): string | undefined {
       .filter(Boolean);
 
     if (parts.length === 0) return undefined;
-    return '/' + parts.join('/').replace(/\/+/g, '/');
+
+    const joined = parts.join('/').replace(/\/+/g, '/');
+    if (joined.startsWith('/')) return joined;
+
+    return resolveRelativePath(joined, basePathname);
   }
 
   const s = String(routerLink).trim();
   if (!s) return undefined;
-  return s.startsWith('/') ? s : `/${s}`;
+
+  // Absolute router link stays absolute
+  if (s.startsWith('/')) return s;
+
+  // Relative router link resolves against current pathname (Angular-like)
+  return resolveRelativePath(s, basePathname);
 }
 
 export function ICard(props: ICardProps) {
@@ -74,7 +118,12 @@ export function ICard(props: ICardProps) {
   } = props;
 
   const normalizedHref = useMemo(() => normalizeHref(href), [href]);
-  const routerHref = useMemo(() => routerLinkToHref(routerLink), [routerLink]);
+
+  const basePathname = useMemo(() => getBasePathname(), []);
+  const routerHref = useMemo(
+    () => routerLinkToHref(routerLink, basePathname),
+    [routerLink, basePathname]
+  );
 
   // Angular behavior:
   // - routerLink takes precedence (when enabled)
