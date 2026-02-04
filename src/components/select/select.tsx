@@ -3,19 +3,17 @@
  * ISelect + IFCSelect (React)
  * Version: 2.2.2
  *
- * Parity with Angular ISelect 2.2.2 + Angular IFCSelect wrapper.
+ * Parity with Angular:
+ * - ISelect 2.2.2
+ * - IFCSelect wrapper
  *
- * ISelect:
- * - Render options container as <i-options> (not <div>)
- * - Match dropdown width to visible control width (uses i-input host rect)
- * - Keep portal-to-body + fixed positioning for overflow parents
- * - ✅ Fix flicker: portal + measure + position BEFORE showing panel
- * - ✅ Expose imperative handle (ref) with focus()
- *
- * IFCSelect:
- * - Label + required indicator
- * - Click label focuses inner select
- * - Shows error text only when invalid and (submitted OR touched/dirty)
+ * Notes:
+ * - options panel renders as <i-options>
+ * - portal-to-body supported (default true)
+ * - fixed positioning + matchTriggerWidth supported
+ * - flicker fix (hide until first reposition)
+ * - exposes ref focus() for IFCSelect label click parity
+ * - IFCSelect uses shared resolveControlErrorMessage/isControlRequired from shared/form
  */
 
 import React, {
@@ -38,6 +36,10 @@ import {
   type IInputAddonButton,
   type IInputAddonLoading,
 } from '../input';
+
+// ✅ use your shared form helpers/types
+import type { IErrors, IFormControlErrorMessage } from '../shared';
+import { isControlRequired, resolveControlErrorMessage } from '../shared/';
 
 /* =========================================
  * Shared Types
@@ -119,6 +121,7 @@ export type ISelectProps<T = any> = Omit<
 
   /**
    * Default selected value (uncontrolled)
+   * NOTE: keep API allowing null, but we won't pass null into DOM props.
    */
   defaultValue?: T | null;
 
@@ -132,28 +135,6 @@ export type ISelectProps<T = any> = Omit<
 /* =========================================
  * IFCSelect Types
  * ========================================= */
-
-export type IFormControlErrorMessage =
-  | string
-  | ((label: string) => string)
-  | {
-      required?: string;
-      invalid?: string;
-      [key: string]: string | undefined;
-    };
-
-/**
- * Minimal "form control" state shape for React usage.
- * Plug your actual form layer into this (Formik/RHF/custom).
- */
-export type IReactFormControlState = {
-  invalid?: boolean;
-  touched?: boolean;
-  dirty?: boolean;
-  submitted?: boolean;
-  error?: any;
-  required?: boolean;
-};
 
 export type IFCSelectHandle = {
   focus: () => void;
@@ -175,11 +156,18 @@ export type IFCSelectProps<T = any> = Omit<
 
   panelPosition?: ISelectPanelPosition;
 
-  /** form state input (your form layer provides this) */
-  control?: IReactFormControlState;
-
-  /** optional error message resolver / overrides */
+  /** Angular-like error hooks */
+  errors?: IErrors | null;
   errorMessage?: IFormControlErrorMessage;
+
+  /**
+   * Angular parity:
+   * If submitted is provided, invalid display is gated by submitted.
+   * Otherwise invalid display is gated by dirty/touched.
+   */
+  submitted?: boolean;
+  touched?: boolean;
+  dirty?: boolean;
 
   disabled?: boolean;
 
@@ -193,13 +181,17 @@ export type IFCSelectProps<T = any> = Omit<
   onChanged?: (change: ISelectChange<T>) => void;
   onOptionSelected?: (change: ISelectChange<T>) => void;
 
-  /** Pass-through to ISelect if you need custom option renderer */
+  /** pass-through */
   renderOption?: (row: T) => React.ReactNode;
-
-  /** Pass-through to ISelect if you need these */
   portalToBody?: boolean;
   panelOffset?: number;
   matchTriggerWidth?: boolean;
+
+  /**
+   * Force invalid (non-form usage)
+   * Note: IFCSelect already computes invalid from errors + submitted/touched/dirty.
+   * This is additive (OR).
+   */
   invalid?: boolean;
 };
 
@@ -249,48 +241,6 @@ function highlightParts(text: string, term: string): React.ReactNode {
       {after}
     </>
   );
-}
-
-/* =========================================
- * Error helpers (IFCSelect)
- * ========================================= */
-
-function isControlRequired(
-  control?: IReactFormControlState,
-  errorMessage?: IFormControlErrorMessage
-): boolean {
-  if (control?.required !== undefined) return !!control.required;
-  if (typeof errorMessage === 'object' && errorMessage?.required) return true;
-  return false;
-}
-
-function resolveControlErrorMessage(
-  control: IReactFormControlState | undefined,
-  label: string,
-  errorMessage?: IFormControlErrorMessage
-): string | null {
-  if (!control?.error) return null;
-
-  if (typeof errorMessage === 'string') return errorMessage;
-  if (typeof errorMessage === 'function') return errorMessage(label);
-
-  if (typeof errorMessage === 'object' && errorMessage) {
-    if (control.error?.required && errorMessage.required)
-      return errorMessage.required;
-    if (errorMessage.invalid) return errorMessage.invalid;
-  }
-
-  if (typeof control.error === 'string') return control.error;
-
-  if (control.error?.message && typeof control.error.message === 'string') {
-    return control.error.message;
-  }
-
-  try {
-    return JSON.stringify(control.error);
-  } catch {
-    return 'Invalid value';
-  }
 }
 
 /* =========================================
@@ -641,7 +591,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     });
   };
 
-  // ✅ Initial open: hide, then position on next frame, then show (flicker fix)
+  // ✅ Initial open: hide, then position on next frame, then show
   useLayoutEffect(() => {
     if (!isOpen) {
       wantsOpenRef.current = false;
@@ -1043,8 +993,12 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
 
     panelPosition = 'bottom left',
 
-    control,
+    errors = null,
     errorMessage,
+
+    submitted,
+    touched,
+    dirty,
 
     disabled = false,
 
@@ -1081,24 +1035,29 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
   );
 
   const controlInvalid = useMemo(() => {
-    if (!control) return false;
+    const hasErr = !!errors && Object.keys(errors).length > 0;
+    if (!hasErr) return false;
 
-    const inv = !!control.invalid;
-    if (!inv) return false;
-
-    if (control.submitted !== undefined) return inv && !!control.submitted;
-
-    return inv && (!!control.dirty || !!control.touched);
-  }, [control]);
+    // Angular parity:
+    // - if submitted is provided: show invalid only when submitted
+    // - otherwise: show invalid when touched or dirty
+    if (submitted !== undefined) return !!submitted;
+    return !!touched || !!dirty;
+  }, [errors, submitted, touched, dirty]);
 
   const required = useMemo(
-    () => isControlRequired(control, errorMessage),
-    [control, errorMessage]
+    () => isControlRequired({ errors: errors ?? undefined, errorMessage }),
+    [errors, errorMessage]
   );
 
   const resolvedErrorText = useMemo(
-    () => resolveControlErrorMessage(control, label, errorMessage),
-    [control, label, errorMessage]
+    () =>
+      resolveControlErrorMessage({
+        errors: errors ?? undefined,
+        label,
+        errorMessage,
+      }),
+    [errors, label, errorMessage]
   );
 
   return (
@@ -1128,13 +1087,10 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
         matchTriggerWidth={matchTriggerWidth}
         renderOption={renderOption}
         value={value}
-        defaultValue={defaultValue ?? undefined} // ✅ null -> undefined
-        onChanged={(change) => {
-          onChanged?.(change);
-        }}
-        onOptionSelected={(change) => {
-          onOptionSelected?.(change);
-        }}
+        // ✅ IMPORTANT: never pass null as defaultValue into JSX typing
+        defaultValue={defaultValue ?? undefined}
+        onChanged={onChanged}
+        onOptionSelected={onOptionSelected}
       />
 
       {controlInvalid && resolvedErrorText ? (
