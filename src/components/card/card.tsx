@@ -1,5 +1,6 @@
 // card.tsx
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 
 export type RouterLinkInput = string | any[] | undefined;
 
@@ -10,15 +11,15 @@ export type ICardProps = Omit<
   // External / normal anchor
   href?: string | null;
 
-  // Angular Router (API parity)
+  // React Router (API parity with Angular naming)
   routerLink?: RouterLinkInput;
   queryParams?: Record<string, any> | null;
   fragment?: string;
-  replaceUrl?: boolean;
-  skipLocationChange?: boolean;
-  state?: Record<string, any>;
+  replaceUrl?: boolean; // -> Link "replace"
+  skipLocationChange?: boolean; // parity-only (unused)
+  state?: Record<string, any>; // -> Link "state"
 
-  // Anchor-related
+  // Anchor-related (also supported by Link)
   target?: '_self' | '_blank' | '_parent' | '_top' | string;
   rel?: string | null;
 
@@ -33,38 +34,11 @@ export type ICardProps = Omit<
 function normalizeHref(input?: string | null): string | undefined {
   if (input === null || input === undefined) return undefined;
   const s = String(input).trim();
-  if (!s) return undefined;
-  return s;
+  return s ? s : undefined;
 }
 
-function getBasePathname(): string {
-  if (typeof window === 'undefined') return '/';
-  const p = window.location?.pathname ?? '/';
-  // if you are at "/docs/components" we want base "/docs/components/"
-  return p.endsWith('/') ? p : `${p}/`;
-}
-
-function routerLinkToHref(routerLink?: RouterLinkInput): string | undefined {
+function routerLinkToTo(routerLink?: RouterLinkInput): string | undefined {
   if (routerLink === undefined || routerLink === null) return undefined;
-
-  const basePathname = getBasePathname();
-
-  const resolve = (raw: string): string | undefined => {
-    const s = String(raw ?? '').trim();
-    if (!s) return undefined;
-
-    // absolute path stays absolute
-    if (s.startsWith('/')) return s;
-
-    // full URL / protocol links stay as-is (http:, https:, mailto:, tel:, etc)
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s)) return s;
-
-    // relative resolves against current pathname (Angular-like)
-    if (typeof window === 'undefined') return `/${s}`;
-
-    const u = new URL(s, window.location.origin + basePathname);
-    return u.pathname + u.search + u.hash;
-  };
 
   if (Array.isArray(routerLink)) {
     const parts = routerLink
@@ -74,12 +48,15 @@ function routerLinkToHref(routerLink?: RouterLinkInput): string | undefined {
 
     if (parts.length === 0) return undefined;
 
-    // Array form is treated as "relative unless it starts with /"
+    // Treat array form as a path join.
+    // If the joined result starts with "/", it's absolute.
+    // Otherwise it's relative (and Link can resolve it with relative="path").
     const joined = parts.join('/').replace(/\/+/g, '/');
-    return resolve(joined);
+    return joined;
   }
 
-  return resolve(String(routerLink));
+  const s = String(routerLink).trim();
+  return s ? s : undefined; // keep relative as-is
 }
 
 function buildSearch(queryParams?: Record<string, any> | null): string {
@@ -100,51 +77,15 @@ function buildHash(fragment?: string): string {
   return f.startsWith('#') ? f : `#${f}`;
 }
 
-function withQueryAndFragment(
-  href?: string,
-  queryParams?: Record<string, any> | null,
-  fragment?: string
-): string | undefined {
-  if (!href) return href;
-
-  const search = buildSearch(queryParams);
-  const hash = buildHash(fragment);
-
-  // Keep it predictable:
-  // - preserve existing search/hash on href
-  // - append only if not present
-  const hasSearch = href.includes('?');
-  const hasHash = href.includes('#');
-
-  let out = href;
-
-  if (search && !hasSearch) out += search;
-  if (hash && !hasHash) out += hash;
-
-  return out;
-}
-
-function warnOnceFactory() {
-  const seen = new Set<string>();
-  return (key: string, message: string) => {
-    if (seen.has(key)) return;
-    seen.add(key);
-    // eslint-disable-next-line no-console
-    console.warn(message);
-  };
-}
-
-const warnOnce = warnOnceFactory();
-
 export function ICard(props: ICardProps) {
   const {
     href,
     routerLink,
     queryParams,
     fragment,
-    replaceUrl = false, // parity-only (unused)
+    replaceUrl = false,
     skipLocationChange = false, // parity-only (unused)
-    state, // parity-only (unused)
+    state,
     target,
     rel,
     disabled = false,
@@ -155,52 +96,29 @@ export function ICard(props: ICardProps) {
   } = props;
 
   const normalizedHref = useMemo(() => normalizeHref(href), [href]);
-  const routerHref = useMemo(() => routerLinkToHref(routerLink), [routerLink]);
 
-  // Angular behavior:
-  // - routerLink takes precedence (when enabled)
-  // - otherwise href
-  const rawEffectiveHref = disabled
-    ? undefined
-    : (routerHref ?? normalizedHref);
+  const toBase = useMemo(() => routerLinkToTo(routerLink), [routerLink]);
+  const search = useMemo(() => buildSearch(queryParams), [queryParams]);
+  const hash = useMemo(() => buildHash(fragment), [fragment]);
 
-  // Apply queryParams + fragment (parity-friendly) to whatever we decided
-  const effectiveHref = useMemo(
-    () => withQueryAndFragment(rawEffectiveHref, queryParams, fragment),
-    [rawEffectiveHref, queryParams, fragment]
-  );
+  const to = useMemo(() => {
+    if (!toBase) return undefined;
 
-  const hasHref = !!effectiveHref;
+    // If toBase already has ? or #, we don't try to merge (keep predictable).
+    // Prefer the explicit queryParams/fragment when base is clean.
+    const hasSearch = toBase.includes('?');
+    const hasHash = toBase.includes('#');
+
+    let out = toBase;
+    if (search && !hasSearch) out += search;
+    if (hash && !hasHash) out += hash;
+    return out;
+  }, [toBase, search, hash]);
+
+  const hasRouterLink = !!to;
   const hasClick = typeof onClick === 'function';
 
-  useEffect(() => {
-    const hasRouter =
-      routerLink !== undefined && routerLink !== null && routerLink !== '';
-    const hasRawHref = !!normalizeHref(href);
-
-    if (hasRawHref && hasRouter) {
-      warnOnce(
-        'href+routerLink',
-        '[i-card] Do not use `href` and `routerLink` together. Choose one.'
-      );
-    }
-
-    if (hasClick && (hasRawHref || hasRouter)) {
-      warnOnce(
-        'click+nav',
-        '[i-card] `onClick` should not be combined with `href` or `routerLink`.'
-      );
-    }
-
-    if (!hasRawHref && !hasRouter && !hasClick) {
-      warnOnce(
-        'no-action',
-        '[i-card] No action provided. Add `href`, `routerLink`, or `onClick`.'
-      );
-    }
-  }, [hasClick, href, routerLink]);
-
-  // Angular relAttr:
+  // Angular relAttr behavior for anchors:
   // - if rel provided, use it
   // - else if target=_blank, use "noopener noreferrer"
   // - else undefined
@@ -218,31 +136,49 @@ export function ICard(props: ICardProps) {
       return;
     }
 
-    // Button-like behavior (Angular: if output observed, prevent navigation and emit)
+    // Angular-like: if onClick provided, prevent navigation and emit
     if (hasClick) {
       ev.preventDefault();
       onClick?.(ev);
       return;
     }
 
-    // Prevent empty anchor navigation (Angular)
-    if (!hasHref) {
+    // If no href/to (shouldn’t happen often), prevent empty navigation
+    if (!hasRouterLink && !normalizedHref) {
       ev.preventDefault();
     }
   };
 
   return (
     <i-card className={className} {...rest}>
-      <a
-        className="i-card"
-        aria-disabled={disabled ? 'true' : undefined}
-        tabIndex={disabled ? -1 : undefined}
-        href={effectiveHref}
-        target={target ?? undefined}
-        rel={relAttr ?? undefined}
-        onClick={handleClick}>
-        {children}
-      </a>
+      {hasRouterLink ? (
+        <Link
+          className="i-card"
+          aria-disabled={disabled ? 'true' : undefined}
+          tabIndex={disabled ? -1 : undefined}
+          to={disabled ? '' : to!}
+          // KEY: makes "button" resolve to "/docs/components/button"
+          // when you're at "/docs/components"
+          relative="path"
+          replace={replaceUrl}
+          state={state}
+          target={target ?? undefined}
+          rel={relAttr ?? undefined}
+          onClick={handleClick}>
+          {children}
+        </Link>
+      ) : (
+        <a
+          className="i-card"
+          aria-disabled={disabled ? 'true' : undefined}
+          tabIndex={disabled ? -1 : undefined}
+          href={disabled ? undefined : normalizedHref}
+          target={target ?? undefined}
+          rel={relAttr ?? undefined}
+          onClick={handleClick}>
+          {children}
+        </a>
+      )}
     </i-card>
   );
 }
