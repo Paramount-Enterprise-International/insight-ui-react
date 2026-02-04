@@ -38,43 +38,34 @@ function normalizeHref(input?: string | null): string | undefined {
 }
 
 function getBasePathname(): string {
-  // /docs/components  -> base should be /docs/components/
-  // /docs/components/ -> keep
   if (typeof window === 'undefined') return '/';
   const p = window.location?.pathname ?? '/';
+  // if you are at "/docs/components" we want base "/docs/components/"
   return p.endsWith('/') ? p : `${p}/`;
 }
 
-function resolveRelativePath(relative: string, basePathname: string): string {
-  // Use URL resolution to correctly handle:
-  // - "button" -> /docs/components/button
-  // - "./button"
-  // - "../button"
-  // basePathname must end with "/"
-  try {
-    if (typeof window === 'undefined') {
-      // SSR fallback: treat as root-absolute
-      return relative.startsWith('/') ? relative : `/${relative}`;
-    }
-
-    const origin = window.location.origin;
-    const base = new URL(basePathname, origin);
-    const resolved = new URL(relative, base);
-    return resolved.pathname + resolved.search + resolved.hash;
-  } catch {
-    // fallback: best effort
-    if (relative.startsWith('/')) return relative;
-    return basePathname + relative.replace(/^\/+/, '');
-  }
-}
-
-function routerLinkToHref(
-  routerLink?: RouterLinkInput,
-  basePathname: string = '/'
-): string | undefined {
+function routerLinkToHref(routerLink?: RouterLinkInput): string | undefined {
   if (routerLink === undefined || routerLink === null) return undefined;
 
-  // Array form: join as a path, then resolve relative unless it starts with "/"
+  const basePathname = getBasePathname();
+
+  const resolve = (raw: string): string | undefined => {
+    const s = String(raw ?? '').trim();
+    if (!s) return undefined;
+
+    // absolute path stays absolute
+    if (s.startsWith('/')) return s;
+
+    // full URL / protocol links stay as-is (http:, https:, mailto:, tel:, etc)
+    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s)) return s;
+
+    // relative resolves against current pathname (Angular-like)
+    if (typeof window === 'undefined') return `/${s}`;
+
+    const u = new URL(s, window.location.origin + basePathname);
+    return u.pathname + u.search + u.hash;
+  };
+
   if (Array.isArray(routerLink)) {
     const parts = routerLink
       .flat()
@@ -83,28 +74,74 @@ function routerLinkToHref(
 
     if (parts.length === 0) return undefined;
 
+    // Array form is treated as "relative unless it starts with /"
     const joined = parts.join('/').replace(/\/+/g, '/');
-    if (joined.startsWith('/')) return joined;
-
-    return resolveRelativePath(joined, basePathname);
+    return resolve(joined);
   }
 
-  const s = String(routerLink).trim();
-  if (!s) return undefined;
-
-  // Absolute router link stays absolute
-  if (s.startsWith('/')) return s;
-
-  // Relative router link resolves against current pathname (Angular-like)
-  return resolveRelativePath(s, basePathname);
+  return resolve(String(routerLink));
 }
+
+function buildSearch(queryParams?: Record<string, any> | null): string {
+  if (!queryParams) return '';
+  const usp = new URLSearchParams();
+  for (const [k, v] of Object.entries(queryParams)) {
+    if (v === undefined || v === null) continue;
+    usp.set(k, String(v));
+  }
+  const s = usp.toString();
+  return s ? `?${s}` : '';
+}
+
+function buildHash(fragment?: string): string {
+  if (!fragment) return '';
+  const f = String(fragment).trim();
+  if (!f) return '';
+  return f.startsWith('#') ? f : `#${f}`;
+}
+
+function withQueryAndFragment(
+  href?: string,
+  queryParams?: Record<string, any> | null,
+  fragment?: string
+): string | undefined {
+  if (!href) return href;
+
+  const search = buildSearch(queryParams);
+  const hash = buildHash(fragment);
+
+  // Keep it predictable:
+  // - preserve existing search/hash on href
+  // - append only if not present
+  const hasSearch = href.includes('?');
+  const hasHash = href.includes('#');
+
+  let out = href;
+
+  if (search && !hasSearch) out += search;
+  if (hash && !hasHash) out += hash;
+
+  return out;
+}
+
+function warnOnceFactory() {
+  const seen = new Set<string>();
+  return (key: string, message: string) => {
+    if (seen.has(key)) return;
+    seen.add(key);
+    // eslint-disable-next-line no-console
+    console.warn(message);
+  };
+}
+
+const warnOnce = warnOnceFactory();
 
 export function ICard(props: ICardProps) {
   const {
     href,
     routerLink,
-    queryParams, // parity-only (unused)
-    fragment, // parity-only (unused)
+    queryParams,
+    fragment,
     replaceUrl = false, // parity-only (unused)
     skipLocationChange = false, // parity-only (unused)
     state, // parity-only (unused)
@@ -118,47 +155,48 @@ export function ICard(props: ICardProps) {
   } = props;
 
   const normalizedHref = useMemo(() => normalizeHref(href), [href]);
-
-  const basePathname = useMemo(() => getBasePathname(), []);
-  const routerHref = useMemo(
-    () => routerLinkToHref(routerLink, basePathname),
-    [routerLink, basePathname]
-  );
+  const routerHref = useMemo(() => routerLinkToHref(routerLink), [routerLink]);
 
   // Angular behavior:
   // - routerLink takes precedence (when enabled)
   // - otherwise href
-  const effectiveHref = disabled ? undefined : (routerHref ?? normalizedHref);
+  const rawEffectiveHref = disabled
+    ? undefined
+    : (routerHref ?? normalizedHref);
+
+  // Apply queryParams + fragment (parity-friendly) to whatever we decided
+  const effectiveHref = useMemo(
+    () => withQueryAndFragment(rawEffectiveHref, queryParams, fragment),
+    [rawEffectiveHref, queryParams, fragment]
+  );
 
   const hasHref = !!effectiveHref;
   const hasClick = typeof onClick === 'function';
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production') {
-      const hasRouter =
-        routerLink !== undefined && routerLink !== null && routerLink !== '';
-      const hasRawHref = !!normalizeHref(href);
+    const hasRouter =
+      routerLink !== undefined && routerLink !== null && routerLink !== '';
+    const hasRawHref = !!normalizeHref(href);
 
-      if (hasRawHref && hasRouter) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[i-card] Do not use `href` and `routerLink` together. Choose one.'
-        );
-      }
+    if (hasRawHref && hasRouter) {
+      warnOnce(
+        'href+routerLink',
+        '[i-card] Do not use `href` and `routerLink` together. Choose one.'
+      );
+    }
 
-      if (hasClick && (hasRawHref || hasRouter)) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[i-card] `onClick` should not be combined with `href` or `routerLink`.'
-        );
-      }
+    if (hasClick && (hasRawHref || hasRouter)) {
+      warnOnce(
+        'click+nav',
+        '[i-card] `onClick` should not be combined with `href` or `routerLink`.'
+      );
+    }
 
-      if (!hasRawHref && !hasRouter && !hasClick) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          '[i-card] No action provided. Add `href`, `routerLink`, or `onClick`.'
-        );
-      }
+    if (!hasRawHref && !hasRouter && !hasClick) {
+      warnOnce(
+        'no-action',
+        '[i-card] No action provided. Add `href`, `routerLink`, or `onClick`.'
+      );
     }
   }, [hasClick, href, routerLink]);
 
