@@ -591,6 +591,17 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     });
   };
 
+  const ensurePanelPositionedAndShown = () => {
+    if (!wantsOpenRef.current) return;
+    // hide first (prevents flicker)
+    setPanelHidden(true);
+
+    // wait one frame so the portal element is definitely in DOM and measurable
+    scheduleReposition(() => {
+      setPanelHidden(false);
+    });
+  };
+
   // ✅ Initial open: hide, then position on next frame, then show
   useLayoutEffect(() => {
     if (!isOpen) {
@@ -898,17 +909,20 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
           if (portalToBody)
             panelRef.current.classList.add('i-options--portaled');
           else panelRef.current.classList.remove('i-options--portaled');
+
+          // ✅ KEY FIX:
+          // When the portaled panel actually mounts while open,
+          // position it and then unhide it.
+          if (isOpen && filteredOptions.length > 0) {
+            ensurePanelPositionedAndShown();
+          }
         }
       }}
       className={`i-options scroll scroll-y ${panelPositionClass}`}
-      style={
-        panelHidden
-          ? {
-              visibility: 'hidden',
-              pointerEvents: 'none',
-            }
-          : undefined
-      }>
+      style={{
+        visibility: panelHidden ? 'hidden' : 'visible',
+        pointerEvents: panelHidden ? 'none' : 'auto',
+      }}>
       {filteredOptions.map((row, idx) => (
         <div
           key={(row as any)?.id ?? `${idx}-${String(row)}`}
