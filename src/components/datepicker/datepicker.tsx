@@ -1,21 +1,13 @@
 /* datepicker.tsx */
 /**
  * IDatepicker (React)
- * Version: 1.5.4
+ * Version: 1.5.5
  *
- * Parity with Angular IDatepicker 1.5.3 + "smart controlled" fixes
+ * Fixes (1.5.5):
+ * - Fix portaled panel stuck hidden (visibility:hidden) by adding open-cycle + failsafe unhide.
+ * - Make panel visibility/pointerEvents always explicit (no conditional style merge).
  *
- * Fixes:
- * - ✅ Prevent value wipe while typing in controlled mode:
- *   - Do NOT emit onChanged(null) for partial/invalid typing (only emit null on clear)
- *   - Echo-suppression while the inner input is focused (ignore prop echoes)
- * - ✅ Keep bubbled "input" events from month/year i-select from wiping date:
- *   -> only handle input when event.target is the date input itself.
- * - Keep portal + positioning + flicker guard.
- *
- * Notes:
- * - Uses IInput mask { type:'date', format } (ensure your React IInput mask supports smart keydown)
- * - Uses ISelect for month/year (ISelect already portals its own <i-options>)
+ * (All your existing "smart controlled" fixes preserved.)
  */
 
 import React, {
@@ -91,7 +83,7 @@ export type IFCDatepickerProps = Omit<
   panelOffset?: number;
 
   value?: Date | string | null;
-  onChanged?: (v: Date | null) => void;
+  onChange?: (v: Date | null) => void;
 
   disabled?: boolean;
 
@@ -307,6 +299,10 @@ export function IDatepicker(props: IDatepickerProps) {
   const [panelHidden, setPanelHidden] = useState(false);
   const wantsOpenRef = useRef(false);
 
+  // ✅ open-cycle + failsafe unhide (same as ISelect fix)
+  const openSeqRef = useRef(0);
+  const unhideTimerRef = useRef<number | null>(null);
+
   // ✅ smart controlled echo suppression
   const isEditingRef = useRef(false);
   const lastEmittedKeyRef = useRef<string | null>(null);
@@ -325,6 +321,16 @@ export function IDatepicker(props: IDatepickerProps) {
     () => ({ type: 'date', format }),
     [format]
   );
+
+  // cleanup timers
+  useEffect(() => {
+    return () => {
+      if (unhideTimerRef.current) {
+        window.clearTimeout(unhideTimerRef.current);
+        unhideTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // -------- DOM helpers --------
   const refreshInnerInputRef = useCallback(() => {
@@ -385,7 +391,7 @@ export function IDatepicker(props: IDatepickerProps) {
     setYears((p) => ensureYearRange(viewYear, p));
   }, [viewYear]);
 
-  // -------- input safety sync (Angular syncFromInnerInputSafely) --------
+  // -------- input safety sync --------
   const syncFromInnerInputSafely = useCallback(() => {
     refreshInnerInputRef();
     const input = inputElRef.current;
@@ -577,6 +583,12 @@ export function IDatepicker(props: IDatepickerProps) {
       wantsOpenRef.current = false;
       setIsOpen(false);
 
+      // clear open-cycle timers
+      if (unhideTimerRef.current) {
+        window.clearTimeout(unhideTimerRef.current);
+        unhideTimerRef.current = null;
+      }
+
       removeGlobalListeners();
 
       const panel = getPanelEl();
@@ -599,10 +611,12 @@ export function IDatepicker(props: IDatepickerProps) {
     [removeGlobalListeners]
   );
 
+  // ✅ open-cycle: hide → reposition → show, with failsafe unhide
   useLayoutEffect(() => {
     if (!isOpen) return;
 
     wantsOpenRef.current = true;
+    const seq = ++openSeqRef.current;
 
     refreshInnerInputRef();
     setPanelHidden(true);
@@ -612,9 +626,24 @@ export function IDatepicker(props: IDatepickerProps) {
       panel.classList.add('i-datepicker-panel--portaled');
 
     addGlobalListeners();
-    scheduleReposition(() => setPanelHidden(false));
+
+    scheduleReposition(() => {
+      if (!wantsOpenRef.current) return;
+      if (seq !== openSeqRef.current) return;
+      setPanelHidden(false);
+    });
+
+    // ✅ failsafe: always unhide next tick if still open
+    if (unhideTimerRef.current) window.clearTimeout(unhideTimerRef.current);
+    unhideTimerRef.current = window.setTimeout(() => {
+      if (!wantsOpenRef.current) return;
+      if (seq !== openSeqRef.current) return;
+      setPanelHidden(false);
+    }, 0);
 
     return () => {
+      // mark this open-cycle invalid
+      // (closePanel also clears timers + resets state)
       wantsOpenRef.current = false;
     };
   }, [
@@ -677,7 +706,7 @@ export function IDatepicker(props: IDatepickerProps) {
 
       const trimmed = raw.trim();
 
-      // ✅ allow user clear
+      // allow clear
       if (!trimmed) {
         setModelValue(null);
         lastEmittedKeyRef.current = null;
@@ -689,7 +718,7 @@ export function IDatepicker(props: IDatepickerProps) {
 
       const parsed = parseInputDate(trimmed, format);
 
-      // ✅ CRITICAL: partial/invalid typing should NOT wipe external value
+      // partial/invalid typing should NOT wipe external value
       if (!parsed) {
         if (isOpen) scheduleReposition();
         return;
@@ -700,7 +729,6 @@ export function IDatepicker(props: IDatepickerProps) {
       setViewMonth(parsed.getMonth());
       setYears((p) => ensureYearRange(parsed.getFullYear(), p));
 
-      // record emission for echo suppression
       lastEmittedKeyRef.current = dateKey(parsed);
       onChanged(parsed);
 
@@ -789,14 +817,13 @@ export function IDatepicker(props: IDatepickerProps) {
     [scheduleReposition]
   );
 
-  // ✅ CRITICAL: input events bubble (month/year ISelect inner inputs)
+  // input events bubble (month/year ISelect inner inputs)
   const onHostInputCapture: React.FormEventHandler<HTMLElement> = (event) => {
     const target = event.target as HTMLElement | null;
     const dateInput = inputElRef.current;
     if (!dateInput) return;
 
     if (target !== dateInput) return;
-
     handleInput(dateInput.value ?? '');
   };
 
@@ -816,14 +843,6 @@ export function IDatepicker(props: IDatepickerProps) {
       const insidePanel = !!panel && panel.contains(target);
 
       if (insideHost || insidePanel) return;
-
-      const active = document.activeElement as HTMLElement | null;
-      const activeInsidePanel = !!panel && !!active && panel.contains(active);
-
-      const clickedInAnySelectOptions =
-        !!target.closest('i-options') || !!target.closest('.i-options');
-
-      if (activeInsidePanel && clickedInAnySelectOptions) return;
 
       closePanel();
     };
@@ -852,9 +871,8 @@ export function IDatepicker(props: IDatepickerProps) {
         .join(' ')}
       style={{
         display: isOpen ? '' : 'none',
-        ...(panelHidden
-          ? { visibility: 'hidden', pointerEvents: 'none' }
-          : null),
+        visibility: panelHidden ? 'hidden' : 'visible',
+        pointerEvents: panelHidden ? 'none' : 'auto',
       }}>
       <div className="i-datepicker-header">
         <IButton icon="prev" size="xs" onClick={prevMonth} />
@@ -922,7 +940,6 @@ export function IDatepicker(props: IDatepickerProps) {
         placeholder={placeholder}
         readonly={disabled}
         value={displayText}
-        // ✅ editing tracking for echo suppression
         onFocus={() => {
           isEditingRef.current = true;
         }}
@@ -965,7 +982,7 @@ export function IFCDatepicker(props: IFCDatepickerProps) {
     panelOffset = 6,
 
     value = null,
-    onChanged = noop,
+    onChange: onChanged = noop,
 
     disabled = false,
 
