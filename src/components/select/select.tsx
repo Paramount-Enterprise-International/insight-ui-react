@@ -1,11 +1,11 @@
 /* select.tsx */
 /**
  * ISelect + IFCSelect (React)
- * Version: 2.2.2
+ * Version: 2.2.3
  *
- * Parity with Angular:
- * - ISelect 2.2.2
- * - IFCSelect wrapper
+ * Changes (2.2.3):
+ * - Fix portaled panel stuck hidden (visibility:hidden) by adding open-cycle + failsafe unhide.
+ * - Rename event: onChanged -> onChange (React-y)
  *
  * Notes:
  * - options panel renders as <i-options>
@@ -128,7 +128,7 @@ export type ISelectProps<T = any> = Omit<
   /**
    * Event parity (Angular outputs)
    */
-  onChanged?: (change: ISelectChange<T>) => void;
+  onChange?: (change: ISelectChange<T>) => void;
   onOptionSelected?: (change: ISelectChange<T>) => void;
 };
 
@@ -178,7 +178,7 @@ export type IFCSelectProps<T = any> = Omit<
   defaultValue?: T | null;
 
   /** Event parity */
-  onChanged?: (change: ISelectChange<T>) => void;
+  onChange?: (change: ISelectChange<T>) => void;
   onOptionSelected?: (change: ISelectChange<T>) => void;
 
   /** pass-through */
@@ -273,7 +273,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     value,
     defaultValue = null,
 
-    onChanged,
+    onChange,
     onOptionSelected,
 
     className,
@@ -311,10 +311,24 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   const [panelHidden, setPanelHidden] = useState<boolean>(false);
   const wantsOpenRef = useRef<boolean>(false);
 
+  // ✅ open-cycle + failsafe unhide
+  const openSeqRef = useRef(0);
+  const unhideTimerRef = useRef<number | null>(null);
+
   // Rx filter debounce (parity with Angular)
   const filterInput$ = useMemo(() => new Subject<string>(), []);
   const filterSubRef = useRef<Subscription | null>(null);
   const optionsSubRef = useRef<Subscription | null>(null);
+
+  // cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (unhideTimerRef.current) {
+        window.clearTimeout(unhideTimerRef.current);
+        unhideTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // ---------- displayWith logic ----------
   const displayWithIsExplicit =
@@ -345,7 +359,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     return String(row as any);
   };
 
-  // ---------- imperative API (for IFCSelect label click parity) ----------
+  // ---------- imperative API ----------
   const focus = () => {
     if (disabled) return;
     inputRef.current?.focus?.();
@@ -591,14 +605,21 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     });
   };
 
-  // ✅ Initial open: hide, then position on next frame, then show
+  // ✅ Initial open: hide, position, show (with failsafe)
   useLayoutEffect(() => {
+    // close
     if (!isOpen) {
       wantsOpenRef.current = false;
       setPanelHidden(false);
+
+      if (unhideTimerRef.current) {
+        window.clearTimeout(unhideTimerRef.current);
+        unhideTimerRef.current = null;
+      }
       return;
     }
 
+    // open
     wantsOpenRef.current = true;
 
     if (!hasOptionsList) {
@@ -606,8 +627,23 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       return;
     }
 
+    const seq = ++openSeqRef.current;
+
     setPanelHidden(true);
-    scheduleReposition(() => setPanelHidden(false));
+
+    scheduleReposition(() => {
+      if (!wantsOpenRef.current) return;
+      if (seq !== openSeqRef.current) return;
+      setPanelHidden(false);
+    });
+
+    // ✅ failsafe: always unhide on next tick if still open
+    if (unhideTimerRef.current) window.clearTimeout(unhideTimerRef.current);
+    unhideTimerRef.current = window.setTimeout(() => {
+      if (!wantsOpenRef.current) return;
+      if (seq !== openSeqRef.current) return;
+      setPanelHidden(false);
+    }, 0);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, hasOptionsList]);
@@ -705,6 +741,13 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     setIsOpen(false);
     setHighlightIndex(-1);
 
+    // also clear hidden + any pending unhide timer
+    setPanelHidden(false);
+    if (unhideTimerRef.current) {
+      window.clearTimeout(unhideTimerRef.current);
+      unhideTimerRef.current = null;
+    }
+
     const panel = panelRef.current;
     if (panel) {
       panel.style.position = '';
@@ -767,7 +810,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   const emitChange = (row: T | null) => {
     const label = resolveDisplayText(row);
     const payload: ISelectChange<T> = { value: row, label };
-    onChanged?.(payload);
+    onChange?.(payload);
     onOptionSelected?.(payload);
   };
 
@@ -900,15 +943,13 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
           else panelRef.current.classList.remove('i-options--portaled');
         }
       }}
-      className={`i-options scroll scroll-y ${panelPositionClass}`}
-      style={
-        panelHidden
-          ? {
-              visibility: 'hidden',
-              pointerEvents: 'none',
-            }
-          : undefined
-      }>
+      className={`i-options scroll scroll-y ${panelPositionClass}${
+        portalToBody ? ' i-options--portaled' : ''
+      }`}
+      style={{
+        visibility: panelHidden ? 'hidden' : 'visible',
+        pointerEvents: panelHidden ? 'none' : 'auto',
+      }}>
       {filteredOptions.map((row, idx) => (
         <div
           key={(row as any)?.id ?? `${idx}-${String(row)}`}
@@ -1005,7 +1046,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
     value,
     defaultValue = null,
 
-    onChanged,
+    onChange,
     onOptionSelected,
 
     renderOption,
@@ -1089,7 +1130,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
         value={value}
         // ✅ IMPORTANT: never pass null as defaultValue into JSX typing
         defaultValue={defaultValue ?? undefined}
-        onChanged={onChanged}
+        onChange={onChange}
         onOptionSelected={onOptionSelected}
       />
 

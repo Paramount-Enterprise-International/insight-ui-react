@@ -8,8 +8,8 @@ import {
 } from 'react-router-dom';
 import './App.css';
 
-import { GridTree } from './demos/grid-tree/grid-tree';
-import { Grid } from './demos/grid/grid';
+import { IDialogOutlet, IDialogProvider } from './components';
+import { Create } from './demos/heracles/create/Create';
 import { Docs1Page } from './docs/docs1/docs1';
 import { Docs2Page } from './docs/docs2/docs2';
 import { IHRootLayout } from './ih-root-layout';
@@ -49,14 +49,9 @@ const router = createBrowserRouter(
         />
 
         <Route
-          path="demos/grid"
-          element={<Grid />}
-          handle={{ title: 'Grid' }}
-        />
-        <Route
-          path="demos/grid-tree"
-          element={<GridTree />}
-          handle={{ title: 'Grid Tree' }}
+          path="demos/heracles/create"
+          element={<Create />}
+          handle={{ title: 'Create' }}
         />
       </Route>
 
@@ -71,5 +66,10 @@ const router = createBrowserRouter(
 );
 
 export default function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <IDialogProvider>
+      <RouterProvider router={router} />;
+      <IDialogOutlet />
+    </IDialogProvider>
+  );
 }
