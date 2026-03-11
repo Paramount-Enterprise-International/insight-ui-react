@@ -88,7 +88,7 @@ export function IIcon(props: IIconProps) {
   const iconClass = `${baseClass} ${iconSizeClass}`;
 
   return (
-    <i-icon className={className} icon={icon as any} size={size} {...rest}>
+    <i-icon className={className} icon={String(icon)} size={size} {...rest}>
       <i className={iconClass}></i>
     </i-icon>
   );
