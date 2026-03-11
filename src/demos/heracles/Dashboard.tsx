@@ -157,6 +157,9 @@ export function Dashboard() {
     { id: 2, name: 'Non Active' },
   ];
 
+  void selectStatus;
+  void status;
+
   const getDispositionFromStorage = useCallback((): UserRow[] => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -407,8 +410,8 @@ export function Dashboard() {
 
     return filterResult;
   }, []);
-  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const value = e.currentTarget.value;
     setInputValue(value);
 
     setTempFilters((prev) => ({
@@ -417,8 +420,8 @@ export function Dashboard() {
     }));
   };
 
-  const handleInputDiposisi = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+  const handleInputDiposisi = (e: React.FormEvent<HTMLInputElement>) => {
+    const value = e.currentTarget.value;
     setInputValueDiposisis(value);
 
     setTempFilters((prev) => ({
@@ -450,6 +453,8 @@ export function Dashboard() {
       console.log('Status cleared');
     }
   };
+
+  void setSelectedStatus;
 
   const handleDateToChange = (value: FormEvent<HTMLElement> | Date | null) => {
     let selectedDate: Date | null = null;
@@ -483,6 +488,9 @@ export function Dashboard() {
     setDateFrom(selectedDate);
     console.log(selectedDate, 'dateFrom');
   };
+
+  void handleDateToChange;
+  void handleDateFromChange;
 
   const handleFilters = () => {
     console.log(tempFilters, 'ini adalah filter cek');
