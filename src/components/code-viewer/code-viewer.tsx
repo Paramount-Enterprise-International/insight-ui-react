@@ -128,9 +128,6 @@ function resolveFileUrl(file: string): string {
   const f = (file ?? '').trim();
   if (!f) return f;
 
-  // Optional QoL: allow "/public/xxx" (Vite serves public as "/xxx")
-  if (f.startsWith('/public/')) return f.slice('/public'.length);
-
   if (isAbsoluteUrl(f) || f.startsWith('/')) return f;
 
   const base = (import.meta as any).url as string;
@@ -152,6 +149,26 @@ function countLines(text: string): number {
   const s = String(text);
   if (!s) return 1;
   return s.split('\n').length;
+}
+
+function extractTextFromReactNode(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') {
+    return '';
+  }
+
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node);
+  }
+
+  if (Array.isArray(node)) {
+    return node.map(extractTextFromReactNode).join('');
+  }
+
+  if (React.isValidElement(node)) {
+    return extractTextFromReactNode(node.props?.children);
+  }
+
+  return '';
 }
 
 // -----------------------------
@@ -234,21 +251,21 @@ export function ICodeViewer(props: ICodeViewerProps) {
   // - only when code prop empty, file empty, and rawCode empty
   // - useLayoutEffect to avoid "empty then fill" paint
   // -----------------------------
-  const projectedRef = useRef<HTMLDivElement | null>(null);
+  const projectedText = useMemo(
+    () => extractTextFromReactNode(children),
+    [children]
+  );
 
   useLayoutEffect(() => {
     if (fileTrimmed) return;
     if (codePropString) return;
     if (rawCode) return;
 
-    const host = projectedRef.current;
-    if (!host) return;
-
-    const text = (host.textContent ?? '').trim();
+    const text = (projectedText ?? '').trim();
     if (!text) return;
 
     setRawCode(text);
-  }, [children, fileTrimmed, codePropString, rawCode]);
+  }, [projectedText, fileTrimmed, codePropString, rawCode]);
 
   // highlight.js cache (shared per component instance)
   const hljsRef = useRef<any | null>(null);
@@ -316,7 +333,11 @@ export function ICodeViewer(props: ICodeViewerProps) {
   // load file when file changes
   useEffect(() => {
     const f = fileTrimmed;
-    if (!f) return;
+    if (!f) {
+      setLoading(false);
+      setError('');
+      return;
+    }
 
     const seq = ++requestSeqRef.current;
 
@@ -438,17 +459,8 @@ export function ICodeViewer(props: ICodeViewerProps) {
     }
   }, [rawCode, loading]);
 
-  const needsProjectionHost = !fileTrimmed && !codePropString;
-
   return (
     <i-code-viewer {...rest}>
-      {/* Hidden projection host for Angular-like "projected content" extraction */}
-      {needsProjectionHost ? (
-        <div ref={projectedRef} aria-hidden="true" style={{ display: 'none' }}>
-          {children}
-        </div>
-      ) : null}
-
       <div
         className={[
           'i-code-viewer',

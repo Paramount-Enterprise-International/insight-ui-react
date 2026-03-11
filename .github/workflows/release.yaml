@@ -52,6 +52,14 @@ jobs:
           mv "package.tmp" "package.json"
           cat package.json
 
+      - name: Run lint
+        run: |
+          npm run lint
+
+      - name: Run tests
+        run: |
+          npm test
+
       # ✅ Build only the library entry
       - name: Build React library
         run: |

@@ -1,6 +1,13 @@
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   IButton,
-  IDatepicker,
   IGrid,
   IGridColumn,
   IGridDataSource,
@@ -11,16 +18,7 @@ import {
   ISectionBody,
   ISectionFilter,
   ISectionHeader,
-  ISelect,
-} from '@insight/ui';
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type FormEvent,
-} from 'react';
-import { useNavigate } from 'react-router-dom';
+} from '../../components';
 
 interface DetailItem {
   itemName: string;
@@ -545,7 +543,7 @@ export function Dashboard() {
       <ISection>
         <ISectionHeader>Heracles</ISectionHeader>
         <ISectionFilter className="flex gap-md flex-fill align-center w-full pb-sm">
-          <IDatepicker
+          {/* <IDatepicker
             onChange={handleDateFromChange}
             value={dateFrom}
             placeholder="Disposisi Date From"></IDatepicker>
@@ -553,17 +551,17 @@ export function Dashboard() {
           <IDatepicker
             onChange={handleDateToChange}
             value={dateTo}
-            placeholder="Disposisi Date To"></IDatepicker>
+            placeholder="Disposisi Date To"></IDatepicker> */}
           <IInput
             placeholder="Diposis Number"
             value={inputValueDiposisi}
             onInput={handleInputDiposisi}
             onBlur={handleBlurDiposisi}></IInput>
-          <ISelect
+          {/* <ISelect
             placeholder="Status"
             options={status}
             value={selectStatus}
-            onChange={(status) => setSelectedStatus(status)}></ISelect>
+            onChange={(status) => setSelectedStatus(status)}></ISelect> */}
           <IInput
             placeholder="Search..."
             value={inputValue}

@@ -5,6 +5,10 @@ declare module 'react' {
   interface AnchorHTMLAttributes<T> {
     variant?: string;
   }
+  interface HTMLAttributes<T> {
+    truncatedTooltip?: boolean;
+    truncatedtooltip?: boolean;
+  }
 
   namespace JSX {
     interface IntrinsicElements {

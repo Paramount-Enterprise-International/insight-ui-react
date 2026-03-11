@@ -1,13 +1,14 @@
 /* datepicker.tsx */
 /**
  * IDatepicker (React)
- * Version: 1.5.5
+ * Version: 1.5.6
  *
- * Fixes (1.5.5):
- * - Fix portaled panel stuck hidden (visibility:hidden) by adding open-cycle + failsafe unhide.
- * - Make panel visibility/pointerEvents always explicit (no conditional style merge).
- *
- * (All your existing "smart controlled" fixes preserved.)
+ * Fixes (1.5.6):
+ * - ✅ Fix “panel only appears after slight scroll” when datepicker is inside a scroll container:
+ *   -> listen to scroll on *actual scroll parents* (not window/document)
+ * - ✅ Fix “top placement offscreen until next layout”:
+ *   -> when maxHeight clamps the panel, compute top using the *effective* height
+ * - Keep your 1.5.5 open-cycle + failsafe unhide + smart controlled behavior intact.
  */
 
 import React, {
@@ -257,6 +258,33 @@ function buildCalendar(
 }
 
 /* =========================================
+ * Scroll parent detection (NEW)
+ * ========================================= */
+
+function isHTMLElement(v: unknown): v is HTMLElement {
+  return !!v && typeof v === 'object' && (v as any).nodeType === 1;
+}
+
+function getScrollParents(el: HTMLElement | null): (HTMLElement | Window)[] {
+  const out: (HTMLElement | Window)[] = [];
+  if (!el) return [window];
+
+  const overflowRe = /(auto|scroll|overlay)/;
+
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const oy = style.overflowY;
+    const ox = style.overflowX;
+    if (overflowRe.test(oy) || overflowRe.test(ox)) out.push(node);
+    node = node.parentElement;
+  }
+
+  out.push(window);
+  return out;
+}
+
+/* =========================================
  * IDatepicker
  * ========================================= */
 
@@ -285,7 +313,10 @@ export function IDatepicker(props: IDatepickerProps) {
   const inputElRef = useRef<HTMLInputElement | null>(null);
 
   const rafRef = useRef<number>(0);
-  const listeningGlobalRef = useRef(false);
+
+  // scroll parents (NEW)
+  const scrollParentsRef = useRef<(HTMLElement | Window)[]>([]);
+  const listeningScrollParentsRef = useRef(false);
 
   const [modelValue, setModelValue] = useState<Date | null>(null);
   const [displayText, setDisplayText] = useState<string>('');
@@ -343,14 +374,17 @@ export function IDatepicker(props: IDatepickerProps) {
 
   const getPanelEl = () => panelRef.current;
 
-  const getAnchorRect = (): DOMRect | null => {
+  const getAnchorEl = (): HTMLElement | null => {
     const host = hostRef.current;
     if (!host) return null;
-
     const iInput = host.querySelector('i-input') as HTMLElement | null;
-    if (iInput?.getBoundingClientRect) return iInput.getBoundingClientRect();
+    return iInput ?? host;
+  };
 
-    return (host as any).getBoundingClientRect?.() ?? null;
+  const getAnchorRect = (): DOMRect | null => {
+    const anchor = getAnchorEl();
+    if (anchor?.getBoundingClientRect) return anchor.getBoundingClientRect();
+    return null;
   };
 
   // -------- writeValue parity (SMART) --------
@@ -444,7 +478,8 @@ export function IDatepicker(props: IDatepickerProps) {
       panel.style.width = '';
     }
 
-    const panelRect = panel.getBoundingClientRect();
+    // Measure current size (visibility:hidden is OK; display:none is not used while open)
+    let panelRect = panel.getBoundingClientRect();
 
     const wantTop = pos.startsWith('top');
     const wantBottom =
@@ -512,65 +547,115 @@ export function IDatepicker(props: IDatepickerProps) {
       side = 'bottom';
     }
 
+    // Clamp height FIRST
     const maxH = Math.max(120, side === 'bottom' ? spaceBelow : spaceAbove);
     panel.style.maxHeight = `${Math.floor(maxH)}px`;
 
-    const top =
+    // Effective height (IMPORTANT):
+    // When maxHeight clamps, the actual visible height is <= maxH.
+    const effectiveH = Math.min(panelRect.height, maxH);
+
+    let top =
       side === 'bottom'
         ? rect.bottom + panelOffset
-        : rect.top - panelRect.height - panelOffset;
+        : rect.top - effectiveH - panelOffset;
+
+    // Clamp to viewport
+    const maxTop = Math.max(gap, vh - effectiveH - gap);
+    top = Math.min(Math.max(gap, top), maxTop);
 
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
+
+    // If layout changed due to maxHeight, re-measure once (cheap and fixes edge cases)
+    // (This is what you were effectively getting "after scroll".)
+    panelRect = panel.getBoundingClientRect();
+    if (panelRect.height !== effectiveH) {
+      const eff2 = Math.min(panelRect.height, maxH);
+      const maxTop2 = Math.max(gap, vh - eff2 - gap);
+      let top2 =
+        side === 'bottom'
+          ? rect.bottom + panelOffset
+          : rect.top - eff2 - panelOffset;
+      top2 = Math.min(Math.max(gap, top2), maxTop2);
+      panel.style.top = `${Math.round(top2)}px`;
+    }
   }, [matchTriggerWidth, panelOffset, panelPosition]);
 
   const scheduleReposition = useCallback(
-    (after?: () => void) => {
+    (after?: () => void, doubleRaf = false) => {
       if (!wantsOpenRef.current) return;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
       rafRef.current = requestAnimationFrame(() => {
         rafRef.current = 0;
         repositionPanelNow();
-        after?.();
+
+        if (doubleRaf) {
+          requestAnimationFrame(() => {
+            repositionPanelNow();
+            after?.();
+          });
+        } else {
+          after?.();
+        }
       });
     },
     [repositionPanelNow]
   );
 
-  const addGlobalListeners = useCallback(() => {
-    if (listeningGlobalRef.current) return;
+  const addScrollParentListeners = useCallback(() => {
+    if (listeningScrollParentsRef.current) return;
+
+    const anchor = getAnchorEl();
+    scrollParentsRef.current = getScrollParents(anchor);
 
     const onAnyScroll = () => scheduleReposition();
     const onResize = () => scheduleReposition();
 
-    window.addEventListener('scroll', onAnyScroll, true);
-    document.addEventListener('scroll', onAnyScroll, true);
-    window.addEventListener('resize', onResize, true);
+    for (const p of scrollParentsRef.current) {
+      if (p === window) {
+        window.addEventListener('scroll', onAnyScroll, {
+          passive: true,
+          capture: true,
+        });
+      } else {
+        p.addEventListener('scroll', onAnyScroll, { passive: true });
+      }
+    }
+    window.addEventListener('resize', onResize, { passive: true });
 
-    (addGlobalListeners as any)._rm = () => {
-      window.removeEventListener('scroll', onAnyScroll, true);
-      document.removeEventListener('scroll', onAnyScroll, true);
-      window.removeEventListener('resize', onResize, true);
+    (addScrollParentListeners as any)._rm = () => {
+      for (const p of scrollParentsRef.current) {
+        if (p === window) {
+          window.removeEventListener('scroll', onAnyScroll, true as any);
+        } else {
+          p.removeEventListener('scroll', onAnyScroll as any);
+        }
+      }
+      window.removeEventListener('resize', onResize as any);
+      scrollParentsRef.current = [];
     };
 
-    listeningGlobalRef.current = true;
+    listeningScrollParentsRef.current = true;
   }, [scheduleReposition]);
 
-  const removeGlobalListeners = useCallback(() => {
-    if (!listeningGlobalRef.current) return;
+  const removeScrollParentListeners = useCallback(() => {
+    if (!listeningScrollParentsRef.current) return;
 
-    const rm = (addGlobalListeners as any)._rm as undefined | (() => void);
+    const rm = (addScrollParentListeners as any)._rm as
+      | undefined
+      | (() => void);
     if (rm) rm();
-    delete (addGlobalListeners as any)._rm;
+    delete (addScrollParentListeners as any)._rm;
 
-    listeningGlobalRef.current = false;
+    listeningScrollParentsRef.current = false;
 
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
     }
-  }, [addGlobalListeners]);
+  }, [addScrollParentListeners]);
 
   const openPanel = useCallback(() => {
     if (disabled) return;
@@ -589,7 +674,7 @@ export function IDatepicker(props: IDatepickerProps) {
         unhideTimerRef.current = null;
       }
 
-      removeGlobalListeners();
+      removeScrollParentListeners();
 
       const panel = getPanelEl();
       if (panel && !skipCleanupStyles) {
@@ -608,7 +693,7 @@ export function IDatepicker(props: IDatepickerProps) {
 
       setPanelHidden(false);
     },
-    [removeGlobalListeners]
+    [removeScrollParentListeners]
   );
 
   // ✅ open-cycle: hide → reposition → show, with failsafe unhide
@@ -625,13 +710,14 @@ export function IDatepicker(props: IDatepickerProps) {
     if (panel && portalToBody)
       panel.classList.add('i-datepicker-panel--portaled');
 
-    addGlobalListeners();
+    addScrollParentListeners();
 
+    // double-rAF on open helps when panel’s maxHeight/layout settles a tick later
     scheduleReposition(() => {
       if (!wantsOpenRef.current) return;
       if (seq !== openSeqRef.current) return;
       setPanelHidden(false);
-    });
+    }, true);
 
     // ✅ failsafe: always unhide next tick if still open
     if (unhideTimerRef.current) window.clearTimeout(unhideTimerRef.current);
@@ -642,12 +728,10 @@ export function IDatepicker(props: IDatepickerProps) {
     }, 0);
 
     return () => {
-      // mark this open-cycle invalid
-      // (closePanel also clears timers + resets state)
       wantsOpenRef.current = false;
     };
   }, [
-    addGlobalListeners,
+    addScrollParentListeners,
     isOpen,
     portalToBody,
     refreshInnerInputRef,
@@ -705,31 +789,17 @@ export function IDatepicker(props: IDatepickerProps) {
       setDisplayText(raw);
 
       const trimmed = raw.trim();
-
-      // allow clear
-      if (!trimmed) {
-        setModelValue(null);
-        lastEmittedKeyRef.current = null;
-        onChanged(null);
-
-        if (isOpen) scheduleReposition();
-        return;
-      }
-
-      const parsed = parseInputDate(trimmed, format);
-
-      // partial/invalid typing should NOT wipe external value
-      if (!parsed) {
-        if (isOpen) scheduleReposition();
-        return;
-      }
+      const parsed = trimmed ? parseInputDate(trimmed, format) : null;
 
       setModelValue(parsed);
-      setViewYear(parsed.getFullYear());
-      setViewMonth(parsed.getMonth());
-      setYears((p) => ensureYearRange(parsed.getFullYear(), p));
 
-      lastEmittedKeyRef.current = dateKey(parsed);
+      if (parsed) {
+        setViewYear(parsed.getFullYear());
+        setViewMonth(parsed.getMonth());
+        setYears((p) => ensureYearRange(parsed.getFullYear(), p));
+      }
+
+      lastEmittedKeyRef.current = parsed ? dateKey(parsed) : null;
       onChanged(parsed);
 
       if (isOpen) scheduleReposition();
@@ -844,6 +914,14 @@ export function IDatepicker(props: IDatepickerProps) {
 
       if (insideHost || insidePanel) return;
 
+      const active = document.activeElement as HTMLElement | null;
+      const activeInsidePanel = !!panel && !!active && panel.contains(active);
+
+      const clickedInAnySelectOptions =
+        !!target.closest('i-options') || !!target.closest('.i-options');
+
+      if (activeInsidePanel && clickedInAnySelectOptions) return;
+
       closePanel();
     };
 
@@ -865,7 +943,7 @@ export function IDatepicker(props: IDatepickerProps) {
       className={[
         'i-datepicker-panel',
         panelPositionClass(panelPosition),
-        portalToBody ? 'i-datepicker-panel--portaled' : null,
+        portalToBody && isOpen ? 'i-datepicker-panel--portaled' : null,
       ]
         .filter(Boolean)
         .join(' ')}
@@ -951,7 +1029,9 @@ export function IDatepicker(props: IDatepickerProps) {
         }}
       />
 
-      {portalToBody ? createPortal(panelNode, document.body) : panelNode}
+      <span style={{ display: 'none' }} />
+
+      {portalToBody && isOpen ? createPortal(panelNode, document.body) : panelNode}
     </i-datepicker>
   );
 }

@@ -1,19 +1,20 @@
 /* select.tsx */
 /**
  * ISelect + IFCSelect (React)
- * Version: 2.2.3
+ * Version: 2.2.4
  *
- * Changes (2.2.3):
- * - Fix portaled panel stuck hidden (visibility:hidden) by adding open-cycle + failsafe unhide.
- * - Rename event: onChanged -> onChange (React-y)
+ * Fixes (2.2.4):
+ * - ✅ Fix year dropdown (large option list) opening offscreen (top: -xxxxpx) until scroll:
+ *   -> compute TOP using effective height after maxHeight clamp
+ *   -> re-measure once after maxHeight to stabilize
+ * - ✅ Fix “only appears after scroll” inside scroll containers:
+ *   -> listen to scroll on actual scroll parents (not just window/document)
+ * - ✅ Make first-open positioning stable:
+ *   -> double-rAF reposition on open cycle (layout settles next frame)
  *
- * Notes:
- * - options panel renders as <i-options>
- * - portal-to-body supported (default true)
- * - fixed positioning + matchTriggerWidth supported
- * - flicker fix (hide until first reposition)
- * - exposes ref focus() for IFCSelect label click parity
- * - IFCSelect uses shared resolveControlErrorMessage/isControlRequired from shared/form
+ * Keeps:
+ * - existing open-cycle + failsafe unhide
+ * - portalToBody, matchTriggerWidth, filter debounce, outside click, etc.
  */
 
 import React, {
@@ -78,6 +79,9 @@ export type ISelectProps<T = any> = Omit<
 
   /** debounce delay (ms) */
   filterDelay?: number;
+
+  /** minimum chars before filtering (default 3) */
+  filterMinLength?: number;
 
   panelPosition?: ISelectPanelPosition;
 
@@ -152,6 +156,7 @@ export type IFCSelectProps<T = any> = Omit<
 
   displayWith?: ((row: T | null) => string) | string;
   filterDelay?: number;
+  filterMinLength?: number;
   filterPredicate?: (row: T, term: string) => boolean;
 
   panelPosition?: ISelectPanelPosition;
@@ -224,23 +229,56 @@ function highlightParts(text: string, term: string): React.ReactNode {
   const t = (term ?? '').trim();
   if (!t) return text;
 
-  const lower = text.toLowerCase();
-  const q = t.toLowerCase();
+  const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, 'gi');
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let i = 0;
 
-  const idx = lower.indexOf(q);
-  if (idx < 0) return text;
+  while ((match = regex.exec(text)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
 
-  const before = text.slice(0, idx);
-  const match = text.slice(idx, idx + t.length);
-  const after = text.slice(idx + t.length);
+    if (start > lastIndex) {
+      parts.push(text.slice(lastIndex, start));
+    }
 
-  return (
-    <>
-      {before}
-      <mark>{match}</mark>
-      {after}
-    </>
-  );
+    parts.push(
+      <span className="highlight-search" key={`h-${i}-${start}-${end}`}>
+        {text.slice(start, end)}
+      </span>
+    );
+
+    lastIndex = end;
+    i += 1;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return <>{parts}</>;
+}
+
+// NEW: scroll parent detection (fixes nested scroll containers)
+function getScrollParents(el: HTMLElement | null): (HTMLElement | Window)[] {
+  const out: (HTMLElement | Window)[] = [];
+  if (!el) return [window];
+
+  const overflowRe = /(auto|scroll|overlay)/;
+
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const style = window.getComputedStyle(node);
+    const oy = style.overflowY;
+    const ox = style.overflowX;
+    if (overflowRe.test(oy) || overflowRe.test(ox)) out.push(node);
+    node = node.parentElement;
+  }
+
+  out.push(window);
+  return out;
 }
 
 /* =========================================
@@ -256,7 +294,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     disabled = false,
     invalid = false,
 
-    filterDelay = 200,
+    filterDelay = 400,
+    filterMinLength = 3,
     panelPosition = 'bottom left',
 
     portalToBody = true,
@@ -287,6 +326,10 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 
   // positioning raf
   const rafRef = useRef<number>(0);
+
+  // NEW: scroll parents + listener management
+  const scrollParentsRef = useRef<(HTMLElement | Window)[]>([]);
+  const listeningScrollParentsRef = useRef(false);
 
   // options
   const [rawOptions, setRawOptions] = useState<T[]>(() => options ?? []);
@@ -343,7 +386,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 
     if (typeof displayWith === 'string') {
       const v = resolveByPath(row as any, displayWith);
-      return v === null || v === undefined ? '' : String(v);
+      return v === null ? '' : String(v);
     }
 
     if (!displayWithIsExplicit && typeof row === 'object') {
@@ -351,9 +394,31 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       if (!entries.length) return '';
       const labelEntry = entries[1] ?? entries[0];
       const labelValue = labelEntry?.[1];
-      return labelValue === null || labelValue === undefined
-        ? ''
-        : String(labelValue);
+      return labelValue === null ? '' : String(labelValue);
+    }
+
+    if (!displayWithIsExplicit && (row === null || typeof row !== 'object')) {
+      const primitive = row as any;
+
+      const match = rawOptions.find((opt: any) => {
+        if (opt === null || typeof opt !== 'object') return false;
+
+        const entries = Object.entries(opt);
+        if (!entries.length) return false;
+
+        const valueEntry = entries[0];
+        return valueEntry?.[1] === primitive;
+      });
+
+      if (match) {
+        const entries = Object.entries(match as any);
+        if (!entries.length) return String(primitive);
+
+        const labelEntry = entries[1] ?? entries[0];
+        const labelValue = labelEntry?.[1];
+
+        return labelValue === null ? String(primitive) : String(labelValue);
+      }
     }
 
     return String(row as any);
@@ -428,7 +493,11 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     [panelPosition]
   );
 
-  const hasNoResults = isOpen && !!filterText && filteredOptions.length === 0;
+  const effectiveFilterText =
+    filterText && filterText.trim().length >= filterMinLength
+      ? filterText
+      : '';
+  const hasNoResults = isOpen && !!effectiveFilterText && filteredOptions.length === 0;
   const hasOptionsList = isOpen && filteredOptions.length > 0;
 
   // ---------- filter ----------
@@ -436,6 +505,12 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     if (!isOpen && !force) return;
 
     const term = (nextFilterText ?? filterText ?? '').toLowerCase().trim();
+
+    if (term && term.length < filterMinLength) {
+      setFilteredOptions([...rawOptions]);
+      setHighlightIndex(-1);
+      return;
+    }
 
     const next = !term
       ? [...rawOptions]
@@ -467,25 +542,23 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       return;
     }
 
+    setDisplayText(resolveDisplayText(modelValue));
     applyFilter(true, filterText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelValue, rawOptions, isOpen]);
+  }, [modelValue, rawOptions]);
 
   // ---------- positioning ----------
-  const getAnchorRect = (): DOMRect | null => {
+  const getAnchorEl = (): HTMLElement | null => {
     const host = hostRef.current;
     if (!host) return null;
 
     const iInput = host.querySelector('i-input') as HTMLElement | null;
-    if (iInput?.getBoundingClientRect) return iInput.getBoundingClientRect();
+    return iInput ?? host;
+  };
 
-    if ((host as any).getBoundingClientRect)
-      return host.getBoundingClientRect();
-
-    const input = host.querySelector(
-      'i-input input'
-    ) as HTMLInputElement | null;
-    return input?.getBoundingClientRect?.() ?? null;
+  const getAnchorRect = (): DOMRect | null => {
+    const el = getAnchorEl();
+    return el?.getBoundingClientRect?.() ?? null;
   };
 
   const repositionPanelNow = () => {
@@ -512,7 +585,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       panel.style.width = '';
     }
 
-    const panelRect = panel.getBoundingClientRect();
+    let panelRect = panel.getBoundingClientRect();
 
     const wantTop = pos.startsWith('top');
     const wantBottom =
@@ -582,27 +655,111 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       side = 'bottom';
     }
 
+    // Clamp first
     const maxH = Math.max(60, side === 'bottom' ? spaceBelow : spaceAbove);
     panel.style.maxHeight = `${Math.floor(maxH)}px`;
 
-    const top =
+    // Effective height matters for TOP placement (fixes top:-1600px)
+    const effectiveH = Math.min(panelRect.height, maxH);
+
+    let top =
       side === 'bottom'
         ? rect.bottom + panelOffset
-        : rect.top - panelRect.height - panelOffset;
+        : rect.top - effectiveH - panelOffset;
+
+    const maxTop = Math.max(gap, vh - effectiveH - gap);
+    top = Math.min(Math.max(gap, top), maxTop);
 
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
+
+    // Re-measure once after maxHeight settles (scrollbar/layout can change height)
+    const rect2 = panel.getBoundingClientRect();
+    if (rect2.height !== effectiveH) {
+      const eff2 = Math.min(rect2.height, maxH);
+      let top2 =
+        side === 'bottom'
+          ? rect.bottom + panelOffset
+          : rect.top - eff2 - panelOffset;
+
+      const maxTop2 = Math.max(gap, vh - eff2 - gap);
+      top2 = Math.min(Math.max(gap, top2), maxTop2);
+
+      panel.style.top = `${Math.round(top2)}px`;
+    }
   };
 
-  const scheduleReposition = (after?: () => void) => {
+  const scheduleReposition = (after?: () => void, doubleRaf = false) => {
     if (!wantsOpenRef.current) return;
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
 
     rafRef.current = requestAnimationFrame(() => {
       rafRef.current = 0;
       repositionPanelNow();
-      after?.();
+
+      if (doubleRaf) {
+        requestAnimationFrame(() => {
+          repositionPanelNow();
+          after?.();
+        });
+      } else {
+        after?.();
+      }
     });
+  };
+
+  const addScrollParentListeners = () => {
+    if (listeningScrollParentsRef.current) return;
+
+    const anchor = getAnchorEl();
+    scrollParentsRef.current = getScrollParents(anchor);
+
+    const onAnyScroll = () => scheduleReposition();
+    const onResize = () => scheduleReposition();
+
+    for (const p of scrollParentsRef.current) {
+      if (p === window) {
+        window.addEventListener('scroll', onAnyScroll, {
+          passive: true,
+          capture: true,
+        });
+      } else {
+        p.addEventListener('scroll', onAnyScroll, { passive: true });
+      }
+    }
+
+    window.addEventListener('resize', onResize, { passive: true });
+
+    (addScrollParentListeners as any)._rm = () => {
+      for (const p of scrollParentsRef.current) {
+        if (p === window) {
+          window.removeEventListener('scroll', onAnyScroll, true as any);
+        } else {
+          p.removeEventListener('scroll', onAnyScroll as any);
+        }
+      }
+      window.removeEventListener('resize', onResize as any);
+      scrollParentsRef.current = [];
+    };
+
+    listeningScrollParentsRef.current = true;
+  };
+
+  const removeScrollParentListeners = () => {
+    if (!listeningScrollParentsRef.current) return;
+
+    const rm = (addScrollParentListeners as any)._rm as
+      | undefined
+      | (() => void);
+    if (rm) rm();
+    delete (addScrollParentListeners as any)._rm;
+
+    listeningScrollParentsRef.current = false;
+
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
   };
 
   // ✅ Initial open: hide, position, show (with failsafe)
@@ -611,6 +768,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     if (!isOpen) {
       wantsOpenRef.current = false;
       setPanelHidden(false);
+
+      removeScrollParentListeners();
 
       if (unhideTimerRef.current) {
         window.clearTimeout(unhideTimerRef.current);
@@ -631,11 +790,14 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 
     setPanelHidden(true);
 
+    addScrollParentListeners();
+
+    // double-rAF: maxHeight / layout settles next frame
     scheduleReposition(() => {
       if (!wantsOpenRef.current) return;
       if (seq !== openSeqRef.current) return;
       setPanelHidden(false);
-    });
+    }, true);
 
     // ✅ failsafe: always unhide on next tick if still open
     if (unhideTimerRef.current) window.clearTimeout(unhideTimerRef.current);
@@ -662,29 +824,13 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     filteredOptions.length,
   ]);
 
-  // reposition on scroll/resize (capture=true catches nested scrolling)
+  // remove listeners on unmount (safety)
   useEffect(() => {
-    if (!isOpen) return;
-
-    const onAnyScroll = () => scheduleReposition();
-    const onResize = () => scheduleReposition();
-
-    window.addEventListener('scroll', onAnyScroll, true);
-    document.addEventListener('scroll', onAnyScroll, true);
-    window.addEventListener('resize', onResize, true);
-
     return () => {
-      window.removeEventListener('scroll', onAnyScroll, true);
-      document.removeEventListener('scroll', onAnyScroll, true);
-      window.removeEventListener('resize', onResize, true);
-
-      if (rafRef.current) {
-        cancelAnimationFrame(rafRef.current);
-        rafRef.current = 0;
-      }
+      removeScrollParentListeners();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
+  }, []);
 
   // ---------- open/close ----------
   const scrollHighlightedIntoView = () => {
@@ -700,18 +846,19 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     });
   };
 
-  const openDropdown = () => {
+  const openDropdown = (nextFilterText?: string) => {
     if (disabled) return;
     if (isOpen) return;
 
     setIsOpen(true);
 
-    const term = filterText.toLowerCase().trim();
-    const next = !term
+    const term = (nextFilterText ?? filterText).toLowerCase().trim();
+    const effectiveTerm = term && term.length < filterMinLength ? '' : term;
+    const next = !effectiveTerm
       ? [...rawOptions]
       : rawOptions.filter((row) => {
           try {
-            return filterPredicate(row, term);
+            return filterPredicate(row, effectiveTerm);
           } catch {
             return false;
           }
@@ -748,6 +895,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       unhideTimerRef.current = null;
     }
 
+    removeScrollParentListeners();
+
     const panel = panelRef.current;
     if (panel) {
       panel.style.position = '';
@@ -768,10 +917,10 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     setFilterText(val);
 
     if (!isOpen) {
-      setIsOpen(true);
-      setTimeout(() => applyFilter(true, val), 0);
+      openDropdown(val);
     } else {
       applyFilter(true, val);
+      scheduleReposition();
     }
   };
 
@@ -799,7 +948,6 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       scheduleReposition();
     } else {
       setDisplayText(resolveDisplayText(modelValue));
-      setFilterText('');
       closeDropdown();
     }
 
@@ -883,8 +1031,6 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       case 'Escape':
         if (isOpen) {
           event.preventDefault();
-          setDisplayText(resolveDisplayText(modelValue));
-          setFilterText('');
           closeDropdown();
         }
         break;
@@ -906,8 +1052,6 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       const insidePanel = !!panel && panel.contains(target);
 
       if (!insideHost && !insidePanel) {
-        setDisplayText(resolveDisplayText(modelValue));
-        setFilterText('');
         closeDropdown();
       }
     };
@@ -915,7 +1059,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     document.addEventListener('click', onDocClick);
     return () => document.removeEventListener('click', onDocClick);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, modelValue]);
+  }, [isOpen]);
 
   // ---------- append addon ----------
   const appendAddon: IInputAddonButton | IInputAddonLoading = useMemo(() => {
@@ -961,16 +1105,12 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
             .filter(Boolean)
             .join(' ')}
           onMouseEnter={() => setActiveIndex(idx)}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            selectRow(row);
-          }}>
+          onMouseDown={() => selectRow(row)}>
           <div className="i-option-label">
             {renderOption ? (
               renderOption(row)
             ) : (
-              <span>{highlightParts(resolveDisplayText(row), filterText)}</span>
+              highlightParts(resolveDisplayText(row), effectiveFilterText)
             )}
           </div>
 
@@ -1029,7 +1169,8 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
     options$ = null,
 
     displayWith,
-    filterDelay = 200,
+    filterDelay = 400,
+    filterMinLength = 3,
     filterPredicate,
 
     panelPosition = 'bottom left',
@@ -1121,6 +1262,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
         options$={options$}
         displayWith={displayWith}
         filterDelay={filterDelay}
+        filterMinLength={filterMinLength}
         filterPredicate={filterPredicate as any}
         panelPosition={panelPosition}
         portalToBody={portalToBody}

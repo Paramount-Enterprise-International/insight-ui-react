@@ -5,7 +5,12 @@ import { ILoading } from '../loading/loading';
 import type { IUISize, IUIVariant } from '../shared/form.types';
 
 export type IButtonType = 'button' | 'submit' | 'reset';
-export type IButtonSize = Extract<IUISize, '2xs' | 'xs' | 'sm' | 'md' | 'lg'>;
+
+export type IButtonSize = Extract<
+  IUISize,
+  '3xs' | '2xs' | 'xs' | 'sm' | 'md' | 'lg'
+>;
+
 export type IButtonVariant = Extract<
   IUIVariant,
   'primary' | 'warning' | 'danger' | 'success' | 'outline'
@@ -18,29 +23,67 @@ export type IButtonProps = Omit<
   disabled?: boolean;
   loading?: boolean;
 
-  /** Used for submit/reset behavior (host is NOT a native <button>) */
   type?: IButtonType;
 
   loadingText?: string;
   variant?: IButtonVariant;
   size?: IButtonSize;
 
-  /** ✅ autocomplete for aliases + allow raw FA class strings */
   icon?: IIconInput;
 
-  /** Angular naming */
   onClick?: (event: MouseEvent) => void;
+
+  /** Router support */
+  routerLink?: string;
+  queryParams?: Record<string, any>;
+  fragment?: string;
+  state?: any;
+
+  /** Anchor support */
+  href?: string;
+  target?: '_blank' | '_self' | '_parent' | '_top';
+  rel?: string;
 
   children?: React.ReactNode;
 };
 
 function findClosestForm(startEl: HTMLElement | null): HTMLFormElement | null {
   let el: HTMLElement | null = startEl;
+
   while (el) {
     if (el instanceof HTMLFormElement) return el;
     el = el.parentElement;
   }
+
   return null;
+}
+
+function buildUrl(
+  base?: string,
+  queryParams?: Record<string, any>,
+  fragment?: string
+) {
+  if (!base) return undefined;
+
+  let url = base;
+
+  if (queryParams) {
+    const params = new URLSearchParams();
+
+    for (const key in queryParams) {
+      const value = queryParams[key];
+      if (value !== undefined && value !== null) {
+        params.append(key, String(value));
+      }
+    }
+
+    const query = params.toString();
+    if (query) url += `?${query}`;
+  }
+
+  if (fragment) url += `#${fragment}`;
+
+  return url;
 }
 
 export function IButton(props: IButtonProps) {
@@ -53,29 +96,44 @@ export function IButton(props: IButtonProps) {
     size = 'md',
     icon,
     onClick,
+
+    routerLink,
+    queryParams,
+    fragment,
+    state,
+
+    href,
+    target,
+    rel,
+
     children,
-    className,
     ...rest
   } = props;
 
-  const isBlocked = disabled || loading;
+  const isDisabled = disabled || loading;
 
-  const handleClick: React.MouseEventHandler<HTMLElement> = (event) => {
-    if (isBlocked) {
+  const computedRel =
+    target === '_blank' ? (rel ?? 'noopener noreferrer') : (rel ?? undefined);
+
+  let mode: 'router' | 'anchor' | 'button' = 'button';
+  if (routerLink) mode = 'router';
+  else if (href) mode = 'anchor';
+
+  const url = buildUrl(routerLink ?? href, queryParams, fragment);
+
+  const handleClick = (event: React.MouseEvent<HTMLElement>) => {
+    if (isDisabled) {
       event.preventDefault();
       event.stopPropagation();
-
-      // Angular parity: stopImmediatePropagation when blocked
       (event.nativeEvent as any)?.stopImmediatePropagation?.();
       return;
     }
 
-    // expose native event, like Angular
     onClick?.(event.nativeEvent);
 
-    // manual submit/reset (because host is not <button>)
-    if (type === 'submit' || type === 'reset') {
+    if (mode === 'button' && (type === 'submit' || type === 'reset')) {
       const form = findClosestForm(event.target as HTMLElement | null);
+
       if (!form) return;
 
       if (type === 'submit') {
@@ -91,46 +149,41 @@ export function IButton(props: IButtonProps) {
     }
   };
 
-  const handleKeyDown: React.KeyboardEventHandler<HTMLElement> = (event) => {
-    if (isBlocked) {
-      // Angular returns; React default is fine — no extra behavior needed
-      return;
-    }
-
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-
-      // Simulate click (keeps submit/reset behavior consistent)
-      const mouseEvent = new MouseEvent('click', {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-      });
-
-      (event.target as HTMLElement | null)?.dispatchEvent(mouseEvent);
-    }
-  };
+  const content = loading ? (
+    <ILoading label={loadingText} light={variant !== 'outline'} />
+  ) : (
+    <>
+      {icon ? <IIcon icon={icon} size={size} /> : null}
+      {children}
+    </>
+  );
 
   return (
     <i-button
       {...rest}
-      role="button"
-      className={className}
       variant={variant}
       size={size}
-      // Angular parity: do NOT reflect `type` as an attribute on the host
-      tabIndex={disabled ? -1 : 0}
-      aria-disabled={disabled ? 'true' : undefined}
-      aria-busy={loading ? 'true' : undefined}
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}>
-      {loading ? (
-        <ILoading label={loadingText} light={variant !== 'outline'} />
+      data-mode={mode}
+      aria-disabled={isDisabled ? 'true' : undefined}
+      aria-busy={loading ? 'true' : undefined}>
+      {mode === 'router' || mode === 'anchor' ? (
+        <a
+          className="i-button-inner"
+          aria-disabled={isDisabled ? 'true' : undefined}
+          href={isDisabled ? undefined : url}
+          target={target}
+          rel={computedRel}
+          onClick={handleClick}>
+          {content}
+        </a>
       ) : (
-        <>
-          {icon ? <IIcon icon={icon} size={size} /> : null}
-          {children}
-        </>
+        <button
+          className="i-button-inner"
+          disabled={isDisabled}
+          type={type}
+          onClick={handleClick}>
+          {content}
+        </button>
       )}
     </i-button>
   );
