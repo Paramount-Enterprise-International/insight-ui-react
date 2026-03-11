@@ -119,6 +119,8 @@ export type ISelectProps<T = any> = Omit<
    * Optional option renderer (like Angular iSelectOption template)
    */
   renderOption?: (row: T) => React.ReactNode;
+  /** Angular alias for option template */
+  iSelectOption?: (row: T) => React.ReactNode;
 
   /**
    * Selected value (controlled)
@@ -135,6 +137,8 @@ export type ISelectProps<T = any> = Omit<
    * Event parity (Angular outputs)
    */
   onChange?: (change: ISelectChange<T>) => void;
+  /** Angular alias */
+  onChanged?: (change: ISelectChange<T>) => void;
   onOptionSelected?: (change: ISelectChange<T>) => void;
 };
 
@@ -186,10 +190,14 @@ export type IFCSelectProps<T = any> = Omit<
 
   /** Event parity */
   onChange?: (change: ISelectChange<T>) => void;
+  /** Angular alias */
+  onChanged?: (change: ISelectChange<T>) => void;
   onOptionSelected?: (change: ISelectChange<T>) => void;
 
   /** pass-through */
   renderOption?: (row: T) => React.ReactNode;
+  /** Angular alias for option template */
+  iSelectOption?: (row: T) => React.ReactNode;
   portalToBody?: boolean;
   panelOffset?: number;
   matchTriggerWidth?: boolean;
@@ -310,16 +318,20 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     displayWith,
     filterPredicate = defaultFilterPredicate,
     renderOption,
+    iSelectOption,
 
     value,
     defaultValue = null,
 
     onChange,
+    onChanged,
     onOptionSelected,
 
     className,
     ...hostProps
   } = props;
+
+  const optionRenderer = renderOption ?? iSelectOption;
 
   // DOM
   const hostRef = useRef<HTMLElement | null>(null);
@@ -961,6 +973,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     const label = resolveDisplayText(row);
     const payload: ISelectChange<T> = { value: row, label };
     onChange?.(payload);
+    onChanged?.(payload);
     onOptionSelected?.(payload);
   };
 
@@ -1109,8 +1122,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
           onMouseEnter={() => setActiveIndex(idx)}
           onMouseDown={() => selectRow(row)}>
           <div className="i-option-label">
-            {renderOption ? (
-              renderOption(row)
+            {optionRenderer ? (
+              optionRenderer(row)
             ) : (
               highlightParts(resolveDisplayText(row), effectiveFilterText)
             )}
@@ -1190,9 +1203,11 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
     defaultValue = null,
 
     onChange,
+    onChanged,
     onOptionSelected,
 
     renderOption,
+    iSelectOption,
 
     portalToBody = true,
     panelOffset = 6,
@@ -1271,10 +1286,12 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
         panelOffset={panelOffset}
         matchTriggerWidth={matchTriggerWidth}
         renderOption={renderOption}
+        iSelectOption={iSelectOption}
         value={value}
         // ✅ IMPORTANT: never pass null as defaultValue into JSX typing
         defaultValue={defaultValue ?? undefined}
         onChange={onChange}
+        onChanged={onChanged}
         onOptionSelected={onOptionSelected}
       />
 

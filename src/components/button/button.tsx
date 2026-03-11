@@ -165,6 +165,7 @@ export function IButton(props: IButtonProps) {
       {...rest}
       variant={variant}
       size={size}
+      icon={icon as any}
       data-mode={mode}
       aria-disabled={isDisabled ? 'true' : undefined}
       aria-busy={loading ? 'true' : undefined}>

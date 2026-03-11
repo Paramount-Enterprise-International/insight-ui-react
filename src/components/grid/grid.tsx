@@ -529,6 +529,8 @@ export function IGridColumnGroup(_props: IGridColumnGroupProps) {
 export type IGridExpandableRowRenderCtx<T> = { row: T; index: number };
 export type IGridExpandableRowProps<T> = {
   expandSingle?: boolean;
+  /** Angular alias */
+  iRowDefExpandSingle?: boolean;
   render: (row: T, ctx: IGridExpandableRowRenderCtx<T>) => ReactNode;
 };
 export function IGridExpandableRow<T>(_props: IGridExpandableRowProps<T>) {
@@ -649,6 +651,8 @@ export type IGridProps<T> = {
    */
   highlightSearch?: (text: string, filter: string) => ReactNode;
   rowKey?: (row: T, index: number) => string | number;
+  /** Angular alias */
+  trackBy?: (row: T, index: number) => string | number;
 };
 
 /* ----------------------------------------------------
@@ -675,6 +679,7 @@ export function IGrid<T>(props: IGridProps<T>) {
 
     children,
     highlightSearch,
+    trackBy,
   } = props;
 
   const idRef = useRef<string>(Math.random().toString(36).slice(2));
@@ -1411,7 +1416,9 @@ export function IGrid<T>(props: IGridProps<T>) {
     if (!hasExpandableRow) return;
 
     setExpandedSet((prev) => {
-      const expandSingle = !!expandableRowDef?.expandSingle;
+      const expandSingle = !!(
+        expandableRowDef?.expandSingle ?? expandableRowDef?.iRowDefExpandSingle
+      );
       const was = prev.has(row);
       if (expanded === was) return prev;
 
@@ -1447,7 +1454,9 @@ export function IGrid<T>(props: IGridProps<T>) {
     const shouldExpand = !allVisibleExpanded();
 
     if (shouldExpand) {
-      const expandSingle = !!expandableRowDef?.expandSingle;
+      const expandSingle = !!(
+        expandableRowDef?.expandSingle ?? expandableRowDef?.iRowDefExpandSingle
+      );
       if (expandSingle) {
         const first = renderedData[0];
         setExpandedSet((prev) => {
@@ -1826,7 +1835,8 @@ export function IGrid<T>(props: IGridProps<T>) {
             {/* FLAT: expand-all (only when expandable row exists AND not single) */}
           {!treeEnabled &&
             hasExpandableRow &&
-            !expandableRowDef?.expandSingle ? (
+            !(expandableRowDef?.expandSingle ??
+              expandableRowDef?.iRowDefExpandSingle) ? (
               <HeaderCell
                 className="i-grid-expand-cell i-grid-expand-cell--header i-grid-header-cell--frozen"
                 fixedWidth={expandColumnWidth}
@@ -1995,7 +2005,11 @@ export function IGrid<T>(props: IGridProps<T>) {
 
         {/* ROWS */}
         {renderedData.map((row, rowIndex) => {
-          const key = props.rowKey ? props.rowKey(row, rowIndex) : rowIndex;
+          const key = props.rowKey
+            ? props.rowKey(row, rowIndex)
+            : trackBy
+              ? trackBy(row, rowIndex)
+              : rowIndex;
 
           return (
             <React.Fragment key={`r-${key}`}>
