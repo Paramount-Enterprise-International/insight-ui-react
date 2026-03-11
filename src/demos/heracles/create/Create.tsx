@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useEffect, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -166,7 +168,7 @@ export function Create() {
     };
 
   const handleSelectChangeSelect =
-    (field: string) => (change: ISelectChange<any>) => {
+    (field: string) => (change: ISelectChange<unknown>) => {
       const selected = change.value as SelectOption; // <- this is the actual selected row
 
       if (field === 'recipient') {

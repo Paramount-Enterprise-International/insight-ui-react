@@ -35,9 +35,9 @@ export type IButtonProps = Omit<
 
   /** Router support */
   routerLink?: string;
-  queryParams?: Record<string, any>;
+  queryParams?: Record<string, unknown>;
   fragment?: string;
-  state?: any;
+  state?: unknown;
 
   /** Anchor support */
   href?: string;
@@ -60,7 +60,7 @@ function findClosestForm(startEl: HTMLElement | null): HTMLFormElement | null {
 
 function buildUrl(
   base?: string,
-  queryParams?: Record<string, any>,
+  queryParams?: Record<string, unknown>,
   fragment?: string
 ) {
   if (!base) return undefined;
@@ -110,6 +110,8 @@ export function IButton(props: IButtonProps) {
     ...rest
   } = props;
 
+  void state;
+
   const isDisabled = disabled || loading;
 
   const computedRel =
@@ -125,7 +127,7 @@ export function IButton(props: IButtonProps) {
     if (isDisabled) {
       event.preventDefault();
       event.stopPropagation();
-      (event.nativeEvent as any)?.stopImmediatePropagation?.();
+      (event.nativeEvent as { stopImmediatePropagation?: () => void })?.stopImmediatePropagation?.();
       return;
     }
 

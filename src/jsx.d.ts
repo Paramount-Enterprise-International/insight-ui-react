@@ -1,10 +1,10 @@
 // jsx.d.ts
 declare module 'react' {
-  // ✅ no unused generic
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface AnchorHTMLAttributes<T> {
     variant?: string;
   }
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface HTMLAttributes<T> {
     truncatedTooltip?: boolean;
     truncatedtooltip?: boolean;
@@ -254,7 +254,10 @@ declare module 'react' {
       'i-pill': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement>,
         HTMLElement
-      >;
+      > & {
+        size?: string;
+        variant?: string;
+      };
       'i-options': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement>,
         HTMLElement

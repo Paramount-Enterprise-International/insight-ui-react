@@ -93,6 +93,8 @@ export function IHContent(props: {
 }) {
   const nav = useNavigate();
 
+  const { onNavigate } = props;
+
   const crumbs = useMemo(
     () => normalizeCrumbs(props.breadcrumbs),
     [props.breadcrumbs]
@@ -115,10 +117,10 @@ export function IHContent(props: {
 
   const go = useCallback(
     (url: string) => {
-      if (props.onNavigate) return props.onNavigate(url);
+      if (onNavigate) return onNavigate(url);
       nav(url);
     },
-    [nav, props.onNavigate]
+    [nav, onNavigate]
   );
 
   const onCrumbClick = useCallback(

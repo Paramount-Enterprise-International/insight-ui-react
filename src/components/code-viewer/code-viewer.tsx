@@ -35,7 +35,7 @@ export type ICodeViewerProps = React.HTMLAttributes<HTMLElement> & {
   scroll?: boolean;
 
   /** "wrap" | "auto" | 300 | "300" | "300px" */
-  height?: any;
+  height?: unknown;
 
   highlighter?: ICodeHighlighter;
 
@@ -46,7 +46,7 @@ export type ICodeViewerProps = React.HTMLAttributes<HTMLElement> & {
 // Helpers
 // -----------------------------
 
-function coerceBool(v: any): boolean {
+function coerceBool(v: unknown): boolean {
   return v !== null && v !== undefined && `${v}` !== 'false';
 }
 
@@ -104,7 +104,7 @@ function languageFromExt(ext: string): string {
   }
 }
 
-function parseHeight(v: any): number | null {
+function parseHeight(v: unknown): number | null {
   if (v === null || v === undefined) return null;
 
   const s = String(v).trim().toLowerCase();
@@ -130,9 +130,15 @@ function resolveFileUrl(file: string): string {
 
   if (isAbsoluteUrl(f) || f.startsWith('/')) return f;
 
-  const base = (import.meta as any).url as string;
+  const base = (import.meta as { url?: string }).url as string;
   return new URL(f.replace(/^\.\//, ''), base).toString();
 }
+
+type HljsModule = {
+  highlight: (code: string, options: { language: string; ignoreIllegals?: boolean }) => { value: string };
+  highlightAuto: (code: string) => { value: string };
+  getLanguage?: (lang: string) => unknown;
+};
 
 function normalizeHljsLanguage(lang: string): string {
   if (lang === 'html') return 'xml';
@@ -164,8 +170,8 @@ function extractTextFromReactNode(node: React.ReactNode): string {
     return node.map(extractTextFromReactNode).join('');
   }
 
-  if (React.isValidElement(node)) {
-    return extractTextFromReactNode(node.props?.children);
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) {
+    return extractTextFromReactNode(node.props.children);
   }
 
   return '';
@@ -268,28 +274,31 @@ export function ICodeViewer(props: ICodeViewerProps) {
   }, [projectedText, fileTrimmed, codePropString, rawCode]);
 
   // highlight.js cache (shared per component instance)
-  const hljsRef = useRef<any | null>(null);
-  const hljsPromiseRef = useRef<Promise<any> | null>(null);
+  const hljsRef = useRef<HljsModule | null>(null);
+  const hljsPromiseRef = useRef<Promise<HljsModule | null> | null>(null);
 
   const shouldUseHljs = highlighter === 'hljs' || highlighter === 'auto';
 
-  const loadHljsIfNeeded = useCallback(async (): Promise<any | null> => {
+  const loadHljsIfNeeded = useCallback(async (): Promise<HljsModule | null> => {
     if (hljsRef.current) return hljsRef.current;
 
-    const w = globalThis as any;
-    if (w?.hljs?.highlight && w?.hljs?.highlightAuto) {
+    const w = globalThis as { hljs?: HljsModule };
+    if (w?.hljs) {
       hljsRef.current = w.hljs;
       return hljsRef.current;
     }
 
     if (!hljsPromiseRef.current) {
       hljsPromiseRef.current = import('highlight.js')
-        .then((m: any) => m.default ?? m)
+        .then((m) => {
+          const mod = m as { default?: unknown };
+          return (mod.default ?? m) as unknown as HljsModule;
+        })
         .catch(() => null);
     }
 
     const loaded = await hljsPromiseRef.current;
-    if (loaded?.highlight && loaded?.highlightAuto) {
+    if (loaded) {
       hljsRef.current = loaded;
       return loaded;
     }

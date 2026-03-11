@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // dialog.tsx (React) — full updated file (visible removed from action types)
 import React, {
   createContext,
@@ -227,7 +229,7 @@ function IDialogContainer(props: IDialogContainerProps) {
     return () => document.removeEventListener('keydown', onEsc, true);
   }, [onEsc]);
 
-  const onBackdropClick = (e: React.MouseEvent) => {
+  const onBackdropClick = () => {
     if (!isTopMost) return;
     if (disableClose) return;
     if (!backdropClose) return;
@@ -282,7 +284,7 @@ export function IDialogOutlet() {
 
 export type IDialogCloseProps = {
   result?: any;
-  children?: React.ReactElement;
+  children?: React.ReactElement<React.HTMLAttributes<HTMLElement>>;
   className?: string;
 };
 
@@ -295,7 +297,7 @@ export function IDialogClose(props: IDialogCloseProps) {
   return React.cloneElement(children, {
     className: [children.props?.className, className].filter(Boolean).join(' '),
     onClick: (e: React.MouseEvent) => {
-      children.props?.onClick?.(e);
+      children.props?.onClick?.(e as React.MouseEvent<HTMLElement>);
       e.preventDefault();
       ref.close(result);
     },

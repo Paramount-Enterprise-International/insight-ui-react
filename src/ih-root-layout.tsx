@@ -48,6 +48,7 @@ export function IHRootLayout() {
 
   // Optional: hide sidebar on certain routes (like login)
   const location = useLocation();
+  void location;
   const hideSidebar = false; // e.g. location.pathname.startsWith('/login')
 
   return (

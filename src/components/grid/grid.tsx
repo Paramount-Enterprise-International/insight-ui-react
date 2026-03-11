@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* grid.tsx */
 /**
  * IGrid (React)
@@ -487,6 +488,7 @@ export type IGridColumnProps<T> = {
 };
 
 export function IGridColumn<T>(_props: IGridColumnProps<T>) {
+  void _props;
   return null;
 }
 (IGridColumn as any).$$kind = 'IGridColumn';
@@ -512,12 +514,14 @@ export type IGridCustomColumnProps<T> = {
 };
 
 export function IGridCustomColumn<T>(_props: IGridCustomColumnProps<T>) {
+  void _props;
   return null;
 }
 (IGridCustomColumn as any).$$kind = 'IGridCustomColumn';
 
 export type IGridColumnGroupProps = { title: string; children: ReactNode };
 export function IGridColumnGroup(_props: IGridColumnGroupProps) {
+  void _props;
   return null;
 }
 (IGridColumnGroup as any).$$kind = 'IGridColumnGroup';
@@ -528,6 +532,7 @@ export type IGridExpandableRowProps<T> = {
   render: (row: T, ctx: IGridExpandableRowRenderCtx<T>) => ReactNode;
 };
 export function IGridExpandableRow<T>(_props: IGridExpandableRowProps<T>) {
+  void _props;
   return null;
 }
 (IGridExpandableRow as any).$$kind = 'IGridExpandableRow';
@@ -1716,7 +1721,7 @@ export function IGrid<T>(props: IGridProps<T>) {
           if (!isSortable) return;
           sortByColumn(col);
         }}>
-        <span className="i-grid-header-cell__content" truncatedtooltip="">
+        <span className="i-grid-header-cell__content" truncatedtooltip>
           {children}
         </span>
 
@@ -2137,7 +2142,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                               column: col,
                             })
                           ) : (
-                            <span className="i-grid-tree-text" truncatedtooltip="">
+                            <span className="i-grid-tree-text" truncatedtooltip>
                               {col.fieldName
                                 ? highlightSearchFn(
                                     String(
@@ -2168,7 +2173,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                           column: col,
                         })
                       ) : (
-                        <span className="i-grid-cell__content" truncatedtooltip="">
+                        <span className="i-grid-cell__content" truncatedtooltip>
                           {col.fieldName
                             ? highlightSearchFn(
                                 String(

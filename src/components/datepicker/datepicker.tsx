@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* datepicker.tsx */
 /**
  * IDatepicker (React)
@@ -261,10 +262,6 @@ function buildCalendar(
  * Scroll parent detection (NEW)
  * ========================================= */
 
-function isHTMLElement(v: unknown): v is HTMLElement {
-  return !!v && typeof v === 'object' && (v as any).nodeType === 1;
-}
-
 function getScrollParents(el: HTMLElement | null): (HTMLElement | Window)[] {
   const out: (HTMLElement | Window)[] = [];
   if (!el) return [window];
@@ -374,18 +371,12 @@ export function IDatepicker(props: IDatepickerProps) {
 
   const getPanelEl = () => panelRef.current;
 
-  const getAnchorEl = (): HTMLElement | null => {
+  const getAnchorEl = useCallback((): HTMLElement | null => {
     const host = hostRef.current;
     if (!host) return null;
     const iInput = host.querySelector('i-input') as HTMLElement | null;
     return iInput ?? host;
-  };
-
-  const getAnchorRect = (): DOMRect | null => {
-    const anchor = getAnchorEl();
-    if (anchor?.getBoundingClientRect) return anchor.getBoundingClientRect();
-    return null;
-  };
+  }, []);
 
   // -------- writeValue parity (SMART) --------
   useEffect(() => {
@@ -458,7 +449,8 @@ export function IDatepicker(props: IDatepickerProps) {
     if (!wantsOpenRef.current) return;
 
     const panel = getPanelEl();
-    const rect = getAnchorRect();
+    const anchor = getAnchorEl();
+    const rect = anchor?.getBoundingClientRect?.() ?? null;
     if (!panel || !rect) return;
 
     const vw = window.innerWidth;
@@ -580,7 +572,7 @@ export function IDatepicker(props: IDatepickerProps) {
       top2 = Math.min(Math.max(gap, top2), maxTop2);
       panel.style.top = `${Math.round(top2)}px`;
     }
-  }, [matchTriggerWidth, panelOffset, panelPosition]);
+  }, [getAnchorEl, matchTriggerWidth, panelOffset, panelPosition]);
 
   const scheduleReposition = useCallback(
     (after?: () => void, doubleRaf = false) => {
@@ -638,7 +630,7 @@ export function IDatepicker(props: IDatepickerProps) {
     };
 
     listeningScrollParentsRef.current = true;
-  }, [scheduleReposition]);
+  }, [getAnchorEl, scheduleReposition]);
 
   const removeScrollParentListeners = useCallback(() => {
     if (!listeningScrollParentsRef.current) return;

@@ -1,3 +1,14 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+const formatCurrency = (amount: number): string => {
+    return amount.toLocaleString('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  };
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, {
   useCallback,
   useEffect,
@@ -257,14 +268,7 @@ export function Dashboard() {
     }
   }, []);
 
-  const formatCurrency = (amount: number): string => {
-    return amount.toLocaleString('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-  };
+  
   function handleUpdate(id: number) {
     navigate(`/docs/demos/heracles/edit/${id}`);
   }

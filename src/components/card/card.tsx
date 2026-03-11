@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
-export type RouterLinkInput = string | any[] | undefined;
+export type RouterLinkInput = string | unknown[] | undefined;
 
 export type ICardProps = Omit<
   React.HTMLAttributes<HTMLElement>,
@@ -11,11 +11,11 @@ export type ICardProps = Omit<
   href?: string | null;
 
   routerLink?: RouterLinkInput;
-  queryParams?: Record<string, any> | null;
+  queryParams?: Record<string, unknown> | null;
   fragment?: string;
   replaceUrl?: boolean;
   skipLocationChange?: boolean;
-  state?: Record<string, any>;
+  state?: Record<string, unknown>;
 
   target?: '_self' | '_blank' | '_parent' | '_top' | string;
   rel?: string | null;
@@ -51,7 +51,7 @@ function routerLinkToTo(routerLink?: RouterLinkInput): string | undefined {
   return s || undefined;
 }
 
-function buildSearch(queryParams?: Record<string, any> | null): string {
+function buildSearch(queryParams?: Record<string, unknown> | null): string {
   if (!queryParams) return '';
 
   const usp = new URLSearchParams();
@@ -90,6 +90,8 @@ export function ICard(props: ICardProps) {
     ...rest
   } = props;
 
+  void skipLocationChange;
+
   const normalizedHref = useMemo(() => normalizeHref(href), [href]);
 
   const toBase = useMemo(() => routerLinkToTo(routerLink), [routerLink]);
@@ -123,7 +125,7 @@ export function ICard(props: ICardProps) {
     if (disabled) {
       ev.preventDefault();
       ev.stopPropagation();
-      (ev.nativeEvent as any)?.stopImmediatePropagation?.();
+      (ev.nativeEvent as { stopImmediatePropagation?: () => void })?.stopImmediatePropagation?.();
       return;
     }
 

@@ -21,7 +21,7 @@ export type ISectionTabsHeight =
  * Helpers (match Angular)
  * ========================= */
 
-function isTruthyAttr(v: any): boolean {
+function isTruthyAttr(v: unknown): boolean {
   if (v === null || v === undefined) return false;
   const s = String(v).trim().toLowerCase();
   if (s === 'false' || s === '0' || s === 'null' || s === 'undefined')
@@ -29,12 +29,12 @@ function isTruthyAttr(v: any): boolean {
   return true;
 }
 
-function parseOpened(v: any): boolean {
+function parseOpened(v: unknown): boolean {
   if (v === null || v === undefined) return false;
   return `${v}` !== 'false';
 }
 
-function parseBadge(v: any): { enabled: boolean; value: number | null } {
+function parseBadge(v: unknown): { enabled: boolean; value: number | null } {
   if (!isTruthyAttr(v)) return { enabled: false, value: null };
 
   const raw = String(v).trim();
@@ -49,7 +49,7 @@ function parseBadge(v: any): { enabled: boolean; value: number | null } {
   return { enabled: true, value: null };
 }
 
-function parseTabsHeight(v: any): number | null {
+function parseTabsHeight(v: unknown): number | null {
   if (v === null || v === undefined) return null;
 
   const s = String(v).trim().toLowerCase();
@@ -64,8 +64,13 @@ function parseTabsHeight(v: any): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function isValidIndex(index: any, len: number): index is number {
-  return Number.isInteger(index) && index >= 0 && index < len;
+function isValidIndex(index: unknown, len: number): index is number {
+  return (
+    typeof index === 'number' &&
+    Number.isInteger(index) &&
+    index >= 0 &&
+    index < len
+  );
 }
 
 /* =========================
@@ -122,6 +127,7 @@ export type ISectionTabProps = {
 };
 
 export function ISectionTab(_props: ISectionTabProps) {
+  void _props;
   return null;
 }
 
@@ -168,7 +174,7 @@ function normalizeTab(
   index: number
 ): NormalizedTab | null {
   if (!React.isValidElement(node)) return null;
-  if ((node.type as any) !== ISectionTab) return null;
+  if ((node.type as unknown) !== ISectionTab) return null;
 
   const props = node.props as ISectionTabProps;
 

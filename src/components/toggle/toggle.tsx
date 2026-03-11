@@ -63,7 +63,7 @@ function isInteractive(el: HTMLElement | null): boolean {
   const role = el.getAttribute('role');
   if (role === 'button' || role === 'link' || role === 'switch') return true;
 
-  if ((el as any).isContentEditable) return true;
+  if (el.isContentEditable) return true;
 
   const tabindex = el.getAttribute('tabindex');
   if (tabindex != null && tabindex !== '-1') return true;

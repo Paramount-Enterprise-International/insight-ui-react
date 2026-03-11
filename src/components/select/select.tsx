@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* select.tsx */
 /**
  * ISelect + IFCSelect (React)
@@ -19,6 +20,7 @@
 
 import React, {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -425,17 +427,17 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   };
 
   // ---------- imperative API ----------
-  const focus = () => {
+  const focus = useCallback(() => {
     if (disabled) return;
     inputRef.current?.focus?.();
-  };
+  }, [disabled]);
 
   useImperativeHandle(
     ref,
     () => ({
       focus,
     }),
-    [disabled]
+    [focus]
   );
 
   // ---------- sync model from props ----------
@@ -585,7 +587,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       panel.style.width = '';
     }
 
-    let panelRect = panel.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
 
     const wantTop = pos.startsWith('top');
     const wantBottom =
@@ -1078,8 +1080,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   // ---------- render options (as <i-options>) ----------
   const optionsNode = hasOptionsList ? (
     <i-options
-      ref={(el) => {
-        panelRef.current = el as any;
+      ref={(el: HTMLElement | null) => {
+        panelRef.current = el;
 
         if (panelRef.current) {
           if (portalToBody)
@@ -1128,8 +1130,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     <i-select
       {...hostProps}
       className={className as any}
-      ref={(el) => {
-        hostRef.current = el as any;
+      ref={(el: HTMLElement | null) => {
+        hostRef.current = el;
       }}
       onKeyDown={onHostKeyDown as any}>
       <IInput
@@ -1204,16 +1206,16 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
 
   const innerSelectRef = useRef<ISelectHandle | null>(null);
 
-  const focusInnerSelect = () => {
+  const focusInnerSelect = useCallback(() => {
     if (!disabled) innerSelectRef.current?.focus();
-  };
+  }, [disabled]);
 
   useImperativeHandle(
     ref,
     () => ({
       focus: focusInnerSelect,
     }),
-    [disabled]
+    [focusInnerSelect]
   );
 
   const controlInvalid = useMemo(() => {

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // input.tsx
 import React, { useEffect, useMemo, useRef } from 'react';
 import { IButton, type IButtonVariant } from '../button';

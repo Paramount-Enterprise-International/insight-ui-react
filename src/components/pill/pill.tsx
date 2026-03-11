@@ -73,7 +73,7 @@ export function IPill({
       variant={variant}
       aria-disabled={disabled ? 'true' : undefined}
       onClick={handleHostClick}
-      {...(rest as any)}>
+      {...rest}>
       {icon ? <IIcon icon={icon} size={size} /> : null}
 
       <span className="i-pill__content">{children}</span>
