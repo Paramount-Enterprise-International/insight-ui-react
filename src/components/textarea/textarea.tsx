@@ -132,10 +132,22 @@ export function IFCTextArea(props: IFCTextAreaProps) {
     );
   }, [invalid, label, errorKey, errorMessage]);
 
+  const hostRef = useRef<HTMLElement | null>(null);
+
+  const focusInnerTextarea = useCallback(() => {
+    if (disabled) return;
+    const host = hostRef.current;
+    if (!host) return;
+    const textarea = host.querySelector('textarea');
+    if (textarea instanceof HTMLTextAreaElement) {
+      textarea.focus();
+    }
+  }, [disabled]);
+
   return (
-    <i-fc-textarea {...hostProps}>
+    <i-fc-textarea {...hostProps} ref={hostRef}>
       {label ? (
-        <label className="i-fc-textarea__label">
+        <label className="i-fc-textarea__label" onClick={focusInnerTextarea}>
           {label} :{' '}
           {required ? <span className="i-fc-textarea__required">*</span> : null}
         </label>

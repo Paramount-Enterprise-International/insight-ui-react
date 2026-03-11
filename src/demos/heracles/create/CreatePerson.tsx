@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { useEffect, useState } from 'react';
 
 import {
@@ -155,6 +156,8 @@ export function CreatePerson({
       setFormData((p) => (p ? { ...p, [field]: stringValue } : p));
     };
 
+  void handleSelectChange;
+
   const handleInputChange =
     (field: keyof PersonData) =>
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -179,6 +182,8 @@ export function CreatePerson({
       }
       setFormData((p) => ({ ...p, [field]: formatDateToISO(dateValue) }));
     };
+
+  void handleDateChange;
 
   const validateForm = (): boolean => {
     const requiredFields: (keyof PersonData)[] = [

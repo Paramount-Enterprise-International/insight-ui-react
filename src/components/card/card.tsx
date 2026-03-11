@@ -2,31 +2,27 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
-export type RouterLinkInput = string | any[] | undefined;
+export type RouterLinkInput = string | unknown[] | undefined;
 
 export type ICardProps = Omit<
   React.HTMLAttributes<HTMLElement>,
   'children' | 'onClick'
 > & {
-  // External / normal anchor
   href?: string | null;
 
-  // React Router (API parity with Angular naming)
   routerLink?: RouterLinkInput;
-  queryParams?: Record<string, any> | null;
+  queryParams?: Record<string, unknown> | null;
   fragment?: string;
-  replaceUrl?: boolean; // -> Link "replace"
-  skipLocationChange?: boolean; // parity-only (unused)
-  state?: Record<string, any>; // -> Link "state"
+  replaceUrl?: boolean;
+  skipLocationChange?: boolean;
+  state?: Record<string, unknown>;
 
-  // Anchor-related (also supported by Link)
   target?: '_self' | '_blank' | '_parent' | '_top' | string;
   rel?: string | null;
 
   disabled?: boolean;
 
-  /** Standardized event name (Angular + React) */
-  onClick?: (ev: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => void;
+  onClick?: (ev: React.MouseEvent<HTMLAnchorElement>) => void;
 
   children?: React.ReactNode;
 };
@@ -38,7 +34,7 @@ function normalizeHref(input?: string | null): string | undefined {
 }
 
 function routerLinkToTo(routerLink?: RouterLinkInput): string | undefined {
-  if (routerLink === undefined || routerLink === null) return undefined;
+  if (!routerLink) return undefined;
 
   if (Array.isArray(routerLink)) {
     const parts = routerLink
@@ -46,26 +42,25 @@ function routerLinkToTo(routerLink?: RouterLinkInput): string | undefined {
       .map((x) => String(x ?? '').trim())
       .filter(Boolean);
 
-    if (parts.length === 0) return undefined;
+    if (!parts.length) return undefined;
 
-    // Treat array form as a path join.
-    // If the joined result starts with "/", it's absolute.
-    // Otherwise it's relative (and Link can resolve it with relative="path").
-    const joined = parts.join('/').replace(/\/+/g, '/');
-    return joined;
+    return parts.join('/').replace(/\/+/g, '/');
   }
 
   const s = String(routerLink).trim();
-  return s ? s : undefined; // keep relative as-is
+  return s || undefined;
 }
 
-function buildSearch(queryParams?: Record<string, any> | null): string {
+function buildSearch(queryParams?: Record<string, unknown> | null): string {
   if (!queryParams) return '';
+
   const usp = new URLSearchParams();
+
   for (const [k, v] of Object.entries(queryParams)) {
     if (v === undefined || v === null) continue;
     usp.set(k, String(v));
   }
+
   const s = usp.toString();
   return s ? `?${s}` : '';
 }
@@ -84,7 +79,7 @@ export function ICard(props: ICardProps) {
     queryParams,
     fragment,
     replaceUrl = false,
-    skipLocationChange = false, // parity-only (unused)
+    skipLocationChange = false,
     state,
     target,
     rel,
@@ -95,71 +90,64 @@ export function ICard(props: ICardProps) {
     ...rest
   } = props;
 
+  void skipLocationChange;
+
   const normalizedHref = useMemo(() => normalizeHref(href), [href]);
 
   const toBase = useMemo(() => routerLinkToTo(routerLink), [routerLink]);
+
   const search = useMemo(() => buildSearch(queryParams), [queryParams]);
   const hash = useMemo(() => buildHash(fragment), [fragment]);
 
   const to = useMemo(() => {
     if (!toBase) return undefined;
 
-    // If toBase already has ? or #, we don't try to merge (keep predictable).
-    // Prefer the explicit queryParams/fragment when base is clean.
     const hasSearch = toBase.includes('?');
     const hasHash = toBase.includes('#');
 
     let out = toBase;
+
     if (search && !hasSearch) out += search;
     if (hash && !hasHash) out += hash;
+
     return out;
   }, [toBase, search, hash]);
 
-  const hasRouterLink = !!to;
-  const hasClick = typeof onClick === 'function';
+  const useRouterLink = !disabled && !!to;
 
-  // Angular relAttr behavior for anchors:
-  // - if rel provided, use it
-  // - else if target=_blank, use "noopener noreferrer"
-  // - else undefined
   const relAttr =
     rel ??
     ((target ?? '').toLowerCase() === '_blank'
       ? 'noopener noreferrer'
       : undefined);
 
-  const handleClick = (ev: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
+  const handleClick = (ev: React.MouseEvent<HTMLAnchorElement>) => {
     if (disabled) {
       ev.preventDefault();
       ev.stopPropagation();
-      (ev.nativeEvent as any)?.stopImmediatePropagation?.();
+      (ev.nativeEvent as { stopImmediatePropagation?: () => void })?.stopImmediatePropagation?.();
       return;
     }
 
-    // Angular-like: if onClick provided, prevent navigation and emit
-    if (hasClick) {
+    if (onClick) {
       ev.preventDefault();
-      onClick?.(ev);
+      onClick(ev);
       return;
     }
 
-    // If no href/to (shouldn’t happen often), prevent empty navigation
-    if (!hasRouterLink && !normalizedHref) {
+    if (!to && !normalizedHref) {
       ev.preventDefault();
     }
   };
 
   return (
     <i-card className={className} {...rest}>
-      {hasRouterLink ? (
+      {useRouterLink ? (
         <Link
           className="i-card"
           aria-disabled={disabled ? 'true' : undefined}
           tabIndex={disabled ? -1 : undefined}
-          to={disabled ? '' : to!}
-          // KEY: makes "button" resolve to "/docs/components/button"
-          // when you're at "/docs/components"
-          relative="path"
+          to={to!}
           replace={replaceUrl}
           state={state}
           target={target ?? undefined}
@@ -187,15 +175,7 @@ export function ICard(props: ICardProps) {
  * Sub components
  * ========================= */
 
-export type ICardImageProps = Omit<
-  React.ImgHTMLAttributes<HTMLImageElement>,
-  'children'
-> & {
-  src?: string;
-  alt?: string | null;
-};
-
-export function ICardImage(props: ICardImageProps) {
+export function ICardImage(props: React.ImgHTMLAttributes<HTMLImageElement>) {
   const { src, alt, ...rest } = props;
 
   return (

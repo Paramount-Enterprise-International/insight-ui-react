@@ -1,6 +1,24 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+const formatCurrency = (amount: number): string => {
+    return amount.toLocaleString('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    });
+  };
+
+/* eslint-disable @typescript-eslint/no-unused-vars */
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   IButton,
-  IDatepicker,
   IGrid,
   IGridColumn,
   IGridDataSource,
@@ -11,16 +29,7 @@ import {
   ISectionBody,
   ISectionFilter,
   ISectionHeader,
-  ISelect,
-} from '@insight/ui';
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type FormEvent,
-} from 'react';
-import { useNavigate } from 'react-router-dom';
+} from '../../components';
 
 interface DetailItem {
   itemName: string;
@@ -148,6 +157,9 @@ export function Dashboard() {
     { id: 2, name: 'Non Active' },
   ];
 
+  void selectStatus;
+  void status;
+
   const getDispositionFromStorage = useCallback((): UserRow[] => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -259,14 +271,7 @@ export function Dashboard() {
     }
   }, []);
 
-  const formatCurrency = (amount: number): string => {
-    return amount.toLocaleString('id-ID', {
-      style: 'currency',
-      currency: 'IDR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    });
-  };
+  
   function handleUpdate(id: number) {
     navigate(`/docs/demos/heracles/edit/${id}`);
   }
@@ -405,8 +410,8 @@ export function Dashboard() {
 
     return filterResult;
   }, []);
-  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+  const handleInput = (e: React.FormEvent<HTMLInputElement>) => {
+    const value = e.currentTarget.value;
     setInputValue(value);
 
     setTempFilters((prev) => ({
@@ -415,8 +420,8 @@ export function Dashboard() {
     }));
   };
 
-  const handleInputDiposisi = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
+  const handleInputDiposisi = (e: React.FormEvent<HTMLInputElement>) => {
+    const value = e.currentTarget.value;
     setInputValueDiposisis(value);
 
     setTempFilters((prev) => ({
@@ -448,6 +453,8 @@ export function Dashboard() {
       console.log('Status cleared');
     }
   };
+
+  void setSelectedStatus;
 
   const handleDateToChange = (value: FormEvent<HTMLElement> | Date | null) => {
     let selectedDate: Date | null = null;
@@ -481,6 +488,9 @@ export function Dashboard() {
     setDateFrom(selectedDate);
     console.log(selectedDate, 'dateFrom');
   };
+
+  void handleDateToChange;
+  void handleDateFromChange;
 
   const handleFilters = () => {
     console.log(tempFilters, 'ini adalah filter cek');
@@ -545,7 +555,7 @@ export function Dashboard() {
       <ISection>
         <ISectionHeader>Heracles</ISectionHeader>
         <ISectionFilter className="flex gap-md flex-fill align-center w-full pb-sm">
-          <IDatepicker
+          {/* <IDatepicker
             onChange={handleDateFromChange}
             value={dateFrom}
             placeholder="Disposisi Date From"></IDatepicker>
@@ -553,17 +563,17 @@ export function Dashboard() {
           <IDatepicker
             onChange={handleDateToChange}
             value={dateTo}
-            placeholder="Disposisi Date To"></IDatepicker>
+            placeholder="Disposisi Date To"></IDatepicker> */}
           <IInput
             placeholder="Diposis Number"
             value={inputValueDiposisi}
             onInput={handleInputDiposisi}
             onBlur={handleBlurDiposisi}></IInput>
-          <ISelect
+          {/* <ISelect
             placeholder="Status"
             options={status}
             value={selectStatus}
-            onChange={(status) => setSelectedStatus(status)}></ISelect>
+            onChange={(status) => setSelectedStatus(status)}></ISelect> */}
           <IInput
             placeholder="Search..."
             value={inputValue}

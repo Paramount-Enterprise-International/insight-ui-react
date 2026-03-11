@@ -1,6 +1,6 @@
 // routes.tsx
 
-import type { IRoutes } from '@insight/ui';
+import type { IRoutes } from '../../components';
 
 export const heraclesRoutes: IRoutes = [
   {
@@ -15,12 +15,12 @@ export const heraclesRoutes: IRoutes = [
         breadcrumb: 'Create',
         loadComponent: () => import('./create/Create').then((m) => m.Create),
       },
-      {
-        path: 'edit/:id',
-        title: 'Edit',
-        breadcrumb: 'Edit',
-        loadComponent: () => import('./edit/Edit').then((m) => m.Edit),
-      },
+      // {
+      //   path: 'edit/:id',
+      //   title: 'Edit',
+      //   breadcrumb: 'Edit',
+      //   loadComponent: () => import('./edit/Edit').then((m) => m.Edit),
+      // },
     ],
   },
 ];

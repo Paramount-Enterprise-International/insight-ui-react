@@ -68,12 +68,12 @@ export function IPill({
   return (
     <i-pill
       // base class for the "i-pill, .i-pill" selector group
-      class={['i-pill', className].filter(Boolean).join(' ')}
+      className={['i-pill', className].filter(Boolean).join(' ')}
       size={size}
       variant={variant}
       aria-disabled={disabled ? 'true' : undefined}
       onClick={handleHostClick}
-      {...(rest as any)}>
+      {...rest}>
       {icon ? <IIcon icon={icon} size={size} /> : null}
 
       <span className="i-pill__content">{children}</span>

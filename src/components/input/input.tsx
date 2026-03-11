@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // input.tsx
 import React, { useEffect, useMemo, useRef } from 'react';
 import { IButton, type IButtonVariant } from '../button';
@@ -5,7 +6,7 @@ import { IIcon, type IIconInput } from '../icon';
 import { ILoading } from '../loading';
 
 /* =========================================
- * Types: addons
+ * Types: addons (Angular parity)
  * ========================================= */
 
 export type IInputAddonKind = 'icon' | 'text' | 'button' | 'link' | 'loading';
@@ -33,31 +34,29 @@ export type IInputAddonText = {
 
 export type IInputAddonButton = {
   type: 'button';
-  icon?: IIconInput;
-  text?: string;
-  variant?: IButtonVariant;
+  icon: IIconInput;
   onClick?: () => void;
   visible?: boolean;
+  variant?: IButtonVariant;
 } & IInputAddonType;
 
 export type IInputAddonLink = {
   type: 'link';
-  icon?: IIconInput;
-  text: string;
-  href: string;
-  target?: string;
+  icon: IIconInput;
+  href?: string;
   visible?: boolean;
+  variant?: IButtonVariant;
 } & IInputAddonType;
 
 export type IInputAddons =
+  | IInputAddonLoading
   | IInputAddonIcon
   | IInputAddonText
   | IInputAddonButton
-  | IInputAddonLink
-  | IInputAddonLoading;
+  | IInputAddonLink;
 
 /* =========================================
- * Types: mask
+ * Types: mask (Angular parity)
  * ========================================= */
 
 export type IInputMaskType =
@@ -65,7 +64,9 @@ export type IInputMaskType =
   | 'integer'
   | 'number'
   | 'currency'
-  | 'time';
+  | 'time'
+  | 'lowercase'
+  | 'uppercase';
 
 export type IInputMask = {
   type: IInputMaskType;
@@ -109,22 +110,14 @@ function caretPosAfterDigits(value: string, digitCount: number): number {
       if (seen === digitCount) return i + 1;
     }
   }
+
   return value.length;
 }
 
-/**
- * React counterpart for Angular IInputMaskDirective:
- * - attaches listeners to the native <input/>
- * - formats and constrains value based on the mask
- *
- * Enhancements (parity with your latest Angular fixes):
- * - ✅ digit typing at segment boundaries does NOT create "012"/"111" artifacts
- *   -> overwrite / roll within segment (like a spinbox segment)
- * - ✅ month capped to 12 while typing
- * - ✅ day clamped by (month,year) while typing (when segment complete)
- * - ✅ year max 4 digits (until year 10000 exists 😄)
- * - ✅ paste normalization for date/time
- */
+/* =========================================
+ * React counterpart of IInputMaskDirective
+ * ========================================= */
+
 export function useInputMask(
   inputRef: React.RefObject<HTMLInputElement | null>,
   mask: IInputMask | undefined,
@@ -142,17 +135,13 @@ export function useInputMask(
     const type = mask.type;
     const fmt = mask.format;
 
-    /* =========================================
-     * Helpers (React controlled-input safe)
-     * ========================================= */
-
     const dispatchInput = () => {
       el.dispatchEvent(new Event('input', { bubbles: true }));
     };
 
     const safeSetSelectionRange = (start: number, end: number) => {
       try {
-        if (typeof (el as any).setSelectionRange === 'function') {
+        if (typeof (el as HTMLInputElement).setSelectionRange === 'function') {
           el.setSelectionRange(start, end);
         }
       } catch {
@@ -175,7 +164,9 @@ export function useInputMask(
       const newPos = Math.max(0, Math.min(v.length, prevPos + delta));
       safeSetSelectionRange(newPos, newPos);
 
-      if (o?.emit !== false) dispatchInput();
+      if (o?.emit !== false) {
+        dispatchInput();
+      }
     };
 
     const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -195,19 +186,22 @@ export function useInputMask(
         'Enter',
         'Escape',
       ];
+
       if (controlKeys.includes(key)) return true;
       if (e.ctrlKey || e.metaKey || e.altKey) return true;
+
       return false;
     };
 
     /* =========================================
-     * Default apply (Angular parity)
+     * Defaults
      * ========================================= */
 
     const formatDateDefault = (d: Date, format: string) => {
       const yyyy = String(d.getFullYear());
       const MM = pad2(d.getMonth() + 1);
       const dd = pad2(d.getDate());
+
       return (format || 'dd/MM/yyyy')
         .replace(/yyyy/g, yyyy)
         .replace(/MM/g, MM)
@@ -218,6 +212,7 @@ export function useInputMask(
       const HH = pad2(d.getHours());
       const mm = pad2(d.getMinutes());
       const ss = pad2(d.getSeconds());
+
       return (format || 'HH:mm')
         .replace(/HH/g, HH)
         .replace(/mm/g, mm)
@@ -230,6 +225,7 @@ export function useInputMask(
       if (el.value && el.value.trim().length > 0) return;
 
       const now = new Date();
+
       if (type === 'date') {
         const v = formatDateDefault(now, fmt || 'dd/MM/yyyy');
         defaultAppliedRef.current = true;
@@ -246,11 +242,12 @@ export function useInputMask(
     applyInitialDefaultIfNeeded();
 
     /* =========================================
-     * Numeric mask
+     * Shared formatters
      * ========================================= */
 
     const applyNumericMask = (raw: string, allowDecimal: boolean) => {
       if (!raw) return '';
+
       let out = '';
       let hasDecimal = false;
 
@@ -259,6 +256,7 @@ export function useInputMask(
           out += ch;
           continue;
         }
+
         if (allowDecimal && (ch === '.' || ch === ',')) {
           if (!hasDecimal) {
             hasDecimal = true;
@@ -266,7 +264,18 @@ export function useInputMask(
           }
         }
       }
+
       return out;
+    };
+
+    const applyTextCaseMask = (
+      value: string,
+      caseType: 'lowercase' | 'uppercase'
+    ) => {
+      if (!value) return value;
+      return caseType === 'lowercase'
+        ? value.toLowerCase()
+        : value.toUpperCase();
     };
 
     /* =========================================
@@ -279,12 +288,15 @@ export function useInputMask(
     const splitDateFormat = (format: string) => {
       const tokens: string[] = [];
       const seps: string[] = [];
+
       let currentSep = '';
       let i = 0;
+
       const isTokenChar = (c: string) => c === 'd' || c === 'M' || c === 'y';
 
       while (i < format.length) {
         const c = format[i];
+
         if (!isTokenChar(c)) {
           currentSep += c;
           i++;
@@ -297,10 +309,12 @@ export function useInputMask(
         const ch = c;
         let token = ch;
         let j = i + 1;
+
         while (j < format.length && format[j] === ch) {
           token += format[j];
           j++;
         }
+
         tokens.push(token);
         i = j;
       }
@@ -333,6 +347,7 @@ export function useInputMask(
 
         const start = pos;
         let end = pos;
+
         while (end < value.length && /\d/.test(value[end])) end++;
 
         const raw = value.slice(start, end);
@@ -363,17 +378,20 @@ export function useInputMask(
         const ch = tok[0];
         const len = tok.length;
 
-        if (ch === 'd') result += String(day).padStart(len, '0');
-        else if (ch === 'M') result += String(month).padStart(len, '0');
-        else {
-          // ✅ cap year digits at token length (we'll keep yyyy=4)
+        if (ch === 'd') {
+          result += String(day).padStart(len, '0');
+        } else if (ch === 'M') {
+          result += String(month).padStart(len, '0');
+        } else {
           let s = String(year);
           if (s.length < len) s = s.padStart(len, '0');
           else if (s.length > len) s = s.slice(-len);
           result += s;
         }
 
-        if (i < tokens.length - 1) result += seps[i + 1] ?? '';
+        if (i < tokens.length - 1) {
+          result += seps[i + 1] ?? '';
+        }
       }
 
       return result;
@@ -383,21 +401,20 @@ export function useInputMask(
       const { tokens, seps } = splitDateFormat(format);
       if (!tokens.length) return digits;
 
-      // enforce max digits for yyyy-MM-dd style too
       const totalDigits = tokens.reduce((a, t) => a + t.length, 0);
-      const d8 = digits.replace(/\D/g, '').slice(0, totalDigits);
+      const d = digits.replace(/\D/g, '').slice(0, totalDigits);
 
       const firstSep = seps[1] ?? '';
       const secondSep = seps[2] ?? '';
 
-      if (d8.length <= 2) {
-        if (d8.length === 2 && firstSep) return d8 + firstSep;
-        return d8;
+      if (d.length <= 2) {
+        if (d.length === 2 && firstSep) return d + firstSep;
+        return d;
       }
 
-      if (d8.length <= 4) {
-        const dRaw = d8.slice(0, 2);
-        const mRaw = d8.slice(2);
+      if (d.length <= 4) {
+        const dRaw = d.slice(0, 2);
+        const mRaw = d.slice(2);
 
         let res = dRaw;
         if (firstSep) res += firstSep;
@@ -406,12 +423,13 @@ export function useInputMask(
           res += mRaw;
           if (mRaw.length === 2 && secondSep) res += secondSep;
         }
+
         return res;
       }
 
-      const dStr = d8.slice(0, 2);
-      const mStr = d8.slice(2, 4);
-      const yStr = d8.slice(4, 8); // yyyy
+      const dStr = d.slice(0, 2);
+      const mStr = d.slice(2, 4);
+      const yStr = d.slice(4, 8);
 
       let day = Number(dStr || '1');
       let month = Number(mStr || '1');
@@ -460,10 +478,9 @@ export function useInputMask(
         const tok = tokens[i];
         const ch = tok[0];
         const len = tok.length;
-
-        // ✅ cap year input to 4 digits (yyyy)
-        const rawSegFull = (rawSegs[i] ?? '').replace(/\D/g, '');
-        const rawSeg = rawSegFull.slice(0, len);
+        const rawSeg = ((rawSegs[i] ?? '') as string)
+          .replace(/\D/g, '')
+          .slice(0, len);
 
         const kind: PartKind =
           ch === 'd' ? 'day' : ch === 'M' ? 'month' : 'year';
@@ -521,7 +538,6 @@ export function useInputMask(
       }
 
       if (yearPart) {
-        // keep partial year as typed, but already capped to len
         yearPart.out = yearPart.raw;
       }
 
@@ -529,6 +545,7 @@ export function useInputMask(
       const hasDigitsArr = parts.map((p) => p.raw.length > 0);
 
       let result = seps[0] ?? '';
+
       for (let i = 0; i < parts.length; i++) {
         result += outSegs[i] ?? '';
 
@@ -581,6 +598,8 @@ export function useInputMask(
     };
 
     const normalizePastedDate = (text: string, format: string): string => {
+      if (!text) return '';
+
       const nums = text.match(/\d+/g) ?? [];
       if (!nums.length) return '';
 
@@ -599,21 +618,18 @@ export function useInputMask(
         const bNum = Number(b);
         const cNum = Number(c);
 
-        // If first looks like year
         if (a.length === 4) {
           year = aNum;
           month = bNum;
           day = cNum;
         } else if (c.length === 4) {
-          // common dd/mm/yyyy
           day = aNum;
           month = bNum;
           year = cNum;
         } else {
-          // fallback: map tokens
           tokens.forEach((t, i) => {
-            const raw = nums[i] ?? '';
-            const n = Number(raw);
+            const rawNum = nums[i] ?? '';
+            const n = Number(rawNum);
             if (!Number.isFinite(n)) return;
 
             if (t[0] === 'd') day = n;
@@ -622,7 +638,6 @@ export function useInputMask(
           });
         }
       } else {
-        // digits-only paste fallback
         const digits = nums.join('').replace(/\D/g, '');
         return applyDateMaskDigitsOnly(digits, format);
       }
@@ -637,12 +652,6 @@ export function useInputMask(
       return formatDateFromParts(day, month, year, format);
     };
 
-    /**
-     * ✅ The critical enhancement:
-     * When typing a digit at a boundary like "31/01|/2026", you want "31/12/2026"
-     * NOT "31/012/2026". So we treat date as digits-only buffer (ddMMyyyy),
-     * compute which segment caret is in, and overwrite/roll within that segment.
-     */
     const handleDateDigitKeydown = (digitChar: string) => {
       if (type !== 'date') return false;
 
@@ -650,25 +659,22 @@ export function useInputMask(
       const { tokens } = splitDateFormat(format);
       if (!tokens.length) return false;
 
-      // tokens expected dd / MM / yyyy (lengths 2/2/4)
       const lens = tokens.map((t) => t.length);
       const totalDigits = lens.reduce((a, b) => a + b, 0);
 
-      // Start from current value -> digits-only (capped)
       const currentDigits = (el.value ?? '')
         .replace(/\D/g, '')
         .slice(0, totalDigits);
 
-      // Convert caret position in masked string into digit index
       const caret = el.selectionStart ?? (el.value ?? '').length;
       const digitCursor = countDigitsBeforePos(el.value ?? '', caret);
 
-      // Build digit ranges per token
       const ranges: Array<{
         start: number;
         end: number;
         kind: 'day' | 'month' | 'year';
       }> = [];
+
       let acc = 0;
       for (const tok of tokens) {
         const kind: 'day' | 'month' | 'year' =
@@ -693,9 +699,7 @@ export function useInputMask(
 
       let newToken = tokenDigits;
 
-      // Insert/overwrite/roll behavior
       if (!isFull) {
-        // insert (until token full)
         newToken = (
           tokenDigits.slice(0, rel) +
           digitChar +
@@ -703,10 +707,8 @@ export function useInputMask(
         ).slice(0, tokenLen);
       } else {
         if (digitCursor >= r.end) {
-          // caret is on boundary after segment: roll
           newToken = tokenDigits.slice(1) + digitChar;
         } else {
-          // overwrite at caret
           newToken = (
             tokenDigits.slice(0, rel) +
             digitChar +
@@ -719,7 +721,6 @@ export function useInputMask(
       const after = currentDigits.slice(r.end);
       let nextDigits = (before + newToken + after).slice(0, totalDigits);
 
-      // Clamp month/day when segment completes; cap year to 4 digits
       const monthRange = ranges.find((x) => x.kind === 'month');
       const yearRange = ranges.find((x) => x.kind === 'year');
 
@@ -730,7 +731,6 @@ export function useInputMask(
         ? nextDigits.slice(yearRange.start, yearRange.end)
         : '';
 
-      // Month clamp when month segment complete (2 digits)
       if (r.kind === 'month' && newToken.length === 2) {
         let m = Number(newToken);
         if (!Number.isFinite(m)) m = 1;
@@ -743,7 +743,6 @@ export function useInputMask(
         nextDigits = nextDigits.slice(0, totalDigits);
       }
 
-      // Day clamp when day segment complete (2 digits)
       if (r.kind === 'day' && newToken.length === 2) {
         let d = Number(newToken);
         if (!Number.isFinite(d)) d = 1;
@@ -766,7 +765,6 @@ export function useInputMask(
         nextDigits = nextDigits.slice(0, totalDigits);
       }
 
-      // Year cap (yyyy = 4)
       if (yearRange) {
         const y = nextDigits.slice(yearRange.start, yearRange.end).slice(0, 4);
         nextDigits =
@@ -778,7 +776,6 @@ export function useInputMask(
 
       const masked = applyDateMaskDigitsOnly(nextDigits, format);
 
-      // Determine next caret position in "digit space"
       const didRollAtEnd = isFull && digitCursor >= r.end;
       const nextDigitCursor = didRollAtEnd
         ? r.end
@@ -793,6 +790,81 @@ export function useInputMask(
       return true;
     };
 
+    const adjustDateSegmentByArrow = (key: 'ArrowUp' | 'ArrowDown') => {
+      if (type !== 'date' || !fmt) return;
+
+      const format = fmt;
+      const value = el.value ?? '';
+
+      const segments = getDateSegments(value, format);
+      if (!segments.length) return;
+
+      const caret = el.selectionStart ?? value.length;
+
+      let idx = segments.findIndex((s) => caret >= s.start && caret <= s.end);
+      if (idx === -1) {
+        idx = segments.findIndex((s) => caret < s.start);
+        if (idx === -1) idx = segments.length - 1;
+        if (idx > 0 && caret > segments[idx - 1].end) idx = idx - 1;
+      }
+      if (idx < 0) idx = 0;
+
+      let day = 1;
+      let month = 1;
+      let year = 2000;
+
+      for (const seg of segments) {
+        const n = seg.raw ? Number(seg.raw) : NaN;
+        if (Number.isNaN(n)) continue;
+
+        if (seg.kind === 'day') day = n;
+        else if (seg.kind === 'month') month = n;
+        else year = n;
+      }
+
+      month = clamp(month, 1, 12);
+
+      if (!Number.isFinite(year) || year <= 0) year = 2000;
+      year = Math.min(year, 9999);
+
+      let maxDay = daysInMonth(year, month);
+      day = clamp(day, 1, maxDay);
+
+      const seg = segments[idx];
+
+      if (seg.kind === 'day') {
+        if (key === 'ArrowUp') {
+          day = day + 1;
+          if (day > maxDay) day = 1;
+        } else {
+          day = day - 1;
+          if (day < 1) day = maxDay;
+        }
+      } else if (seg.kind === 'month') {
+        if (key === 'ArrowUp') {
+          month = month + 1;
+          if (month > 12) month = 1;
+        } else {
+          month = month - 1;
+          if (month < 1) month = 12;
+        }
+      } else {
+        if (key === 'ArrowUp') year = year + 1;
+        else year = Math.max(0, year - 1);
+      }
+
+      maxDay = daysInMonth(year > 0 ? year : 2000, month);
+      if (day > maxDay) day = maxDay;
+
+      const newValue = formatDateFromParts(day, month, year, format);
+      el.value = newValue;
+      dispatchInput();
+
+      const newSegments = getDateSegments(newValue, format);
+      const newSeg = newSegments[idx] ?? newSegments[newSegments.length - 1];
+      if (newSeg) safeSetSelectionRange(newSeg.start, newSeg.end);
+    };
+
     /* =========================================
      * Time helpers
      * ========================================= */
@@ -800,12 +872,15 @@ export function useInputMask(
     const splitTimeFormat = (format: string) => {
       const tokens: string[] = [];
       const seps: string[] = [];
+
       let currentSep = '';
       let i = 0;
+
       const isTokenChar = (c: string) => c === 'H' || c === 'm' || c === 's';
 
       while (i < format.length) {
         const c = format[i];
+
         if (!isTokenChar(c)) {
           currentSep += c;
           i++;
@@ -818,10 +893,12 @@ export function useInputMask(
         const ch = c;
         let token = ch;
         let j = i + 1;
+
         while (j < format.length && format[j] === ch) {
           token += format[j];
           j++;
         }
+
         tokens.push(token);
         i = j;
       }
@@ -854,6 +931,7 @@ export function useInputMask(
 
         const start = pos;
         let end = pos;
+
         while (end < value.length && /\d/.test(value[end])) end++;
 
         const raw = value.slice(start, end);
@@ -888,7 +966,9 @@ export function useInputMask(
         else if (ch === 'm') result += String(minute).padStart(len, '0');
         else result += String(second).padStart(len, '0');
 
-        if (i < tokens.length - 1) result += seps[i + 1] ?? '';
+        if (i < tokens.length - 1) {
+          result += seps[i + 1] ?? '';
+        }
       }
 
       return result;
@@ -1017,8 +1097,10 @@ export function useInputMask(
 
     const applyTimeMask = (raw: string, format: string) => {
       if (!raw) return '';
+
       const hasSeparator = /[^0-9]/.test(raw);
-      const { tokens } = splitTimeFormat(format);
+      const { tokens, seps } = splitTimeFormat(format);
+
       if (!tokens.length) return raw.replace(/\D/g, '');
 
       if (!hasSeparator) {
@@ -1027,37 +1109,114 @@ export function useInputMask(
         return applyTimeMaskDigitsOnly(digits, format);
       }
 
-      // keep only digits + ":" while typing separators
-      return raw.replace(/[^\d:]/g, '');
+      const rawSegs = raw.split(/[^0-9]/);
+      const rawSeps = raw.match(/[^0-9]+/g) ?? [];
+
+      type PartKind = 'hour' | 'minute' | 'second';
+      type Part = {
+        kind: PartKind;
+        raw: string;
+        len: number;
+        closed: boolean;
+        out: string;
+      };
+
+      const parts: Part[] = [];
+
+      for (let i = 0; i < tokens.length; i++) {
+        const tok = tokens[i];
+        const ch = tok[0];
+        const len = tok.length;
+        const rawSeg = ((rawSegs[i] ?? '') as string)
+          .replace(/\D/g, '')
+          .slice(0, len);
+
+        const kind: PartKind =
+          ch === 'H' ? 'hour' : ch === 'm' ? 'minute' : 'second';
+        const closed = rawSeg.length >= len;
+
+        parts.push({ kind, raw: rawSeg, len, closed, out: '' });
+      }
+
+      const hourPart = parts.find((p) => p.kind === 'hour');
+      const minutePart = parts.find((p) => p.kind === 'minute');
+      const secondPart = parts.find((p) => p.kind === 'second');
+
+      let hour = hourPart?.raw ? Number(hourPart.raw) : 0;
+      let minute = minutePart?.raw ? Number(minutePart.raw) : 0;
+      let second = secondPart?.raw ? Number(secondPart.raw) : 0;
+
+      if (hourPart) {
+        if (hourPart.closed && hourPart.raw) {
+          if (hour < 0) hour = 0;
+          if (hour > 23) hour = 23;
+          hourPart.out = String(hour).padStart(hourPart.len, '0');
+        } else {
+          hourPart.out = hourPart.raw;
+        }
+      }
+
+      if (minutePart) {
+        if (minutePart.closed && minutePart.raw) {
+          if (minute < 0) minute = 0;
+          if (minute > 59) minute = 59;
+          minutePart.out = String(minute).padStart(minutePart.len, '0');
+        } else {
+          minutePart.out = minutePart.raw;
+        }
+      }
+
+      if (secondPart) {
+        if (secondPart.closed && secondPart.raw) {
+          if (second < 0) second = 0;
+          if (second > 59) second = 59;
+          secondPart.out = String(second).padStart(secondPart.len, '0');
+        } else {
+          secondPart.out = secondPart.raw;
+        }
+      }
+
+      const outSegs = parts.map((p) => p.out);
+      const hasDigitsArr = parts.map((p) => p.raw.length > 0);
+
+      let result = seps[0] ?? '';
+
+      for (let i = 0; i < parts.length; i++) {
+        result += outSegs[i] ?? '';
+
+        if (i < parts.length - 1) {
+          const sepFmt = seps[i + 1] ?? '';
+          const hadRawSep = i < rawSeps.length;
+          const segClosed = parts[i].closed;
+          const nextHasDigits = hasDigitsArr[i + 1];
+
+          if (sepFmt && (hadRawSep || segClosed || nextHasDigits)) {
+            result += sepFmt;
+          }
+        }
+      }
+
+      return result.replace(/[^0-9]+$/, (sep) => {
+        const prefix = result.slice(0, -sep.length);
+        return /\d/.test(prefix) ? sep : '';
+      });
     };
 
     const normalizePastedTime = (text: string, format: string): string => {
+      if (!text) return '';
+
       const nums = text.match(/\d+/g) ?? [];
       if (!nums.length) return '';
 
-      const { tokens } = splitTimeFormat(format);
+      const digits = nums.join('');
 
       let hour = 0;
       let minute = 0;
       let second = 0;
 
-      if (nums.length >= 2) {
-        tokens.forEach((t, i) => {
-          const raw = nums[i] ?? '';
-          const n = Number(raw);
-          if (!Number.isFinite(n)) return;
-
-          if (t[0] === 'H') hour = n;
-          else if (t[0] === 'm') minute = n;
-          else second = n;
-        });
-      } else {
-        // digits-only fallback
-        return applyTimeMaskDigitsOnly(
-          nums.join('').replace(/\D/g, ''),
-          format
-        );
-      }
+      if (digits.length >= 2) hour = Number(digits.slice(0, 2));
+      if (digits.length >= 4) minute = Number(digits.slice(2, 4));
+      if (digits.length >= 6) second = Number(digits.slice(4, 6));
 
       hour = clamp(hour, 0, 23);
       minute = clamp(minute, 0, 59);
@@ -1088,6 +1247,7 @@ export function useInputMask(
         end: number;
         kind: 'hour' | 'minute' | 'second';
       }> = [];
+
       let acc = 0;
       for (const tok of tokens) {
         const kind: 'hour' | 'minute' | 'second' =
@@ -1119,20 +1279,21 @@ export function useInputMask(
           tokenDigits.slice(rel)
         ).slice(0, tokenLen);
       } else {
-        if (digitCursor >= r.end) newToken = tokenDigits.slice(1) + digitChar;
-        else
+        if (digitCursor >= r.end) {
+          newToken = tokenDigits.slice(1) + digitChar;
+        } else {
           newToken = (
             tokenDigits.slice(0, rel) +
             digitChar +
             tokenDigits.slice(rel + 1)
           ).slice(0, tokenLen);
+        }
       }
 
       const before = currentDigits.slice(0, r.start);
       const after = currentDigits.slice(r.end);
       let nextDigits = (before + newToken + after).slice(0, totalDigits);
 
-      // Clamp completed segments
       const read2 = (start: number, end: number) =>
         Number(nextDigits.slice(start, end) || '0');
 
@@ -1186,81 +1347,6 @@ export function useInputMask(
       return true;
     };
 
-    const adjustDateSegmentByArrow = (key: 'ArrowUp' | 'ArrowDown') => {
-      if (type !== 'date' || !fmt) return;
-
-      const format = fmt;
-      const value = el.value ?? '';
-
-      const segments = getDateSegments(value, format);
-      if (!segments.length) return;
-
-      const caret = el.selectionStart ?? value.length;
-
-      let idx = segments.findIndex((s) => caret >= s.start && caret <= s.end);
-      if (idx === -1) {
-        idx = segments.findIndex((s) => caret < s.start);
-        if (idx === -1) idx = segments.length - 1;
-        if (idx > 0 && caret > segments[idx - 1].end) idx = idx - 1;
-      }
-      if (idx < 0) idx = 0;
-
-      let day = 1;
-      let month = 1;
-      let year = 2000;
-
-      for (const seg of segments) {
-        const n = seg.raw ? Number(seg.raw) : NaN;
-        if (Number.isNaN(n)) continue;
-
-        if (seg.kind === 'day') day = n;
-        else if (seg.kind === 'month') month = n;
-        else year = n;
-      }
-
-      month = clamp(month, 1, 12);
-      if (!Number.isFinite(year) || year <= 0) year = 2000;
-      year = Math.min(year, 9999);
-
-      let maxDay = daysInMonth(year, month);
-      day = clamp(day, 1, maxDay);
-
-      const seg = segments[idx];
-
-      if (seg.kind === 'day') {
-        if (key === 'ArrowUp') {
-          day = day + 1;
-          if (day > maxDay) day = 1;
-        } else {
-          day = day - 1;
-          if (day < 1) day = maxDay;
-        }
-      } else if (seg.kind === 'month') {
-        if (key === 'ArrowUp') {
-          month = month + 1;
-          if (month > 12) month = 1;
-        } else {
-          month = month - 1;
-          if (month < 1) month = 12;
-        }
-      } else {
-        if (key === 'ArrowUp') year = Math.min(9999, year + 1);
-        else year = Math.max(0, year - 1);
-      }
-
-      maxDay = daysInMonth(year || 2000, month);
-      if (day > maxDay) day = maxDay;
-
-      const newValue = formatDateFromParts(day, month, year, format);
-
-      el.value = newValue;
-      dispatchInput();
-
-      const newSegments = getDateSegments(newValue, format);
-      const newSeg = newSegments[idx] ?? newSegments[newSegments.length - 1];
-      if (newSeg) safeSetSelectionRange(newSeg.start, newSeg.end);
-    };
-
     const adjustTimeSegmentByArrow = (key: 'ArrowUp' | 'ArrowDown') => {
       if (type !== 'time' || !fmt) return;
 
@@ -1295,15 +1381,18 @@ export function useInputMask(
 
       const seg = segments[idx];
 
-      if (seg.kind === 'hour')
-        hour = key === 'ArrowUp' ? (hour + 1) % 24 : (hour - 1 + 24) % 24;
-      else if (seg.kind === 'minute')
-        minute = key === 'ArrowUp' ? (minute + 1) % 60 : (minute - 1 + 60) % 60;
-      else
-        second = key === 'ArrowUp' ? (second + 1) % 60 : (second - 1 + 60) % 60;
+      if (seg.kind === 'hour') {
+        if (key === 'ArrowUp') hour = (hour + 1) % 24;
+        else hour = (hour - 1 + 24) % 24;
+      } else if (seg.kind === 'minute') {
+        if (key === 'ArrowUp') minute = (minute + 1) % 60;
+        else minute = (minute - 1 + 60) % 60;
+      } else {
+        if (key === 'ArrowUp') second = (second + 1) % 60;
+        else second = (second - 1 + 60) % 60;
+      }
 
       const newValue = formatTimeFromParts(hour, minute, second, format);
-
       el.value = newValue;
       dispatchInput();
 
@@ -1320,13 +1409,21 @@ export function useInputMask(
       const raw = el.value ?? '';
       let next = raw;
 
-      if (type === 'date' && fmt) next = applyDateMask(raw, fmt);
-      else if (type === 'time' && fmt) next = applyTimeMask(raw, fmt);
-      else if (type === 'integer') next = applyNumericMask(raw, false);
-      else if (type === 'number' || type === 'currency')
+      if (type === 'date' && fmt) {
+        next = applyDateMask(raw, fmt);
+      } else if (type === 'time' && fmt) {
+        next = applyTimeMask(raw, fmt);
+      } else if (type === 'integer') {
+        next = applyNumericMask(raw, false);
+      } else if (type === 'number' || type === 'currency') {
         next = applyNumericMask(raw, true);
+      } else if (type === 'lowercase' || type === 'uppercase') {
+        next = applyTextCaseMask(raw, type);
+      }
 
-      if (next !== raw) setValue(next, { emit: false });
+      if (next !== raw) {
+        setValue(next, { emit: false });
+      }
     };
 
     const onBlur = () => {
@@ -1354,51 +1451,33 @@ export function useInputMask(
       if (el.readOnly || el.disabled) return;
       if (!mask) return;
 
-      const text = e.clipboardData?.getData('text') ?? '';
+      const text = e.clipboardData?.getData('text');
       if (!text) return;
 
+      e.preventDefault();
+
+      let next = '';
+
       if (type === 'date' && fmt) {
-        e.preventDefault();
-        const next = normalizePastedDate(text, fmt);
-        el.value = next;
-        dispatchInput();
-        safeSetSelectionRange(next.length, next.length);
+        next = normalizePastedDate(text, fmt);
+      } else if (type === 'time' && fmt) {
+        next = normalizePastedTime(text, fmt);
+      } else if (type === 'integer') {
+        next = text.replace(/\D/g, '');
+      } else if (type === 'number' || type === 'currency') {
+        next = applyNumericMask(text, true);
+      } else {
         return;
       }
 
-      if (type === 'time' && fmt) {
-        e.preventDefault();
-        const next = normalizePastedTime(text, fmt);
-        el.value = next;
-        dispatchInput();
-        safeSetSelectionRange(next.length, next.length);
-        return;
-      }
+      el.value = next;
+      dispatchInput();
+      safeSetSelectionRange(next.length, next.length);
     };
 
     const onKeydown = (e: KeyboardEvent) => {
       if (el.readOnly || el.disabled) return;
 
-      // ✅ digit enhancement first (prevents "012"/"111")
-      if (/\d/.test(e.key)) {
-        if (type === 'date') {
-          const ok = handleDateDigitKeydown(e.key);
-          if (ok) {
-            e.preventDefault();
-            return;
-          }
-        }
-
-        if (type === 'time') {
-          const ok = handleTimeDigitKeydown(e.key);
-          if (ok) {
-            e.preventDefault();
-            return;
-          }
-        }
-      }
-
-      // Arrow segment adjust (Angular parity)
       if (
         type === 'date' &&
         fmt &&
@@ -1419,12 +1498,14 @@ export function useInputMask(
         return;
       }
 
-      // Normalize on Enter (Angular parity)
       if (type === 'date' && fmt && e.key === 'Enter') {
         e.preventDefault();
         if (el.value) {
           const norm = normalizeDateValue(el.value, fmt);
-          if (norm !== el.value) setValue(norm);
+          if (norm !== el.value) {
+            el.value = norm;
+            dispatchInput();
+          }
         }
         return;
       }
@@ -1433,41 +1514,61 @@ export function useInputMask(
         e.preventDefault();
         if (el.value) {
           const norm = normalizeTimeValue(el.value, fmt);
-          if (norm !== el.value) setValue(norm);
+          if (norm !== el.value) {
+            el.value = norm;
+            dispatchInput();
+          }
         }
         return;
       }
 
       if (isControlKey(e)) return;
 
-      // Date/time: digits + separators from format only
+      if (type === 'lowercase' || type === 'uppercase') {
+        return;
+      }
+
       if (type === 'date' || type === 'time') {
         const format = fmt || '';
         const allowedSeps = new Set<string>();
+
         for (const c of format) {
-          if (!/[dMyHms]/.test(c)) allowedSeps.add(c);
+          if (!/[dMyHms]/.test(c)) {
+            allowedSeps.add(c);
+          }
         }
 
-        if (/\d/.test(e.key)) return;
+        if (/\d/.test(e.key)) {
+          e.preventDefault();
+
+          if (type === 'date') {
+            handleDateDigitKeydown(e.key);
+          } else {
+            handleTimeDigitKeydown(e.key);
+          }
+
+          return;
+        }
+
         if (allowedSeps.has(e.key)) return;
 
         e.preventDefault();
         return;
       }
 
-      // Integer
       if (type === 'integer') {
         if (!/\d/.test(e.key)) e.preventDefault();
         return;
       }
 
-      // Number/currency (digits + single dot/comma)
       if (type === 'number' || type === 'currency') {
         if (/\d/.test(e.key)) return;
 
         if (e.key === '.' || e.key === ',') {
           const v = el.value ?? '';
-          if (v.includes('.') || v.includes(',')) e.preventDefault();
+          if (v.includes('.') || v.includes(',')) {
+            e.preventDefault();
+          }
           return;
         }
 
@@ -1492,7 +1593,7 @@ export function useInputMask(
 }
 
 /* =========================================
- * IInputAddon (render)
+ * IInputAddon
  * ========================================= */
 
 export type IInputAddonProps = Omit<
@@ -1505,7 +1606,6 @@ export type IInputAddonProps = Omit<
 export function IInputAddon(props: IInputAddonProps) {
   const { addon, className, ...rest } = props;
 
-  // Match Angular: render nothing when no addon or visible === false
   if (!addon || addon.visible === false) {
     return null;
   }
@@ -1518,21 +1618,20 @@ export function IInputAddon(props: IInputAddonProps) {
           type="button"
           icon={addon.icon}
           variant={addon.variant ?? 'primary'}
-          onClick={() => addon.onClick?.()}>
-          {addon.text ?? null}
-        </IButton>
-      ) : addon.type === 'icon' ? (
-        <IIcon icon={addon.icon} size="sm" />
+          onClick={() => (addon.onClick ? addon.onClick() : null)}
+        />
       ) : addon.type === 'link' ? (
         <a
-          href={addon.href}
-          target={addon.target ?? undefined}
-          rel="noopener noreferrer">
-          {addon.icon ? <IIcon icon={addon.icon} size="sm" /> : null}
-          {addon.text}
+          className="i-btn i-btn-xs"
+          target="_blank"
+          variant={addon.variant ?? 'primary'}
+          href={addon.href}>
+          <IIcon size="xs" icon={addon.icon} />
         </a>
+      ) : addon.type === 'icon' ? (
+        <IIcon size="sm" icon={addon.icon} />
       ) : addon.type === 'loading' ? (
-        <ILoading />
+        <ILoading label="" />
       ) : (
         <span>{addon.text}</span>
       )}
@@ -1541,12 +1640,12 @@ export function IInputAddon(props: IInputAddonProps) {
 }
 
 /* =========================================
- * IInput (Angular parity)
+ * IInput
  * ========================================= */
 
 export type IInputProps = Omit<
   React.InputHTMLAttributes<HTMLInputElement>,
-  'children' | 'value' | 'defaultValue' | 'readOnly'
+  'children' | 'value' | 'defaultValue' | 'readOnly' | 'prepend'
 > & {
   type?: string;
   placeholder?: string;
@@ -1562,21 +1661,9 @@ export type IInputProps = Omit<
 
   value?: string | null;
 
-  /**
-   * ✅ expose inner input ref (ViewChild vibe)
-   * Must be MutableRefObject because we assign .current
-   */
   inputRef?: React.MutableRefObject<HTMLInputElement | null>;
 };
 
-/**
- * ✅ forwardRef supported:
- * <IInput ref={...} />
- * ✅ inputRef supported:
- * <IInput inputRef={...} />
- *
- * Both point to the INNER <input>
- */
 export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
   function IInput(props, forwardedRef) {
     const {
@@ -1593,42 +1680,55 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
       className,
       onInput,
       onBlur,
-      inputRef,
+      inputRef: inputRefProp,
       ...rest
     } = props;
 
+    const inputRef = inputRefProp;
     const innerRef = useRef<HTMLInputElement | null>(null);
 
-    // Mask parity (+ enhancements)
     useInputMask(innerRef, mask);
 
     const prepends = useMemo(() => normalizeArray(prepend), [prepend]);
-    const appends = useMemo(() => normalizeArray(append as any), [append]);
+    const appends = useMemo(
+      () => normalizeArray(append as IInputAddons | IInputAddons[] | undefined),
+      [append]
+    );
 
     const setRefs = (node: HTMLInputElement | null) => {
       innerRef.current = node;
 
-      if (inputRef) inputRef.current = node;
+      if (inputRef) {
+        inputRef.current = node;
+      }
 
       if (!forwardedRef) return;
-      if (typeof forwardedRef === 'function') forwardedRef(node);
-      else forwardedRef.current = node;
+
+      if (typeof forwardedRef === 'function') {
+        forwardedRef(node);
+      } else {
+        forwardedRef.current = node;
+      }
     };
 
-    // Click anywhere on <i-input> focuses inner input, except clicks on addons
-    const handleHostClick: React.MouseEventHandler<HTMLElement> = (e) => {
-      if (disabled) return;
+    const handleHostClick: React.MouseEventHandler<HTMLElement> = (event) => {
+      if (disabled || !innerRef.current) {
+        return;
+      }
 
-      const target = e.target as HTMLElement | null;
-      if (target?.closest?.('i-input-addon')) return;
+      const target = event.target as HTMLElement | null;
 
-      innerRef.current?.focus();
+      if (target && target.closest('i-input-addon')) {
+        return;
+      }
+
+      innerRef.current.focus();
     };
 
     return (
       <i-input className={className} onClick={handleHostClick}>
-        {prepends.map((a, idx) => (
-          <IInputAddon key={`prepend-${idx}`} addon={a} />
+        {prepends.map((item, index) => (
+          <IInputAddon key={`prepend-${index}`} addon={item} />
         ))}
 
         <input
@@ -1641,12 +1741,12 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
           readOnly={readonly}
           type={type}
           value={value ?? ''}
-          onInput={onInput}
           onBlur={onBlur}
+          onInput={onInput}
         />
 
-        {appends.map((a: any, idx: number) => (
-          <IInputAddon key={`append-${idx}`} addon={a} />
+        {appends.map((item, index) => (
+          <IInputAddon key={`append-${index}`} addon={item} />
         ))}
       </i-input>
     );
@@ -1654,7 +1754,8 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
 );
 
 /* =========================================
- * IFCInput (React wrapper)
+ * IFCInput
+ * React wrapper equivalent
  * ========================================= */
 
 export type IFCInputProps = Omit<
@@ -1662,33 +1763,20 @@ export type IFCInputProps = Omit<
   'children'
 > & {
   label?: string;
-
   placeholder?: string;
   autocomplete?: string;
   readonly?: boolean;
   type?: string;
-
   mask?: IInputMask;
-
   prepend?: IInputProps['prepend'];
   append?: IInputProps['append'];
-
   value?: string | null;
-
-  /**
-   * In Angular, invalid/error are derived from NgControl.
-   * In React, you supply them (works with any form lib).
-   */
   invalid?: boolean;
   errorMessage?: string | null;
-
   disabled?: boolean;
   required?: boolean;
-
   onInput?: React.FormEventHandler<HTMLInputElement>;
   onBlur?: React.FocusEventHandler<HTMLInputElement>;
-
-  children?: React.ReactNode;
 };
 
 export function IFCInput(props: IFCInputProps) {
@@ -1708,48 +1796,46 @@ export function IFCInput(props: IFCInputProps) {
     required = false,
     onInput,
     onBlur,
-    children,
     className,
     ...hostProps
   } = props;
 
-  // ✅ focus target for label click
   const innerRef = useRef<HTMLInputElement | null>(null);
 
   const focusInnerInput = () => {
-    if (!disabled) innerRef.current?.focus();
+    if (!disabled && innerRef.current) {
+      innerRef.current.focus();
+    }
   };
 
   return (
     <i-fc-input className={className} {...hostProps}>
       {label ? (
         <label className="i-fc-input__label" onClick={focusInnerInput}>
-          {label} :{' '}
+          {label} :
           {required ? <span className="i-fc-input__required">*</span> : null}
         </label>
       ) : null}
 
       <IInput
         inputRef={innerRef}
-        placeholder={placeholder}
+        append={append}
         autocomplete={autocomplete}
+        disabled={disabled}
+        invalid={invalid}
+        mask={mask}
+        placeholder={placeholder}
+        prepend={prepend}
         readonly={readonly}
         type={type}
-        mask={mask}
-        prepend={prepend}
-        append={append}
         value={value ?? ''}
-        invalid={invalid}
-        disabled={disabled}
-        onInput={onInput}
         onBlur={onBlur}
+        onInput={onInput}
       />
 
       {invalid && errorMessage ? (
         <div className="i-fc-input__error">{errorMessage}</div>
       ) : null}
-
-      {children}
     </i-fc-input>
   );
 }

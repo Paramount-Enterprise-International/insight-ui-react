@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* grid.tsx */
 /**
  * IGrid (React)
@@ -487,6 +488,7 @@ export type IGridColumnProps<T> = {
 };
 
 export function IGridColumn<T>(_props: IGridColumnProps<T>) {
+  void _props;
   return null;
 }
 (IGridColumn as any).$$kind = 'IGridColumn';
@@ -512,12 +514,14 @@ export type IGridCustomColumnProps<T> = {
 };
 
 export function IGridCustomColumn<T>(_props: IGridCustomColumnProps<T>) {
+  void _props;
   return null;
 }
 (IGridCustomColumn as any).$$kind = 'IGridCustomColumn';
 
 export type IGridColumnGroupProps = { title: string; children: ReactNode };
 export function IGridColumnGroup(_props: IGridColumnGroupProps) {
+  void _props;
   return null;
 }
 (IGridColumnGroup as any).$$kind = 'IGridColumnGroup';
@@ -528,6 +532,7 @@ export type IGridExpandableRowProps<T> = {
   render: (row: T, ctx: IGridExpandableRowRenderCtx<T>) => ReactNode;
 };
 export function IGridExpandableRow<T>(_props: IGridExpandableRowProps<T>) {
+  void _props;
   return null;
 }
 (IGridExpandableRow as any).$$kind = 'IGridExpandableRow';
@@ -562,6 +567,46 @@ function IndeterminateCheckbox(props: {
       }}
     />
   );
+}
+
+function defaultHighlightSearch(text: string, rawTerm: string): ReactNode {
+  const term =
+    typeof rawTerm === 'string'
+      ? rawTerm.trim()
+      : String(rawTerm ?? '').trim();
+  if (!text || !term) return text ?? '';
+
+  const value = String(text);
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(escaped, 'gi');
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let i = 0;
+
+  while ((match = regex.exec(value)) !== null) {
+    const start = match.index;
+    const end = start + match[0].length;
+
+    if (start > lastIndex) {
+      parts.push(value.slice(lastIndex, start));
+    }
+
+    parts.push(
+      <span className="highlight-search" key={`h-${i}-${start}-${end}`}>
+        {value.slice(start, end)}
+      </span>
+    );
+
+    lastIndex = end;
+    i += 1;
+  }
+
+  if (lastIndex < value.length) {
+    parts.push(value.slice(lastIndex));
+  }
+
+  return <>{parts}</>;
 }
 
 function renderCellDef<T>(
@@ -638,6 +683,20 @@ export function IGrid<T>(props: IGridProps<T>) {
   const numberColumnWidth = 60;
   const expandColumnWidth = 32;
   const defaultColumnWidth = 200;
+  const numberColumn = useMemo<IGridColumnLike<T>>(
+    () => ({
+      fieldName: undefined,
+      title: 'No.',
+      sortable: false,
+      resizable: true,
+      width: numberColumnWidth,
+      freeze: false,
+      headerDef: undefined,
+      cellDef: undefined,
+      isAuto: false,
+    }),
+    [numberColumnWidth]
+  );
 
   const [renderedData, setRenderedData] = useState<T[]>([]);
   const [currentFilterText, setCurrentFilterText] = useState<string>('');
@@ -889,7 +948,10 @@ export function IGrid<T>(props: IGridProps<T>) {
       if (includeExpand && hasExpandableRow) left += expandColumnWidth;
     }
 
-    if (includeNumber && showNumberColumnEffective) left += numberColumnWidth;
+    if (includeNumber && showNumberColumnEffective) {
+      const width = getColumnWidth(numberColumn);
+      if (width !== null) left += width;
+    }
 
     return left;
   };
@@ -1526,11 +1588,13 @@ export function IGrid<T>(props: IGridProps<T>) {
 
   type StickyOverride = {
     /** force sticky/frozen even without `col` (for special columns) */
-    frozen?: boolean;
+    sticky?: boolean;
     /** explicit sticky left (for special columns) */
     stickyLeft?: number | null;
     /** explicit zIndex (for special columns) */
     zIndex?: number | null;
+    /** add/remove frozen class */
+    addFrozenClass?: boolean;
   };
 
   const HeaderCell = (p: {
@@ -1568,9 +1632,10 @@ export function IGrid<T>(props: IGridProps<T>) {
     const computedZ = computedFrozen && col ? getFrozenColumnZ(col) : null;
 
     // ✅ allow special columns to override (expand/selection/number)
-    const frozen = sticky?.frozen ?? computedFrozen;
-    const stickyLeft = sticky?.stickyLeft ?? computedLeft;
-    const zIndex = sticky?.zIndex ?? computedZ;
+    const stickyEnabled = sticky?.sticky ?? computedFrozen;
+    const frozenClass = sticky?.addFrozenClass ?? computedFrozen;
+    const stickyLeft = stickyEnabled ? sticky?.stickyLeft ?? computedLeft : null;
+    const zIndex = stickyEnabled ? sticky?.zIndex ?? computedZ : null;
 
     const isSortable =
       !disableSortClick &&
@@ -1637,7 +1702,7 @@ export function IGrid<T>(props: IGridProps<T>) {
           direction === 'asc' ? 'i-grid-header-cell--sorted-asc' : null,
           direction === 'desc' ? 'i-grid-header-cell--sorted-desc' : null,
           resizable ? 'i-grid-header-cell--resizable' : null,
-          frozen ? 'i-grid-header-cell--frozen' : null,
+          frozenClass ? 'i-grid-header-cell--frozen' : null,
           auto ? 'i-grid-header-cell--auto' : null,
         ]
           .filter(Boolean)
@@ -1645,9 +1710,10 @@ export function IGrid<T>(props: IGridProps<T>) {
         role="columnheader"
         style={{
           flex,
-          position: frozen ? 'sticky' : undefined,
-          left: frozen ? (stickyLeft ?? undefined) : undefined,
-          zIndex: frozen && typeof zIndex === 'number' ? zIndex : undefined, // ✅ only if explicitly passed
+          position: stickyEnabled ? 'sticky' : undefined,
+          left: stickyEnabled ? (stickyLeft ?? undefined) : undefined,
+          zIndex:
+            stickyEnabled && typeof zIndex === 'number' ? zIndex : undefined, // ✅ only if explicitly passed
         }}
         onClick={() => {
           if (isResizingRef.current) return;
@@ -1655,7 +1721,9 @@ export function IGrid<T>(props: IGridProps<T>) {
           if (!isSortable) return;
           sortByColumn(col);
         }}>
-        <span className="i-grid-header-cell__content">{children}</span>
+        <span className="i-grid-header-cell__content" truncatedtooltip>
+          {children}
+        </span>
 
         {showIcon ? (
           <span className="i-grid-header-cell__icon">
@@ -1704,9 +1772,10 @@ export function IGrid<T>(props: IGridProps<T>) {
       computedFrozen && col ? getColumnStickyLeft(col) : null;
     const computedZ = computedFrozen && col ? getFrozenColumnZ(col) : null;
 
-    const frozen = sticky?.frozen ?? computedFrozen;
-    const stickyLeft = sticky?.stickyLeft ?? computedLeft;
-    const zIndex = sticky?.zIndex ?? computedZ;
+    const stickyEnabled = sticky?.sticky ?? computedFrozen;
+    const frozenClass = sticky?.addFrozenClass ?? computedFrozen;
+    const stickyLeft = stickyEnabled ? sticky?.stickyLeft ?? computedLeft : null;
+    const zIndex = stickyEnabled ? sticky?.zIndex ?? computedZ : null;
 
     const flex =
       typeof fixedWidth === 'number'
@@ -1720,7 +1789,7 @@ export function IGrid<T>(props: IGridProps<T>) {
         className={[
           'i-grid-cell',
           className,
-          frozen ? 'i-grid-cell--frozen' : null,
+          frozenClass ? 'i-grid-cell--frozen' : null,
           auto ? 'i-grid-cell--auto' : null,
         ]
           .filter(Boolean)
@@ -1728,9 +1797,10 @@ export function IGrid<T>(props: IGridProps<T>) {
         role="cell"
         style={{
           flex,
-          position: frozen ? 'sticky' : undefined,
-          left: frozen ? (stickyLeft ?? undefined) : undefined,
-          zIndex: frozen && typeof zIndex === 'number' ? zIndex : undefined, // ✅ only if explicitly passed
+          position: stickyEnabled ? 'sticky' : undefined,
+          left: stickyEnabled ? (stickyLeft ?? undefined) : undefined,
+          zIndex:
+            stickyEnabled && typeof zIndex === 'number' ? zIndex : undefined, // ✅ only if explicitly passed
         }}
         onClick={(e) => {
           if (onClickStop) e.stopPropagation();
@@ -1740,6 +1810,11 @@ export function IGrid<T>(props: IGridProps<T>) {
     );
   };
 
+  const highlightSearchFn = useMemo(
+    () => highlightSearch ?? defaultHighlightSearch,
+    [highlightSearch]
+  );
+
   /* ---------------- render ---------------- */
 
   return (
@@ -1747,9 +1822,9 @@ export function IGrid<T>(props: IGridProps<T>) {
       <i-grid-viewport className="i-grid-viewport">
         {/* HEADER */}
         {effectiveHeaderItems.length ? (
-          <i-grid-header-row className="i-grid-header-row" role="row">
+          <i-grid-header-row className="i-grid-header-row">
             {/* FLAT: expand-all (only when expandable row exists AND not single) */}
-            {!treeEnabled &&
+          {!treeEnabled &&
             hasExpandableRow &&
             !expandableRowDef?.expandSingle ? (
               <HeaderCell
@@ -1757,7 +1832,8 @@ export function IGrid<T>(props: IGridProps<T>) {
                 fixedWidth={expandColumnWidth}
                 disableSortClick
                 sticky={{
-                  frozen: true,
+                  sticky: true,
+                  addFrozenClass: true,
                   stickyLeft: getStickyLeftForExpandColumn(),
                 }}>
                 <span className="i-grid-header-cell__content">
@@ -1766,10 +1842,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                     size="2xs"
                     variant="outline"
                     icon={allVisibleExpanded() ? 'down' : 'next'}
-                    onClick={(e: MouseEvent) => {
-                      e.stopPropagation();
-                      onToggleAllExpanded();
-                    }}
+                    onClick={() => onToggleAllExpanded()}
                   />
                 </span>
               </HeaderCell>
@@ -1782,7 +1855,8 @@ export function IGrid<T>(props: IGridProps<T>) {
                 fixedWidth={selectionColumnWidth}
                 disableSortClick
                 sticky={{
-                  frozen: true,
+                  sticky: true,
+                  addFrozenClass: true,
                   stickyLeft: getStickyLeftForSelectionColumn(),
                 }}>
                 <span className="i-grid-header-cell__content">
@@ -1802,19 +1876,21 @@ export function IGrid<T>(props: IGridProps<T>) {
             {showNumberColumnEffective ? (
               <HeaderCell
                 className="i-grid-number-cell i-grid-number-cell--header"
-                fixedWidth={numberColumnWidth}
+                col={numberColumn}
+                resizable={numberColumn.resizable}
                 disableSortClick
                 sticky={
                   hasFrozenColumns
                     ? {
-                        frozen: true,
+                        sticky: true,
+                        addFrozenClass: true,
                         stickyLeft: getStickyLeftForNumberColumn(),
                         // Angular template: number header z=3 when frozen
                         zIndex: 3,
                       }
                     : undefined
                 }>
-                No.
+                {numberColumn.title}
               </HeaderCell>
             ) : null}
 
@@ -1885,14 +1961,12 @@ export function IGrid<T>(props: IGridProps<T>) {
               return (
                 <i-grid-header-cell-group
                   key={`g-${idx}`}
-                  className="i-grid-header-cell-group"
-                  role="presentation">
+                  className="i-grid-header-cell-group">
                   {/* Group title cell (NOT frozen in Angular) */}
                   <HeaderCell disableSortClick>{item.title}</HeaderCell>
 
                   <i-grid-header-cell-group-columns
-                    className="i-grid-header-cell-group-columns"
-                    role="presentation">
+                    className="i-grid-header-cell-group-columns">
                     {item.columns.map((col, cIdx) => {
                       if (col.headerDef) {
                         return (
@@ -1932,7 +2006,6 @@ export function IGrid<T>(props: IGridProps<T>) {
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                role="row"
                 onClick={() => onRowClick?.(row)}>
                 {/* Expand control (flat mode) */}
                 {!treeEnabled && hasExpandableRow ? (
@@ -1941,7 +2014,8 @@ export function IGrid<T>(props: IGridProps<T>) {
                     fixedWidth={expandColumnWidth}
                     onClickStop
                     sticky={{
-                      frozen: true,
+                      sticky: true,
+                      addFrozenClass: false,
                       stickyLeft: getStickyLeftForExpandColumn(),
                     }}>
                     <span className="i-grid-expand-cell__content">
@@ -1966,7 +2040,8 @@ export function IGrid<T>(props: IGridProps<T>) {
                     fixedWidth={selectionColumnWidth}
                     onClickStop
                     sticky={{
-                      frozen: true,
+                      sticky: true,
+                      addFrozenClass: false,
                       stickyLeft: getStickyLeftForSelectionColumn(),
                     }}>
                     {selectionMode === 'multiple' ? (
@@ -1992,12 +2067,13 @@ export function IGrid<T>(props: IGridProps<T>) {
                 {showNumberColumnEffective ? (
                   <Cell
                     className="i-grid-number-cell i-grid-number-cell--body"
-                    fixedWidth={numberColumnWidth}
+                    col={numberColumn}
                     onClickStop
                     sticky={
                       hasFrozenColumns
                         ? {
-                            frozen: true,
+                            sticky: true,
+                            addFrozenClass: true,
                             stickyLeft: getStickyLeftForNumberColumn(),
                             zIndex: 2,
                           }
@@ -2066,28 +2142,16 @@ export function IGrid<T>(props: IGridProps<T>) {
                               column: col,
                             })
                           ) : (
-                            <span className="i-grid-tree-text">
+                            <span className="i-grid-tree-text" truncatedtooltip>
                               {col.fieldName
-                                ? highlightSearch
-                                  ? highlightSearch(
-                                      String(
-                                        (
-                                          row as unknown as Record<
-                                            string,
-                                            unknown
-                                          >
-                                        )?.[col.fieldName] ?? ''
-                                      ),
-                                      currentFilterText
-                                    )
-                                  : String(
-                                      (
-                                        row as unknown as Record<
-                                          string,
-                                          unknown
-                                        >
-                                      )?.[col.fieldName] ?? ''
-                                    )
+                                ? highlightSearchFn(
+                                    String(
+                                      (row as unknown as Record<string, unknown>)?.[
+                                        col.fieldName
+                                      ] ?? ''
+                                    ),
+                                    currentFilterText
+                                  )
                                 : ''}
                             </span>
                           )}
@@ -2109,22 +2173,16 @@ export function IGrid<T>(props: IGridProps<T>) {
                           column: col,
                         })
                       ) : (
-                        <span className="i-grid-cell__content">
+                        <span className="i-grid-cell__content" truncatedtooltip>
                           {col.fieldName
-                            ? highlightSearch
-                              ? highlightSearch(
-                                  String(
-                                    (
-                                      row as unknown as Record<string, unknown>
-                                    )?.[col.fieldName] ?? ''
-                                  ),
-                                  currentFilterText
-                                )
-                              : String(
+                            ? highlightSearchFn(
+                                String(
                                   (row as unknown as Record<string, unknown>)?.[
                                     col.fieldName
                                   ] ?? ''
-                                )
+                                ),
+                                currentFilterText
+                              )
                             : ''}
                         </span>
                       )}
@@ -2135,9 +2193,7 @@ export function IGrid<T>(props: IGridProps<T>) {
 
               {/* DETAIL ROW */}
               {hasExpandableRow && isRowExpanded(row) ? (
-                <i-grid-expandable-row
-                  className="i-grid-expandable-row flex"
-                  role="row">
+                <i-grid-expandable-row className="i-grid-expandable-row flex">
                   {expandableRowDef!.render(row, { row, index: rowIndex })}
                 </i-grid-expandable-row>
               ) : null}

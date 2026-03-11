@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // host-ui.context.tsx
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import type { IBreadcrumbItem } from './host-api.types';

@@ -1,6 +1,6 @@
 // routes.tsx
 
-import type { IRoutes } from '@insight/ui';
+import type { IRoutes } from '../components';
 import { heraclesRoutes } from './heracles/routes';
 
 export const demosRoutes: IRoutes = [

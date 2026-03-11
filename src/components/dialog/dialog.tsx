@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // dialog.tsx (React) — full updated file (visible removed from action types)
 import React, {
   createContext,
@@ -227,12 +229,10 @@ function IDialogContainer(props: IDialogContainerProps) {
     return () => document.removeEventListener('keydown', onEsc, true);
   }, [onEsc]);
 
-  const onBackdropClick = (e: React.MouseEvent) => {
+  const onBackdropClick = () => {
     if (!isTopMost) return;
     if (disableClose) return;
     if (!backdropClose) return;
-
-    e.preventDefault();
     instance.ref.close(undefined);
   };
 
@@ -244,7 +244,7 @@ function IDialogContainer(props: IDialogContainerProps) {
   const Comp = instance.component;
 
   return (
-    <i-dialog-container data-dialog-id={instance.id}>
+    <i-dialog-container>
       <div className="i-dialog-backdrop" onClick={onBackdropClick} />
       <div className="i-dialog-wrapper">
         <div className="i-dialog-panel" style={panelStyles}>
@@ -284,7 +284,7 @@ export function IDialogOutlet() {
 
 export type IDialogCloseProps = {
   result?: any;
-  children?: ReactNode;
+  children?: React.ReactElement<React.HTMLAttributes<HTMLElement>>;
   className?: string;
 };
 
@@ -292,16 +292,16 @@ export function IDialogClose(props: IDialogCloseProps) {
   const { result, children, className } = props;
   const ref = useDialogRef<any>();
 
-  return (
-    <span
-      className={className}
-      onClick={(e) => {
-        e.preventDefault();
-        ref.close(result);
-      }}>
-      {children}
-    </span>
-  );
+  if (!children) return null;
+
+  return React.cloneElement(children, {
+    className: [children.props?.className, className].filter(Boolean).join(' '),
+    onClick: (e: React.MouseEvent) => {
+      children.props?.onClick?.(e as React.MouseEvent<HTMLElement>);
+      e.preventDefault();
+      ref.close(result);
+    },
+  });
 }
 
 /* =========================================================

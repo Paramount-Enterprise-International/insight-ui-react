@@ -1,6 +1,6 @@
-import { ISection, ISectionBody } from '@insight/ui';
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { ISection, ISectionBody } from '../components';
 void React;
 
 export function Demos() {

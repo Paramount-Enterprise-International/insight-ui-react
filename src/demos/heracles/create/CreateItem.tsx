@@ -1,14 +1,12 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   IDialog,
   IFCInput,
-  IFCSelect,
-  IFCTextarea,
   useDialogData,
   useDialogRef,
   useIAlertService,
-} from '@insight/ui';
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
-import { stOptions, unitOptions, vatOptions } from './helper/constants';
+} from '../../../components';
 import type { ItemDetail } from './helper/types';
 
 export function CreateItem() {
@@ -157,14 +155,14 @@ export function CreateItem() {
               />
             </div>
           </div>
-
+          {/* 
           <IFCSelect
             label="Unit"
             className="w-32"
             options={unitOptions}
             value={form.unit.toString()}
             onChange={handleSelectChange('unit')}
-          />
+          /> */}
 
           {/* PRICE */}
           <IFCInput
@@ -186,13 +184,13 @@ export function CreateItem() {
 
         {/* ROW 2 */}
         <div className="flex gap-md align-center">
-          <IFCSelect
+          {/* <IFCSelect
             label="VAT"
             className="w-48"
             options={vatOptions}
             value={form.vatType}
             onChange={handleSelectChange('vatType')}
-          />
+          /> */}
           <IFCInput
             label="VAT Amt"
             className="w-48"
@@ -200,13 +198,13 @@ export function CreateItem() {
             readonly
           />
 
-          <IFCSelect
+          {/* <IFCSelect
             label="ST"
             className="w-48"
             options={stOptions}
             value={form.stType}
             onChange={handleSelectChange('stType')}
-          />
+          /> */}
           <IFCInput
             label="ST Amt"
             className="w-48"
@@ -216,12 +214,12 @@ export function CreateItem() {
         </div>
 
         {/* ROW 3 */}
-        <IFCTextarea
+        {/* <IFCTextarea
           label="Description (HANYA UTK CATATAN INTERNAL TIDAK AKAN DICETAK)"
           value={form.description}
           rows={3}
           onChange={handleSelectChange('description')}
-        />
+        /> */}
       </div>
     </IDialog>
   );

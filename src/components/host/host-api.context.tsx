@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // host-api.context.tsx
 import React, { createContext, useContext } from 'react';
 import type { IHostApi } from './host-api.types';

@@ -1,4 +1,4 @@
-import { IDialog, useDialogRef } from '@insight/ui';
+import { IDialog, useDialogRef } from '../../../components';
 
 export function CreateRequest() {
   const dialogRef = useDialogRef<boolean>();

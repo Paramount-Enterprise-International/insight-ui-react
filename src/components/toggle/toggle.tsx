@@ -1,4 +1,4 @@
-import React, { useCallback, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 
 /* =========================================
  * Types
@@ -28,9 +28,6 @@ export type IToggleProps = Omit<
   /** Optional: touched semantics */
   onTouched?: () => void;
 
-  /** Optional: pass through input name/value for forms */
-  name?: string;
-  value?: string;
 };
 
 const INTERACTIVE_SELECTOR_PARTS = [
@@ -66,7 +63,7 @@ function isInteractive(el: HTMLElement | null): boolean {
   const role = el.getAttribute('role');
   if (role === 'button' || role === 'link' || role === 'switch') return true;
 
-  if ((el as any).isContentEditable) return true;
+  if (el.isContentEditable) return true;
 
   const tabindex = el.getAttribute('tabindex');
   if (tabindex != null && tabindex !== '-1') return true;
@@ -88,12 +85,9 @@ export function IToggle(props: IToggleProps) {
     onTouched,
     children,
     className,
-    name,
-    value,
     ...rest
   } = props;
 
-  const inputId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const isControlled = checked != null;
@@ -160,19 +154,13 @@ export function IToggle(props: IToggleProps) {
     <i-toggle
       {...rest}
       className={hostClassName}
-      onClick={handleHostClick}
-      role="switch"
-      aria-checked={currentChecked}
-      aria-disabled={disabled || undefined}>
+      onClick={handleHostClick}>
       <input
         ref={inputRef}
-        id={inputId}
         className="i-toggle__input"
         type="checkbox"
         checked={currentChecked}
         disabled={disabled}
-        name={name}
-        value={value}
         onChange={handleNativeChange}
         onBlur={handleBlur}
       />
