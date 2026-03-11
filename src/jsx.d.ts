@@ -24,6 +24,7 @@ declare module 'react' {
         HTMLElement
       > & {
         size?: string;
+        icon?: string;
       };
 
       'i-button': import('react').DetailedHTMLProps<

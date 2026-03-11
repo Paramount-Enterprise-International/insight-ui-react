@@ -8,7 +8,6 @@ const formatCurrency = (amount: number): string => {
     });
   };
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, {
   useCallback,
   useEffect,

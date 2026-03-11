@@ -505,20 +505,22 @@ export function IAlert() {
   const alertClass = `i-alert i-alert-${data.type}`;
 
   return (
-    <IDialog
-      className={alertClass}
-      actions={[{ type: 'ok', className: 'w-full' }]}
-      onOk={() => dialog.close(true)}>
-      {data.type === 'information' ? <IIcon icon="info" size="3xl" /> : null}
-      {data.type === 'success' ? (
-        <IIcon icon="check-circle" size="3xl" />
-      ) : null}
-      {data.type === 'warning' ? <IIcon icon="exclamation" size="3xl" /> : null}
-      {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
+    <i-alert>
+      <IDialog
+        className={alertClass}
+        actions={[{ type: 'ok', className: 'w-full' }]}
+        onOk={() => dialog.close(true)}>
+        {data.type === 'information' ? <IIcon icon="info" size="3xl" /> : null}
+        {data.type === 'success' ? (
+          <IIcon icon="check-circle" size="3xl" />
+        ) : null}
+        {data.type === 'warning' ? <IIcon icon="exclamation" size="3xl" /> : null}
+        {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
 
-      <h4>{data.title}</h4>
-      <p dangerouslySetInnerHTML={{ __html: data.description }} />
-    </IDialog>
+        <h4>{data.title}</h4>
+        <p dangerouslySetInnerHTML={{ __html: data.description }} />
+      </IDialog>
+    </i-alert>
   );
 }
 
@@ -579,48 +581,50 @@ export function IConfirm() {
   };
 
   return (
-    <IDialog
-      className={confirmClass}
-      actions={[
-        { type: 'confirm', className: 'w-104' },
-        { type: 'cancel', className: 'w-104' },
-      ]}
-      onConfirm={submit}>
-      {data.type === 'information' ? <IIcon icon="info" size="3xl" /> : null}
-      {data.type === 'success' ? (
-        <IIcon icon="check-circle" size="3xl" />
-      ) : null}
-      {data.type === 'warning' ? <IIcon icon="exclamation" size="3xl" /> : null}
-      {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
+    <i-confirm>
+      <IDialog
+        className={confirmClass}
+        actions={[
+          { type: 'confirm', className: 'w-104' },
+          { type: 'cancel', className: 'w-104' },
+        ]}
+        onConfirm={submit}>
+        {data.type === 'information' ? <IIcon icon="info" size="3xl" /> : null}
+        {data.type === 'success' ? (
+          <IIcon icon="check-circle" size="3xl" />
+        ) : null}
+        {data.type === 'warning' ? <IIcon icon="exclamation" size="3xl" /> : null}
+        {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
 
-      <h4>{data.title}</h4>
-      <p dangerouslySetInnerHTML={{ __html: data.description }} />
+        <h4>{data.title}</h4>
+        <p dangerouslySetInnerHTML={{ __html: data.description }} />
 
-      {data.reason ? (
-        <form
-          className="mt-xs"
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}>
-          <IFCTextArea
-            label="Reason"
-            placeholder="Fill your reason here.."
-            value={reason}
-            onChange={(v) => {
-              setReason(v);
-              if (invalid) setInvalid(false);
-            }}
-            invalid={invalid}
-            errorMessage={{ required: 'Please fill in the reason..' }}
-            errorKey="required"
-          />
-          <button className="hidden" type="submit">
-            Submit
-          </button>
-        </form>
-      ) : null}
-    </IDialog>
+        {data.reason ? (
+          <form
+            className="mt-xs"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}>
+            <IFCTextArea
+              label="Reason"
+              placeholder="Fill your reason here.."
+              value={reason}
+              onChange={(v) => {
+                setReason(v);
+                if (invalid) setInvalid(false);
+              }}
+              invalid={invalid}
+              errorMessage={{ required: 'Please fill in the reason..' }}
+              errorKey="required"
+            />
+            <button className="hidden" type="submit">
+              Submit
+            </button>
+          </form>
+        ) : null}
+      </IDialog>
+    </i-confirm>
   );
 }
 
