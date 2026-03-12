@@ -14,8 +14,8 @@ import {
   IFCInput,
   IFCSelect,
   IFCTextArea,
-  useDialogRef,
-  useIAlertService,
+  useIAlert,
+  useIDialogRef,
 } from '../../../components';
 import type { CreatePersonProps, PersonData } from './helper/types';
 
@@ -99,8 +99,8 @@ export function CreatePerson({
   editMode = false,
   onClose,
 }: CreatePersonProps) {
-  const dialogRef = useDialogRef<boolean>();
-  const alert = useIAlertService();
+  const dialogRef = useIDialogRef<boolean>();
+  const alert = useIAlert();
 
   const [formData, setFormData] = useState<PersonData>({
     id: editMode && initialData ? initialData.id : generateId(),

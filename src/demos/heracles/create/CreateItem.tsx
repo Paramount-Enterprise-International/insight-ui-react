@@ -3,16 +3,16 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   IDialog,
   IFCInput,
-  useDialogData,
-  useDialogRef,
-  useIAlertService,
+  useIAlert,
+  useIDialogData,
+  useIDialogRef,
 } from '../../../components';
 import type { ItemDetail } from './helper/types';
 
 export function CreateItem() {
-  const dialogRef = useDialogRef<ItemDetail>();
-  const data = useDialogData<{ id: string }>();
-  const alert = useIAlertService();
+  const dialogRef = useIDialogRef<ItemDetail>();
+  const data = useIDialogData<{ id: string }>();
+  const alert = useIAlert();
   const [form, setForm] = useState<ItemDetail>({
     id: data.id,
     name: '',

@@ -1,7 +1,7 @@
-import { IDialog, useDialogRef } from '../../../components';
+import { IDialog, useIDialogRef } from '../../../components';
 
 export function CreateRequest() {
-  const dialogRef = useDialogRef<boolean>();
+  const dialogRef = useIDialogRef<boolean>();
 
   const handleSave = () => {
     dialogRef.close(true);

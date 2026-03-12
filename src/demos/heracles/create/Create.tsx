@@ -11,7 +11,7 @@ import {
   ISection,
   ISectionBody,
   ISectionHeader,
-  useIAlertService,
+  useIAlert,
   useIDialog,
   type ISelectChange,
 } from '../../../components';
@@ -82,7 +82,7 @@ export function Create() {
     invoiceDate: null,
   });
 
-  const alert = useIAlertService();
+  const alert = useIAlert();
   const dialog = useIDialog();
 
   useEffect(() => {

@@ -95,7 +95,7 @@ export type IDialogInstance<TData = any, TResult = any> = {
 
 let DIALOG_ID_COUNTER = 0;
 
-type DialogApi = {
+type IDialogApi = {
   dialogs: IDialogInstance[];
   open: <TData = any, TResult = any>(
     component: React.ComponentType<any>,
@@ -105,33 +105,32 @@ type DialogApi = {
   closeAll: () => void;
 };
 
-const DialogContext = createContext<DialogApi | null>(null);
+const IDialogContext = createContext<IDialogApi | null>(null);
 
-type DialogInstanceContextValue = {
+type IDialogInstanceContextValue = {
   data: any;
   dialogRef: IDialogRef<any>;
 };
 
-const DialogInstanceContext = createContext<DialogInstanceContextValue | null>(
-  null
-);
+const IDialogInstanceContext =
+  createContext<IDialogInstanceContextValue | null>(null);
 
-export function useIDialog(): DialogApi {
-  const ctx = useContext(DialogContext);
+export function useIDialog(): IDialogApi {
+  const ctx = useContext(IDialogContext);
   if (!ctx)
     throw new Error('useIDialog() must be used inside <IDialogProvider>.');
   return ctx;
 }
 
 /** React equivalent to inject(I_DIALOG_DATA) */
-export function useDialogData<T = any>(): T {
-  const ctx = useContext(DialogInstanceContext);
+export function useIDialogData<T = any>(): T {
+  const ctx = useContext(IDialogInstanceContext);
   return (ctx?.data ?? undefined) as T;
 }
 
 /** React equivalent to inject(IDialogRef) */
-export function useDialogRef<TResult = any>(): IDialogRef<TResult> {
-  const ctx = useContext(DialogInstanceContext);
+export function useIDialogRef<TResult = any>(): IDialogRef<TResult> {
+  const ctx = useContext(IDialogInstanceContext);
   if (!ctx?.dialogRef) {
     throw new Error('useDialogRef() must be used inside a dialog component.');
   }
@@ -139,8 +138,8 @@ export function useDialogRef<TResult = any>(): IDialogRef<TResult> {
 }
 
 /** Optional version (lets <IDialog> be used outside the service too) */
-function useOptionalDialogRef<TResult = any>(): IDialogRef<TResult> | null {
-  const ctx = useContext(DialogInstanceContext);
+function useOptionalIDialogRef<TResult = any>(): IDialogRef<TResult> | null {
+  const ctx = useContext(IDialogInstanceContext);
   return (ctx?.dialogRef ?? null) as IDialogRef<TResult> | null;
 }
 
@@ -152,7 +151,7 @@ export function IDialogProvider(props: IDialogProviderProps) {
   const { children } = props;
   const [dialogs, setDialogs] = useState<IDialogInstance[]>([]);
 
-  const open: DialogApi['open'] = useCallback((component, config = {}) => {
+  const open: IDialogApi['open'] = useCallback((component, config = {}) => {
     const id = config.id ?? `i-dialog-${++DIALOG_ID_COUNTER}`;
     const ref = new IDialogRef<any>();
 
@@ -191,13 +190,13 @@ export function IDialogProvider(props: IDialogProviderProps) {
     dialogs.forEach((d) => d.ref.close(undefined));
   }, [dialogs]);
 
-  const api = useMemo<DialogApi>(
+  const api = useMemo<IDialogApi>(
     () => ({ dialogs, open, closeById, closeAll }),
     [dialogs, open, closeById, closeAll]
   );
 
   return (
-    <DialogContext.Provider value={api}>{children}</DialogContext.Provider>
+    <IDialogContext.Provider value={api}>{children}</IDialogContext.Provider>
   );
 }
 
@@ -248,10 +247,10 @@ function IDialogContainer(props: IDialogContainerProps) {
       <div className="i-dialog-backdrop" onClick={onBackdropClick} />
       <div className="i-dialog-wrapper">
         <div className="i-dialog-panel" style={panelStyles}>
-          <DialogInstanceContext.Provider
+          <IDialogInstanceContext.Provider
             value={{ data: instance.config.data, dialogRef: instance.ref }}>
             <Comp />
-          </DialogInstanceContext.Provider>
+          </IDialogInstanceContext.Provider>
         </div>
       </div>
     </i-dialog-container>
@@ -290,7 +289,7 @@ export type IDialogCloseProps = {
 
 export function IDialogClose(props: IDialogCloseProps) {
   const { result, children, className } = props;
-  const ref = useDialogRef<any>();
+  const ref = useIDialogRef<any>();
 
   if (!children) return null;
 
@@ -349,11 +348,11 @@ export type IDialogActionObject =
   | IDialogActionConfirm
   | IDialogActionCustom;
 
-export type DialogAction = IDialogActionType | IDialogActionObject;
+export type IDialogAction = IDialogActionType | IDialogActionObject;
 
 export type IDialogProps = React.HTMLAttributes<HTMLElement> & {
   title?: string;
-  actions?: DialogAction[];
+  actions?: IDialogAction[];
 
   /** on* prefix (matches Angular Outputs) */
   onOk?: (value?: any) => void;
@@ -365,7 +364,7 @@ export type IDialogProps = React.HTMLAttributes<HTMLElement> & {
 };
 
 function normalizeActions(
-  actions: DialogAction[] | undefined
+  actions: IDialogAction[] | undefined
 ): IDialogActionObject[] {
   return (actions ?? ['save', 'cancel']).map((a) =>
     typeof a === 'string' ? ({ type: a } as IDialogActionObject) : a
@@ -387,7 +386,7 @@ export function IDialog(props: IDialogProps) {
   } = props;
 
   // ✅ safe: if used outside dialog context, cancel just no-ops
-  const dialogRef = useOptionalDialogRef<any>();
+  const dialogRef = useOptionalIDialogRef<any>();
 
   const normalized = useMemo(() => normalizeActions(actions), [actions]);
 
@@ -499,8 +498,8 @@ export function IDialog(props: IDialogProps) {
  * ========================================================= */
 
 export function IAlert() {
-  const data = useDialogData<IAlertData>();
-  const dialog = useDialogRef<boolean>();
+  const data = useIDialogData<IAlertData>();
+  const dialog = useIDialogRef<boolean>();
 
   const alertClass = `i-alert i-alert-${data.type}`;
 
@@ -514,7 +513,9 @@ export function IAlert() {
         {data.type === 'success' ? (
           <IIcon icon="check-circle" size="3xl" />
         ) : null}
-        {data.type === 'warning' ? <IIcon icon="exclamation" size="3xl" /> : null}
+        {data.type === 'warning' ? (
+          <IIcon icon="exclamation" size="3xl" />
+        ) : null}
         {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
 
         <h4>{data.title}</h4>
@@ -524,7 +525,7 @@ export function IAlert() {
   );
 }
 
-export function useIAlertService() {
+export function useIAlert() {
   const dialog = useIDialog();
 
   const show = useCallback(
@@ -561,8 +562,8 @@ export function useIAlertService() {
  * ========================================================= */
 
 export function IConfirm() {
-  const data = useDialogData<IConfirmData>();
-  const dialog = useDialogRef<any>();
+  const data = useIDialogData<IConfirmData>();
+  const dialog = useIDialogRef<any>();
 
   const [reason, setReason] = useState<string>('');
   const [invalid, setInvalid] = useState(false);
@@ -593,7 +594,9 @@ export function IConfirm() {
         {data.type === 'success' ? (
           <IIcon icon="check-circle" size="3xl" />
         ) : null}
-        {data.type === 'warning' ? <IIcon icon="exclamation" size="3xl" /> : null}
+        {data.type === 'warning' ? (
+          <IIcon icon="exclamation" size="3xl" />
+        ) : null}
         {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
 
         <h4>{data.title}</h4>
@@ -628,7 +631,7 @@ export function IConfirm() {
   );
 }
 
-export function useIConfirmService() {
+export function useIConfirm() {
   const dialog = useIDialog();
 
   const show = useCallback(
