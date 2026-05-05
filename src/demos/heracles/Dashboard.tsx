@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 const formatCurrency = (amount: number): string => {
     return amount.toLocaleString('id-ID', {
       style: 'currency',

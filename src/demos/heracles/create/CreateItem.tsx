@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/set-state-in-effect */
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import {
   IDialog,

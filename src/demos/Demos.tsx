@@ -1,7 +1,7 @@
-import React from 'react';
+// import React from 'react';
 import { Link } from 'react-router-dom';
 import { ISection, ISectionBody } from '../components';
-void React;
+// void React;
 
 export function Demos() {
   return (
