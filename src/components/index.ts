@@ -8,6 +8,7 @@ export * from './host';
 export * from './icon';
 export * from './input';
 export * from './loading';
+export * from './pill';
 export * from './section';
 export * from './select';
 export * from './shared';
