@@ -153,7 +153,7 @@ export function IToggle(props: IToggleProps) {
   return (
     <i-toggle
       {...rest}
-      className={hostClassName}
+      class={hostClassName}
       onClick={handleHostClick}>
       <input
         ref={inputRef}

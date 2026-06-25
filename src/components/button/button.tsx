@@ -107,6 +107,7 @@ export function IButton(props: IButtonProps) {
     rel,
 
     children,
+    className,
     ...rest
   } = props;
 
@@ -163,6 +164,7 @@ export function IButton(props: IButtonProps) {
   return (
     <i-button
       {...rest}
+      class={className}
       variant={variant}
       size={size}
       icon={icon ? String(icon) : undefined}

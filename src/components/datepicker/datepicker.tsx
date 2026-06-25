@@ -932,7 +932,7 @@ export function IDatepicker(props: IDatepickerProps) {
       ref={(el) => {
         panelRef.current = el as any;
       }}
-      className={[
+      class={[
         'i-datepicker-panel',
         panelPositionClass(panelPosition),
         portalToBody && isOpen ? 'i-datepicker-panel--portaled' : null,
@@ -1000,7 +1000,7 @@ export function IDatepicker(props: IDatepickerProps) {
         hostRef.current = el as any;
         refreshInnerInputRef();
       }}
-      className={className}
+      class={className}
       onInput={onHostInputCapture as any}
       {...rest}>
       <IInput
@@ -1094,7 +1094,7 @@ export function IFCDatepicker(props: IFCDatepickerProps) {
       ref={(el) => {
         hostRef.current = el as any;
       }}
-      className={className}
+      class={className}
       {...rest}>
       {label ? (
         <label

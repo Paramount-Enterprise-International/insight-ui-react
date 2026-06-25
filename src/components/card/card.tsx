@@ -141,7 +141,7 @@ export function ICard(props: ICardProps) {
   };
 
   return (
-    <i-card className={className} {...rest}>
+    <i-card class={className} {...rest}>
       {useRouterLink ? (
         <Link
           className="i-card"

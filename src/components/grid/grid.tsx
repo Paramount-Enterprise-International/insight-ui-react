@@ -1703,7 +1703,7 @@ export function IGrid<T>(props: IGridProps<T>) {
 
     return (
       <i-grid-header-cell
-        className={[
+        class={[
           'i-grid-header-cell',
           className,
           isSortable ? 'i-grid-header-cell--sortable' : null,
@@ -1730,7 +1730,7 @@ export function IGrid<T>(props: IGridProps<T>) {
           if (!isSortable) return;
           sortByColumn(col);
         }}>
-        <span className="i-grid-header-cell__content" truncatedtooltip>
+        <span className="i-grid-header-cell__content" truncatedtooltip="">
           {children}
         </span>
 
@@ -1795,7 +1795,7 @@ export function IGrid<T>(props: IGridProps<T>) {
 
     return (
       <i-grid-cell
-        className={[
+        class={[
           'i-grid-cell',
           className,
           frozenClass ? 'i-grid-cell--frozen' : null,
@@ -1827,11 +1827,11 @@ export function IGrid<T>(props: IGridProps<T>) {
   /* ---------------- render ---------------- */
 
   return (
-    <i-grid className="i-grid" role="table">
-      <i-grid-viewport className="i-grid-viewport">
+    <i-grid class="i-grid" role="table">
+      <i-grid-viewport class="i-grid-viewport">
         {/* HEADER */}
         {effectiveHeaderItems.length ? (
-          <i-grid-header-row className="i-grid-header-row">
+          <i-grid-header-row class="i-grid-header-row">
             {/* FLAT: expand-all (only when expandable row exists AND not single) */}
           {!treeEnabled &&
             hasExpandableRow &&
@@ -1971,12 +1971,12 @@ export function IGrid<T>(props: IGridProps<T>) {
               return (
                 <i-grid-header-cell-group
                   key={`g-${idx}`}
-                  className="i-grid-header-cell-group">
+                  class="i-grid-header-cell-group">
                   {/* Group title cell (NOT frozen in Angular) */}
                   <HeaderCell disableSortClick>{item.title}</HeaderCell>
 
                   <i-grid-header-cell-group-columns
-                    className="i-grid-header-cell-group-columns">
+                    class="i-grid-header-cell-group-columns">
                     {item.columns.map((col, cIdx) => {
                       if (col.headerDef) {
                         return (
@@ -2014,7 +2014,7 @@ export function IGrid<T>(props: IGridProps<T>) {
           return (
             <React.Fragment key={`r-${key}`}>
               <i-grid-row
-                className={[
+                class={[
                   'i-grid-row',
                   selectionMode ? 'i-grid-selection-row' : null,
                 ]
@@ -2156,7 +2156,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                               column: col,
                             })
                           ) : (
-                            <span className="i-grid-tree-text" truncatedtooltip>
+                            <span className="i-grid-tree-text" truncatedtooltip="">
                               {col.fieldName
                                 ? highlightSearchFn(
                                     String(
@@ -2187,7 +2187,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                           column: col,
                         })
                       ) : (
-                        <span className="i-grid-cell__content" truncatedtooltip>
+                        <span className="i-grid-cell__content" truncatedtooltip="">
                           {col.fieldName
                             ? highlightSearchFn(
                                 String(
@@ -2207,7 +2207,7 @@ export function IGrid<T>(props: IGridProps<T>) {
 
               {/* DETAIL ROW */}
               {hasExpandableRow && isRowExpanded(row) ? (
-                <i-grid-expandable-row className="i-grid-expandable-row flex">
+                <i-grid-expandable-row class="i-grid-expandable-row flex">
                   {expandableRowDef!.render(row, { row, index: rowIndex })}
                 </i-grid-expandable-row>
               ) : null}

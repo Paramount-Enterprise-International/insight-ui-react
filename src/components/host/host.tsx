@@ -604,7 +604,7 @@ export function IHSidebar(props: IHSidebarProps) {
   }, []);
 
   return (
-    <ih-sidebar className={!visible ? 'hidden' : undefined}>
+    <ih-sidebar class={!visible ? 'hidden' : undefined}>
       <div className="ih-sidebar-header">
         {user ? (
           <>

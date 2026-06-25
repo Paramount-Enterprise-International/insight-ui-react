@@ -1156,7 +1156,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
           else panelRef.current.classList.remove('i-options--portaled');
         }
       }}
-      className={`i-options scroll scroll-y ${panelPositionClass}${
+      class={`i-options scroll scroll-y ${panelPositionClass}${
         portalToBody ? ' i-options--portaled' : ''
       }`}
       style={{
@@ -1196,7 +1196,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   return (
     <i-select
       {...hostProps}
-      className={className as any}
+      class={className as any}
       ref={(el: HTMLElement | null) => {
         hostRef.current = el;
       }}
@@ -1314,7 +1314,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
   );
 
   return (
-    <i-fc-select {...hostProps} className={className as any}>
+    <i-fc-select {...hostProps} class={className as any}>
       {label ? (
         <label className="i-fc-select__label" onClick={focusInnerSelect}>
           {label} :

@@ -78,39 +78,43 @@ function isValidIndex(index: unknown, len: number): index is number {
  * ========================= */
 
 export function ISection(props: React.HTMLAttributes<HTMLElement>) {
-  return <i-section {...props} />;
+  const { className, ...rest } = props;
+  return <i-section class={className} {...rest} />;
 }
 
 export function ISectionHeader(props: React.HTMLAttributes<HTMLElement>) {
-  const { children, ...rest } = props;
+  const { children, className, ...rest } = props;
 
   return (
-    <i-section-header {...rest}>
+    <i-section-header class={className} {...rest}>
       <h4>{children}</h4>
     </i-section-header>
   );
 }
 
 export function ISectionSubHeader(props: React.HTMLAttributes<HTMLElement>) {
-  const { children, ...rest } = props;
+  const { children, className, ...rest } = props;
 
   return (
-    <i-section-sub-header {...rest}>
+    <i-section-sub-header class={className} {...rest}>
       <h6>{children}</h6>
     </i-section-sub-header>
   );
 }
 
 export function ISectionFilter(props: React.HTMLAttributes<HTMLElement>) {
-  return <i-section-filter {...props} />;
+  const { className, ...rest } = props;
+  return <i-section-filter class={className} {...rest} />;
 }
 
 export function ISectionBody(props: React.HTMLAttributes<HTMLElement>) {
-  return <i-section-body {...props} />;
+  const { className, ...rest } = props;
+  return <i-section-body class={className} {...rest} />;
 }
 
 export function ISectionFooter(props: React.HTMLAttributes<HTMLElement>) {
-  return <i-section-footer {...props} />;
+  const { className, ...rest } = props;
+  return <i-section-footer class={className} {...rest} />;
 }
 
 /* =========================
@@ -275,7 +279,7 @@ export function ISectionTabs(props: ISectionTabsProps) {
   );
 
   return (
-    <i-section-tabs className={className} {...rest}>
+    <i-section-tabs class={className} {...rest}>
       <div className="i-section-tabs-headers" role="tablist">
         {tabs.map((tab, index) => {
           const isActive = index === activeIndex;

@@ -382,6 +382,7 @@ export function IDialog(props: IDialogProps) {
     onCustomAction,
 
     children,
+    className,
     ...rest
   } = props;
 
@@ -418,7 +419,7 @@ export function IDialog(props: IDialogProps) {
   );
 
   return (
-    <i-dialog {...rest}>
+    <i-dialog class={className} {...rest}>
       {title ? <h4 className="i-dialog-title">{title}</h4> : null}
 
       <div className="i-dialog-content">{children}</div>
