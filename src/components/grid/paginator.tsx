@@ -111,7 +111,7 @@ export function IPaginator(props: IPaginatorProps) {
   };
 
   return (
-    <i-paginator className="i-paginator">
+    <i-paginator class="i-paginator">
       <div className="i-paginator flex align-center gap-md flex-fill">
         {/* Page size */}
         {pageSizeOptions.map((size) => (

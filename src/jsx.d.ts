@@ -6,8 +6,9 @@ declare module 'react' {
   }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface HTMLAttributes<T> {
+    class?: string;
     truncatedTooltip?: boolean;
-    truncatedtooltip?: boolean;
+    truncatedtooltip?: boolean | string;
   }
 
   namespace JSX {

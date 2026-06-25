@@ -19,7 +19,7 @@ export type ITextAreaProps = Omit<
   React.TextareaHTMLAttributes<HTMLTextAreaElement>,
   'value' | 'defaultValue' | 'onChange' | 'readOnly'
 > & {
-  value?: string; // Angular allows null; React uses empty string as default
+  value?: string | null;
   invalid?: boolean;
 
   disabled?: boolean;
@@ -43,6 +43,7 @@ export function ITextArea(props: ITextAreaProps) {
     placeholder = '',
 
     onChange,
+    className,
     ...rest
   } = props;
 
@@ -56,7 +57,7 @@ export function ITextArea(props: ITextAreaProps) {
   }, [disabled]);
 
   return (
-    <i-textarea onClick={handleHostClick}>
+    <i-textarea class={className} onClick={handleHostClick}>
       <textarea
         {...rest}
         ref={textareaRef}
@@ -65,7 +66,7 @@ export function ITextArea(props: ITextAreaProps) {
         readOnly={readonly}
         rows={rows}
         placeholder={placeholder}
-        value={value}
+        value={value ?? ''}
         onChange={(e) => onChange?.(e.currentTarget.value)}
       />
     </i-textarea>
@@ -88,7 +89,7 @@ export type IFCTextAreaProps = Omit<
   errorMessage?: IFormControlErrorMessage;
 
   // Value (React-controlled)
-  value?: string;
+  value?: string | null;
   onChange?: (value: string) => void;
 
   /**

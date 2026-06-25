@@ -203,6 +203,7 @@ export function ICodeViewer(props: ICodeViewerProps) {
     onFileLoaded,
 
     children,
+    className,
     ...rest
   } = props;
 
@@ -469,7 +470,7 @@ export function ICodeViewer(props: ICodeViewerProps) {
   }, [rawCode, loading]);
 
   return (
-    <i-code-viewer {...rest}>
+    <i-code-viewer class={className} {...rest}>
       <div
         className={[
           'i-code-viewer',

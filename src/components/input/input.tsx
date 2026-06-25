@@ -1611,7 +1611,7 @@ export function IInputAddon(props: IInputAddonProps) {
   }
 
   return (
-    <i-input-addon className={className} kind={addon.type} {...rest}>
+    <i-input-addon class={className} kind={addon.type} {...rest}>
       {addon.type === 'button' ? (
         <IButton
           size="xs"
@@ -1726,7 +1726,7 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
     };
 
     return (
-      <i-input className={className} onClick={handleHostClick}>
+      <i-input class={className} onClick={handleHostClick}>
         {prepends.map((item, index) => (
           <IInputAddon key={`prepend-${index}`} addon={item} />
         ))}
@@ -1809,7 +1809,7 @@ export function IFCInput(props: IFCInputProps) {
   };
 
   return (
-    <i-fc-input className={className} {...hostProps}>
+    <i-fc-input class={className} {...hostProps}>
       {label ? (
         <label className="i-fc-input__label" onClick={focusInnerInput}>
           {label} :

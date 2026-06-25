@@ -68,7 +68,7 @@ export function IPill({
   return (
     <i-pill
       // base class for the "i-pill, .i-pill" selector group
-      className={['i-pill', className].filter(Boolean).join(' ')}
+      class={['i-pill', className].filter(Boolean).join(' ')}
       size={size}
       variant={variant}
       aria-disabled={disabled ? 'true' : undefined}
