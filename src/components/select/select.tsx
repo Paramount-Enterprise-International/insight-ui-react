@@ -2,20 +2,15 @@
 /* select.tsx */
 /**
  * ISelect + IFCSelect (React)
- * Version: 2.2.4
+ * Version: 2.2.7
  *
- * Fixes (2.2.4):
- * - ✅ Fix year dropdown (large option list) opening offscreen (top: -xxxxpx) until scroll:
- *   -> compute TOP using effective height after maxHeight clamp
- *   -> re-measure once after maxHeight to stabilize
- * - ✅ Fix “only appears after scroll” inside scroll containers:
- *   -> listen to scroll on actual scroll parents (not just window/document)
- * - ✅ Make first-open positioning stable:
- *   -> double-rAF reposition on open cycle (layout settles next frame)
- *
- * Keeps:
- * - existing open-cycle + failsafe unhide
- * - portalToBody, matchTriggerWidth, filter debounce, outside click, etc.
+ * Aligns with Angular i-select 2.2.7:
+ * - Render options container as <i-options>
+ * - Let dropdown grow from visible control width to fit option text
+ * - Keep portal-to-body + fixed positioning for overflow parents
+ * - Fix flicker: portal + measure + position before showing panel
+ * - Fix selected long value poisoning trigger measurement on next open
+ * - Keep dropdown visible if a reposition callback does not reveal it
  */
 
 import React, {
@@ -82,7 +77,7 @@ export type ISelectProps<T = any> = Omit<
   /** debounce delay (ms) */
   filterDelay?: number;
 
-  /** minimum chars before filtering (default 3) */
+  /** minimum chars before filtering (default 0, matching Angular) */
   filterMinLength?: number;
 
   panelPosition?: ISelectPanelPosition;
@@ -93,7 +88,7 @@ export type ISelectProps<T = any> = Omit<
   /** gap between trigger and panel (px) */
   panelOffset?: number;
 
-  /** match dropdown width to control width (default true) */
+  /** match dropdown width to control width (default false, matching Angular) */
   matchTriggerWidth?: boolean;
 
   /** Array options */
@@ -304,13 +299,13 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     disabled = false,
     invalid = false,
 
-    filterDelay = 400,
-    filterMinLength = 3,
+    filterDelay = 200,
+    filterMinLength = 0,
     panelPosition = 'bottom left',
 
     portalToBody = true,
     panelOffset = 6,
-    matchTriggerWidth = true,
+    matchTriggerWidth = false,
 
     options = null,
     options$ = null,
@@ -400,7 +395,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 
     if (typeof displayWith === 'string') {
       const v = resolveByPath(row as any, displayWith);
-      return v === null ? '' : String(v);
+      return v === null || v === undefined ? '' : String(v);
     }
 
     if (!displayWithIsExplicit && typeof row === 'object') {
@@ -408,7 +403,9 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       if (!entries.length) return '';
       const labelEntry = entries[1] ?? entries[0];
       const labelValue = labelEntry?.[1];
-      return labelValue === null ? '' : String(labelValue);
+      return labelValue === null || labelValue === undefined
+        ? ''
+        : String(labelValue);
     }
 
     if (!displayWithIsExplicit && (row === null || typeof row !== 'object')) {
@@ -431,7 +428,9 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
         const labelEntry = entries[1] ?? entries[0];
         const labelValue = labelEntry?.[1];
 
-        return labelValue === null ? String(primitive) : String(labelValue);
+        return labelValue === null || labelValue === undefined
+          ? String(primitive)
+          : String(labelValue);
       }
     }
 
@@ -572,7 +571,26 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 
   const getAnchorRect = (): DOMRect | null => {
     const el = getAnchorEl();
-    return el?.getBoundingClientRect?.() ?? null;
+    const rect = el?.getBoundingClientRect?.() ?? null;
+
+    if (!rect) return null;
+
+    const viewportWidth = window.innerWidth;
+    const safeLeft = Math.max(0, rect.left);
+    const safeRight = Math.min(viewportWidth, rect.right);
+    const safeWidth = Math.max(1, safeRight - safeLeft);
+
+    return {
+      bottom: rect.bottom,
+      height: rect.height,
+      left: safeLeft,
+      right: safeLeft + safeWidth,
+      top: rect.top,
+      width: safeWidth,
+      x: safeLeft,
+      y: rect.y,
+      toJSON: () => ({}),
+    } as DOMRect;
   };
 
   const repositionPanelNow = () => {
@@ -585,21 +603,43 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const gap = 8;
+    const availableWidth = Math.max(1, vw - gap * 2);
 
     const pos = (panelPosition || 'bottom left').trim().toLowerCase();
 
     panel.style.position = 'fixed';
     panel.style.zIndex = '2000';
     panel.style.boxSizing = 'border-box';
+    panel.style.overflowX = 'clip';
     panel.style.overflowY = 'auto';
+    panel.style.maxWidth = `${Math.floor(availableWidth)}px`;
+
+    const triggerWidth = Math.min(
+      Math.max(1, Math.round(rect.width)),
+      availableWidth
+    );
 
     if (matchTriggerWidth) {
-      panel.style.width = `${Math.round(rect.width)}px`;
+      panel.style.width = `${triggerWidth}px`;
+      panel.style.minWidth = `${triggerWidth}px`;
     } else {
-      panel.style.width = '';
+      const computedMinWidth = Number.parseFloat(
+        window.getComputedStyle(panel).minWidth
+      );
+      const minWidth = Number.isFinite(computedMinWidth)
+        ? Math.min(computedMinWidth, availableWidth)
+        : 0;
+      const panelMinWidth = Math.max(triggerWidth, minWidth);
+
+      panel.style.width = 'max-content';
+      panel.style.minWidth = `${Math.floor(panelMinWidth)}px`;
     }
 
     const panelRect = panel.getBoundingClientRect();
+    const panelWidth = Math.min(
+      Math.max(1, panelRect.width),
+      availableWidth
+    );
 
     const wantTop = pos.startsWith('top');
     const wantBottom =
@@ -612,17 +652,21 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     const wantRight = pos.includes('right') || pos === 'right';
     const alignRight = wantRight && !wantLeft;
 
-    let left = alignRight ? rect.right - panelRect.width : rect.left;
-    const maxLeft = Math.max(gap, vw - panelRect.width - gap);
+    let left = alignRight ? rect.right - panelWidth : rect.left;
+    const maxLeft = Math.max(gap, vw - panelWidth - gap);
     left = Math.min(Math.max(gap, left), maxLeft);
 
     if (pos === 'left') {
-      left = rect.left - panelRect.width - panelOffset;
+      left = rect.left - panelWidth - panelOffset;
       left = Math.min(Math.max(gap, left), maxLeft);
 
+      const panelHeight = Math.min(
+        panelRect.height,
+        Math.max(60, vh - gap * 2)
+      );
       const top = Math.min(
         Math.max(gap, rect.top),
-        Math.max(gap, vh - panelRect.height - gap)
+        Math.max(gap, vh - panelHeight - gap)
       );
 
       panel.style.left = `${Math.round(left)}px`;
@@ -637,9 +681,13 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       left = rect.right + panelOffset;
       left = Math.min(Math.max(gap, left), maxLeft);
 
+      const panelHeight = Math.min(
+        panelRect.height,
+        Math.max(60, vh - gap * 2)
+      );
       const top = Math.min(
         Math.max(gap, rect.top),
-        Math.max(gap, vh - panelRect.height - gap)
+        Math.max(gap, vh - panelHeight - gap)
       );
 
       panel.style.left = `${Math.round(left)}px`;
@@ -918,7 +966,10 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       panel.style.left = '';
       panel.style.top = '';
       panel.style.width = '';
+      panel.style.minWidth = '';
+      panel.style.maxWidth = '';
       panel.style.maxHeight = '';
+      panel.style.overflowX = '';
       panel.style.overflowY = '';
       panel.style.boxSizing = '';
       panel.classList.remove('i-options--portaled');
@@ -965,7 +1016,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       closeDropdown();
     }
 
-    focus();
+    window.setTimeout(() => focus());
   };
 
   // ---------- selection ----------
@@ -977,7 +1028,10 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     onOptionSelected?.(payload);
   };
 
-  const selectRow = (row: T) => {
+  const selectRow = (row: T, event?: React.MouseEvent) => {
+    event?.preventDefault();
+    event?.stopPropagation();
+
     if (disabled) return;
 
     if (!isControlled) setModelValue(row);
@@ -1120,7 +1174,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
             .filter(Boolean)
             .join(' ')}
           onMouseEnter={() => setActiveIndex(idx)}
-          onMouseDown={() => selectRow(row)}>
+          onMouseDown={(event) => selectRow(row, event)}>
           <div className="i-option-label">
             {optionRenderer ? (
               optionRenderer(row)
@@ -1184,8 +1238,8 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
     options$ = null,
 
     displayWith,
-    filterDelay = 400,
-    filterMinLength = 3,
+    filterDelay = 200,
+    filterMinLength = 0,
     filterPredicate,
 
     panelPosition = 'bottom left',
@@ -1211,7 +1265,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
 
     portalToBody = true,
     panelOffset = 6,
-    matchTriggerWidth = true,
+    matchTriggerWidth = false,
 
     invalid = false,
 
