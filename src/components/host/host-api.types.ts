@@ -22,10 +22,8 @@ export type IMenu = {
   level: number;
   visibility?: string;
   selected?: boolean;
-  openInId?: number;
-  versionCode?: string;
-  applicationCode?: string;
-  applicationUrl?: string;
+  openInNewTab?: boolean;
+  reload?: boolean;
 };
 
 export type IUser = {

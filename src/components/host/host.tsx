@@ -44,6 +44,7 @@ function highlightSearchHtml(text: string, rawTerm: string): string {
       out += escapeHtml(safeText.slice(i));
       break;
     }
+
     out += escapeHtml(safeText.slice(i, idx));
     out += `<span class="highlight-search">${escapeHtml(
       safeText.slice(idx, idx + term.length)
@@ -61,9 +62,71 @@ const Highlighted = memo(function Highlighted(props: {
 }) {
   const { text, term, as = 'span' } = props;
   const html = useMemo(() => highlightSearchHtml(text, term), [text, term]);
-  const Tag: React.ElementType = as; // ✅ avoid `any`
+  const Tag: React.ElementType = as;
+
   return <Tag dangerouslySetInnerHTML={{ __html: html }} />;
 });
+
+/* =========================================
+ * Navigation helpers
+ * ========================================= */
+
+function getMenuRoute(menu: IMenu | null | undefined): string | null {
+  return menu?.route?.trim() || null;
+}
+
+/**
+ * Intentionally simple:
+ * If route starts with "http", never use React Router SPA navigation.
+ */
+function isHttpRoute(route: string | null | undefined): boolean {
+  return !!route?.trim().toLowerCase().startsWith('http');
+}
+
+function isNewTabMenu(menu: IMenu | null | undefined): boolean {
+  const route = getMenuRoute(menu);
+
+  return !!route && !!menu?.openInNewTab;
+}
+
+function isReloadMenu(menu: IMenu | null | undefined): boolean {
+  const route = getMenuRoute(menu);
+
+  if (!route) return false;
+  if (menu?.openInNewTab) return false;
+
+  return !!menu?.reload || isHttpRoute(route);
+}
+
+function isSpaMenu(menu: IMenu | null | undefined): boolean {
+  const route = getMenuRoute(menu);
+
+  if (!route) return false;
+  if (menu?.openInNewTab) return false;
+  if (menu?.reload) return false;
+  if (isHttpRoute(route)) return false;
+
+  return true;
+}
+
+function appendMenuFilterToUrl(raw: string, rawFilter: string): string {
+  const term = (rawFilter ?? '').trim();
+
+  if (!term) return raw;
+
+  try {
+    const u = new URL(raw);
+    u.searchParams.set('menu-filter', term);
+    return u.toString();
+  } catch {
+    const origin = window.location.origin;
+    const u = new URL(raw, origin);
+
+    u.searchParams.set('menu-filter', term);
+
+    return `${u.pathname}${u.search}${u.hash}`;
+  }
+}
 
 /* =========================================
  * Breadcrumb helpers
@@ -73,11 +136,16 @@ function normalizeCrumbs(
   items: IBreadcrumbItem[] | null | undefined
 ): IBreadcrumbItem[] {
   if (!items?.length) return [];
+
   return items.filter((x): x is IBreadcrumbItem => !!x?.label);
 }
 
 function isPlainLeftClick(e: React.MouseEvent): boolean {
   return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
+function isInternalAppUrl(url: string): boolean {
+  return url.startsWith('/') && !isHttpRoute(url);
 }
 
 /* =========================================
@@ -126,10 +194,11 @@ export function IHContent(props: {
   const onCrumbClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>, url: string) => {
       if (!isPlainLeftClick(e)) return;
-      e.preventDefault();
 
-      if (url.startsWith('/')) go(url);
-      else window.location.href = url;
+      if (isInternalAppUrl(url)) {
+        e.preventDefault();
+        go(url);
+      }
     },
     [go]
   );
@@ -154,7 +223,7 @@ export function IHContent(props: {
             const first = idx === 0;
             const last = idx === crumbs.length - 1;
 
-            // ✅ first crumb is never clickable (Dashboard)
+            // first crumb is never clickable
             const clickable = !first && !last && !!b.url;
 
             return (
@@ -235,6 +304,7 @@ function filterMenuTree(menus: IMenu[], rawTerm: string): IMenu[] {
     const result = filterMenuBranch(menu, term);
     if (result) filtered.push(result);
   }
+
   return filtered;
 }
 
@@ -280,6 +350,7 @@ function flattenNavigableMenus(menus: IMenu[]): IMenu[] {
   };
 
   for (const m of menus) visit(m);
+
   return result;
 }
 
@@ -301,6 +372,14 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   const menuItemRef = useRef<HTMLElement | null>(null);
   const hasChild = !!menu?.child?.length;
 
+  const menuRoute = useMemo(() => getMenuRoute(menu), [menu]);
+
+  const href = useMemo(() => {
+    if (!menuRoute) return '#';
+
+    return appendMenuFilterToUrl(menuRoute, filter);
+  }, [menuRoute, filter]);
+
   const isSelected = useMemo(() => {
     if (!menu) return false;
 
@@ -316,6 +395,20 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
     return isLeaf;
   }, [menu, selectedMenuId]);
+
+  const linkTarget = useMemo(() => {
+    if (!menu) return '_self';
+
+    if (isNewTabMenu(menu)) return '_blank';
+
+    return '_self';
+  }, [menu]);
+
+  const linkRel = useMemo(() => {
+    if (!menu) return undefined;
+
+    return isNewTabMenu(menu) ? 'noopener noreferrer' : undefined;
+  }, [menu]);
 
   useLayoutEffect(() => {
     if (isSelected && menuItemRef.current) {
@@ -333,18 +426,29 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
   const renderIndent = (level: number) => {
     if (!level || level <= 0) return null;
+
     return Array.from({ length: level }).map((_, i) => <span key={i} />);
   };
 
-  const onLeafNavigate = useCallback(
-    (m: IMenu) => {
-      if (m.applicationCode === 'INS5' && m.route) {
-        navigate(m.route);
-      } else if (m.applicationUrl) {
-        window.location.href = m.applicationUrl;
+  const onLeafClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (!menu) return;
+      if (!menuRoute) return;
+
+      // keep browser behavior for right click, middle click, cmd/ctrl-click, etc
+      if (!isPlainLeftClick(e)) return;
+
+      // new tab, reload, and http routes should use normal browser navigation
+      if (isNewTabMenu(menu)) return;
+      if (isReloadMenu(menu)) return;
+
+      // only SPA route should be handled by React Router
+      if (isSpaMenu(menu)) {
+        e.preventDefault();
+        navigate(href);
       }
     },
-    [navigate]
+    [menu, menuRoute, href, navigate]
   );
 
   if (!menu) return null;
@@ -366,10 +470,13 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
           hasChild ? (
             <div onClick={clickGroup}>
               {menu.level > 0 ? renderIndent(menu.level) : null}
+
               <i className={menu.icon ?? ''}></i>
+
               <h6>
                 <Highlighted text={menu.menuName} term={filter} />
               </h6>
+
               <i
                 className={
                   menu.visibility === 'expanded'
@@ -383,30 +490,14 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
                 menuItemRef.current = el as unknown as HTMLElement | null;
               }}
               className={isSelected ? 'is-selected' : ''}
-              href={
-                menu.applicationCode === 'INS5'
-                  ? (menu.route ?? '#')
-                  : (menu.applicationUrl ?? '#')
-              }
-              onClick={(e) => {
-                // keep open in new tab, etc
-                if (!isPlainLeftClick(e)) return;
-
-                // SPA nav for INS5
-                if (menu.applicationCode === 'INS5') {
-                  e.preventDefault();
-                  onLeafNavigate(menu);
-                  return;
-                }
-
-                // external link: allow normal navigation if url exists
-                if (menu.applicationCode !== 'INS5' && !menu.applicationUrl) {
-                  e.preventDefault();
-                  onLeafNavigate(menu);
-                }
-              }}>
+              href={href}
+              target={linkTarget}
+              rel={linkRel}
+              onClick={onLeafClick}>
               {menu.level > 0 ? renderIndent(menu.level) : null}
+
               <i className={menu.icon ?? ''}></i>
+
               <h6>
                 <Highlighted text={menu.menuName} term={filter} />
               </h6>
@@ -449,9 +540,9 @@ export function IHSidebar(props: IHSidebarProps) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // init query params (same behavior)
   const initialFilter = useMemo(() => {
     const sp = new URLSearchParams(location.search);
+
     return sp.get('menu-filter') ?? '';
   }, [location.search]);
 
@@ -527,6 +618,31 @@ export function IHSidebar(props: IHSidebarProps) {
     [updateUrl]
   );
 
+  const navigateToMenu = useCallback(
+    (menu: IMenu) => {
+      const route = getMenuRoute(menu);
+
+      if (!route) return;
+
+      const urlWithFilter = appendMenuFilterToUrl(route, menuFilter);
+
+      if (isNewTabMenu(menu)) {
+        window.open(urlWithFilter, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      if (isReloadMenu(menu)) {
+        window.location.href = urlWithFilter;
+        return;
+      }
+
+      if (isSpaMenu(menu)) {
+        navigate(urlWithFilter);
+      }
+    },
+    [menuFilter, navigate]
+  );
+
   const onSearchKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (!navigableMenus.length) return;
@@ -569,20 +685,22 @@ export function IHSidebar(props: IHSidebarProps) {
         });
       } else if (event.key === 'Enter') {
         if (!keyboardNavActive) return;
+
         event.preventDefault();
 
         const idx = selectedIndex;
         if (idx == null || idx < 0 || idx >= navigableMenus.length) return;
 
-        const m = navigableMenus[idx];
-        if (m.applicationCode === 'INS5' && m.route) {
-          navigate(m.route);
-        } else if (m.applicationUrl) {
-          window.location.href = m.applicationUrl;
-        }
+        navigateToMenu(navigableMenus[idx]);
       }
     },
-    [navigableMenus, menuFilter, keyboardNavActive, selectedIndex, navigate]
+    [
+      navigableMenus,
+      menuFilter,
+      keyboardNavActive,
+      selectedIndex,
+      navigateToMenu,
+    ]
   );
 
   const onToggleGroup = useCallback((menuId: number) => {
@@ -592,11 +710,15 @@ export function IHSidebar(props: IHSidebarProps) {
           if (m.visibility !== 'no-child') {
             const nextVis =
               m.visibility === 'expanded' ? 'collapsed' : 'expanded';
+
             return { ...m, visibility: nextVis };
           }
+
           return m;
         }
+
         if (m.child?.length) return { ...m, child: update(m.child) };
+
         return m;
       });
 
@@ -611,6 +733,7 @@ export function IHSidebar(props: IHSidebarProps) {
             <div className="user-image">
               <img alt="User Image" src={user.userImagePath} />
             </div>
+
             <div className="user-info">
               <small className="text-subtle">{user.employeeCode}</small>
               <h6>{user.fullName}</h6>
@@ -656,7 +779,7 @@ export function IHSidebar(props: IHSidebarProps) {
 
 function HostApiBridge(props: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const { setTitle, setBreadcrumbs } = useHostUi(); // ✅ only grab stable setters
+  const { setTitle, setBreadcrumbs } = useHostUi();
 
   const hostApi = useMemo<IHostApi>(
     () => ({
@@ -664,7 +787,7 @@ function HostApiBridge(props: { children: React.ReactNode }) {
       setTitle,
       setBreadcrumbs,
     }),
-    [navigate, setTitle, setBreadcrumbs] // ✅ stable deps
+    [navigate, setTitle, setBreadcrumbs]
   );
 
   return (
