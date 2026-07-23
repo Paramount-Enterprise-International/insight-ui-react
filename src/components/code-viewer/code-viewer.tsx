@@ -123,15 +123,25 @@ function isAbsoluteUrl(path: string): boolean {
   return /^https?:\/\//i.test(path) || /^\/\//.test(path);
 }
 
-/** MF remote-safe: resolve relative file path against the remote bundle URL */
+function documentBaseUrl(): string {
+  const base = document.querySelector<HTMLBaseElement>('base[href]');
+  return base?.href ?? `${window.location.origin}/`;
+}
+
+/**
+ * Resolve application-owned public files against the runtime document base.
+ *
+ * A leading slash is treated as base-relative so a host with
+ * `<base href="/-/">` loads `/docs/example.tsx` from `/-/docs/example.tsx`.
+ * Fully-qualified and protocol-relative URLs remain unchanged.
+ */
 function resolveFileUrl(file: string): string {
   const f = (file ?? '').trim();
   if (!f) return f;
 
-  if (isAbsoluteUrl(f) || f.startsWith('/')) return f;
+  if (isAbsoluteUrl(f)) return f;
 
-  const base = (import.meta as { url?: string }).url as string;
-  return new URL(f.replace(/^\.\//, ''), base).toString();
+  return new URL(f.replace(/^\.?\//, ''), documentBaseUrl()).toString();
 }
 
 type HljsModule = {
