@@ -251,7 +251,16 @@ declare module 'react' {
       'i-toggle': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement>,
         HTMLElement
-      >;
+      > & {
+        size?: string;
+      };
+
+      'i-avatar': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement>,
+        HTMLElement
+      > & {
+        'data-shape'?: 'circle' | 'square' | 'rounded-square';
+      };
 
       'i-pill': React.DetailedHTMLProps<
         React.HTMLAttributes<HTMLElement>,

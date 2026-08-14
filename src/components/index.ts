@@ -1,4 +1,5 @@
 export * from './button';
+export * from './avatar';
 export * from './card';
 export * from './code-viewer';
 export * from './datepicker';
