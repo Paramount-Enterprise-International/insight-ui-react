@@ -117,6 +117,22 @@ export type IGridPaginatorInput =
       pageSizeOptions?: number[];
     };
 
+export type IGridServerPage = {
+  pageIndex: number;
+  pageSize: number;
+};
+
+/**
+ * Delegates individual grid operations to a server. Operations without a
+ * callback retain their current client-side behavior, enabling mixed modes.
+ */
+export type IGridServerSideConfig = {
+  totalRowCount: number;
+  onSortChange?: (sort: ISortState[]) => void;
+  onPageChange?: (page: IGridServerPage) => void;
+  onFilterChange?: (filter: string) => void;
+};
+
 /**
  * NOTE:
  * No generic here because it's unused (fixes "T is declared but never read")
@@ -134,6 +150,7 @@ export type IGridDataSourceConfig = {
    * - { pageIndex?, pageSize?, pageSizeOptions? } → enabled + overridden
    */
   paginator?: IGridPaginatorInput;
+  serverSide?: IGridServerSideConfig;
 };
 
 type Listener<T> = (rows: T[]) => void;
@@ -161,11 +178,18 @@ export class IGridDataSource<T = unknown> {
   private _pageSize = 10;
   private _pageSizeOptions = [10, 50, 100];
 
+  private _serverSide: IGridServerSideConfig | null = null;
+  private _serverSortListeners = new Set<(sort: ISortState[]) => void>();
+  private _serverPageListeners = new Set<(page: IGridServerPage) => void>();
+  private _serverFilterListeners = new Set<(filter: string) => void>();
+
   // listeners
   private _listeners = new Set<Listener<T>>();
 
   constructor(initialData: T[] = [], config: IGridDataSourceConfig = {}) {
     this._rawData = initialData || [];
+
+    this._serverSide = config.serverSide ?? null;
 
     // filter (uses setter to normalize)
     if (config.filter !== null) {
@@ -225,6 +249,14 @@ export class IGridDataSource<T = unknown> {
     if (!this._paginatorEnabled || !state) return;
     this._pageIndex = state.pageIndex;
     this._pageSize = state.pageSize;
+
+    if (this._delegatesPage()) {
+      const page = { pageIndex: state.pageIndex, pageSize: state.pageSize };
+      this._serverSide?.onPageChange?.(page);
+      this._serverPageListeners.forEach((listener) => listener(page));
+      return;
+    }
+
     this._emit();
   }
 
@@ -245,7 +277,48 @@ export class IGridDataSource<T = unknown> {
   }
 
   get length(): number {
+    if (this._delegatesPage()) return this._serverSide?.totalRowCount ?? 0;
     return this._rawData.length;
+  }
+
+  get serverSide(): IGridServerSideConfig | null {
+    return this._serverSide;
+  }
+
+  set serverSide(config: IGridServerSideConfig | null) {
+    this._serverSide = config;
+  }
+
+  /** Push a server response and synchronize its pagination metadata. */
+  setData(
+    rows: T[],
+    options?: { total?: number; pageIndex?: number; pageSize?: number }
+  ): void {
+    this._rawData = rows || [];
+
+    if (this._serverSide) {
+      if (options?.total !== undefined) this._serverSide.totalRowCount = options.total;
+      if (options?.pageIndex !== undefined) this._pageIndex = options.pageIndex;
+      if (options?.pageSize !== undefined) this._pageSize = options.pageSize;
+    }
+
+    this._emit();
+  }
+
+  /** Subscribe to grid-level server delegation outputs. */
+  subscribeServerSort(listener: (sort: ISortState[]) => void): () => void {
+    this._serverSortListeners.add(listener);
+    return () => this._serverSortListeners.delete(listener);
+  }
+
+  subscribeServerPage(listener: (page: IGridServerPage) => void): () => void {
+    this._serverPageListeners.add(listener);
+    return () => this._serverPageListeners.delete(listener);
+  }
+
+  subscribeServerFilter(listener: (filter: string) => void): () => void {
+    this._serverFilterListeners.add(listener);
+    return () => this._serverFilterListeners.delete(listener);
   }
 
   /* ---------------- filter / sort ---------------- */
@@ -260,7 +333,7 @@ export class IGridDataSource<T = unknown> {
       this._filter = '';
       this._recursive = false;
       this._childrenKey = 'children';
-      this._emit();
+      this._notifyOrEmitFilter('');
       return;
     }
 
@@ -268,7 +341,7 @@ export class IGridDataSource<T = unknown> {
       this._filter = value.toLowerCase().trim();
       this._recursive = false;
       this._childrenKey = 'children';
-      this._emit();
+      this._notifyOrEmitFilter(this._filter);
       return;
     }
 
@@ -277,7 +350,7 @@ export class IGridDataSource<T = unknown> {
     this._recursive = value.recursive === true;
     this._childrenKey = (value.key || 'children').trim() || 'children';
 
-    this._emit();
+    this._notifyOrEmitFilter(this._filter);
   }
 
   /**
@@ -294,6 +367,12 @@ export class IGridDataSource<T = unknown> {
 
   set sort(value: ISortConfig) {
     this._sort = this._normalizeSort(value);
+    if (this._delegatesSort()) {
+      const sort = this._sort ?? [];
+      this._serverSide?.onSortChange?.(sort);
+      this._serverSortListeners.forEach((listener) => listener(sort));
+      return;
+    }
     this._emit();
   }
 
@@ -343,6 +422,27 @@ export class IGridDataSource<T = unknown> {
 
   disconnect(): void {
     this._listeners.clear();
+  }
+
+  private _delegatesSort(): boolean {
+    return !!this._serverSide?.onSortChange || this._serverSortListeners.size > 0;
+  }
+
+  private _delegatesPage(): boolean {
+    return !!this._serverSide?.onPageChange || this._serverPageListeners.size > 0;
+  }
+
+  private _delegatesFilter(): boolean {
+    return !!this._serverSide?.onFilterChange || this._serverFilterListeners.size > 0;
+  }
+
+  private _notifyOrEmitFilter(filter: string): void {
+    if (this._delegatesFilter()) {
+      this._serverSide?.onFilterChange?.(filter);
+      this._serverFilterListeners.forEach((listener) => listener(filter));
+      return;
+    }
+    this._emit();
   }
 
   /* ---------------- internals ---------------- */
@@ -413,7 +513,7 @@ export class IGridDataSource<T = unknown> {
     let data: T[] = [...this._rawData];
 
     // FILTER
-    if (this._filter) {
+    if (this._filter && !this._delegatesFilter()) {
       const f = this._filter;
 
       if (this._recursive) {
@@ -424,7 +524,7 @@ export class IGridDataSource<T = unknown> {
     }
 
     // SORT (multi-column)
-    if (this._sort && this._sort.length > 0) {
+    if (this._sort && this._sort.length > 0 && !this._delegatesSort()) {
       const sorts = [...this._sort];
 
       data.sort((a: T, b: T) => {
@@ -446,7 +546,7 @@ export class IGridDataSource<T = unknown> {
     }
 
     // PAGINATION
-    if (this._paginatorEnabled) {
+    if (this._paginatorEnabled && !this._delegatesPage()) {
       const start = this._pageIndex * this._pageSize;
       data = data.slice(start, start + this._pageSize);
     }
@@ -636,12 +736,18 @@ export type IGridProps<T> = {
   treeInitialExpandLevel?: number | null;
 
   showNumberColumn?: boolean;
+  sortMode?: 'multi' | 'single';
 
   onSelectionChange?: (e: IGridSelectionChange<T>) => void;
   onRowClick?: (row: T) => void;
 
   onRowExpandChange?: (e: { row: T; expanded: boolean }) => void;
   onExpandedRowsChange?: (rows: T[]) => void;
+
+  /** Alternative React callback wiring for server-side data sources. */
+  onServerSortChange?: (sort: ISortState[]) => void;
+  onServerPageChange?: (page: IGridServerPage) => void;
+  onServerFilterChange?: (filter: string) => void;
 
   children?: ReactNode;
 
@@ -670,12 +776,16 @@ export function IGrid<T>(props: IGridProps<T>) {
     treeInitialExpandLevel = null,
 
     showNumberColumn = true,
+    sortMode = 'multi',
 
     onSelectionChange,
     onRowClick,
 
     onRowExpandChange,
     onExpandedRowsChange,
+    onServerSortChange,
+    onServerPageChange,
+    onServerFilterChange,
 
     children,
     highlightSearch,
@@ -712,6 +822,24 @@ export function IGrid<T>(props: IGridProps<T>) {
 
   const [selectionSet, setSelectionSet] = useState<Set<T>>(new Set());
   const [expandedSet, setExpandedSet] = useState<Set<T>>(new Set());
+
+  useEffect(() => {
+    if (!(dataSource instanceof IGridDataSource)) return undefined;
+
+    const unsubscribers = [
+      onServerSortChange
+        ? dataSource.subscribeServerSort(onServerSortChange)
+        : undefined,
+      onServerPageChange
+        ? dataSource.subscribeServerPage(onServerPageChange)
+        : undefined,
+      onServerFilterChange
+        ? dataSource.subscribeServerFilter(onServerFilterChange)
+        : undefined,
+    ].filter((unsubscribe): unsubscribe is () => void => !!unsubscribe);
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [dataSource, onServerFilterChange, onServerPageChange, onServerSortChange]);
 
   // tree meta
   const treeMetaRef = useRef<
@@ -898,7 +1026,7 @@ export function IGrid<T>(props: IGridProps<T>) {
   const getColumnFlex = (col: IGridColumnLike<T>): string => {
     const px = getColumnWidth(col);
     if (px !== null) return `0 0 ${px}px`;
-    return '1 1 0';
+    return '1 1 0%';
   };
 
   const setColumnWidth = (col: IGridColumnLike<T>, width: number) => {
@@ -1510,6 +1638,14 @@ export function IGrid<T>(props: IGridProps<T>) {
     const next = prev.map((s) => ({ ...s })); // clone
     const idx = next.findIndex((s) => s.active === columnId);
 
+    if (sortMode === 'single') {
+      if (idx === -1) return [{ active: columnId, direction: 'asc' }];
+      if (next[idx].direction === 'asc') {
+        return [{ active: columnId, direction: 'desc' }];
+      }
+      return [];
+    }
+
     if (idx === -1) {
       // first click -> asc
       next.push({ active: columnId, direction: 'asc' });
@@ -1542,6 +1678,7 @@ export function IGrid<T>(props: IGridProps<T>) {
     const next = computeNextSort(sortStatesRef.current, columnId);
 
     // ✅ 1) update UI state
+    sortStatesRef.current = next;
     setSortStates(next);
 
     // ✅ 2) side effect OUTSIDE setState updater
