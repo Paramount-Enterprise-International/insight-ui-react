@@ -1656,6 +1656,12 @@ export type IInputProps = Omit<
 
   mask?: IInputMask;
 
+  /**
+   * Applies today's date/current time to an initially empty date/time mask.
+   * Defaults to `true`; composite controls such as `IDatepicker` disable it.
+   */
+  autoDefault?: boolean;
+
   prepend?: IInputAddons | IInputAddons[];
   append?: IInputAddons | IInputAddons[] | IInputAddonLoading;
 
@@ -1674,6 +1680,7 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
       invalid = false,
       disabled = false,
       mask,
+      autoDefault = true,
       prepend,
       append,
       value,
@@ -1687,7 +1694,7 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
     const inputRef = inputRefProp;
     const innerRef = useRef<HTMLInputElement | null>(null);
 
-    useInputMask(innerRef, mask);
+    useInputMask(innerRef, mask, { enableDefault: autoDefault });
 
     const prepends = useMemo(() => normalizeArray(prepend), [prepend]);
     const appends = useMemo(
