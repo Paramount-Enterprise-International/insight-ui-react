@@ -24,6 +24,16 @@ export type ISectionTabsHeight =
   | null
   | undefined;
 
+const CHEVRON_WIDTH_BY_SIZE: Record<
+  Extract<IIconSize, 'sm' | 'md' | 'lg' | 'xl'>,
+  number
+> = {
+  sm: 20,
+  md: 24,
+  lg: 28,
+  xl: 32,
+};
+
 /* =========================
  * Helpers (match Angular)
  * ========================= */
@@ -263,6 +273,7 @@ export function ISectionTabs(props: ISectionTabsProps) {
   const openedIndex = useMemo(() => tabs.findIndex((t) => t.opened), [tabs]);
 
   const contentHeightPx = useMemo(() => parseTabsHeight(height), [height]);
+  const chevronWidth = CHEVRON_WIDTH_BY_SIZE[chevronSize];
 
   const isFixedHeight = contentHeightPx !== null;
 
@@ -411,6 +422,7 @@ export function ISectionTabs(props: ISectionTabsProps) {
             ]
               .filter(Boolean)
               .join(' ')}
+            style={{ minWidth: chevronWidth, width: chevronWidth }}
             type="button"
             onClick={() => scrollBy(-200)}>
             <IIcon icon="prev" size={chevronSize} />
@@ -462,6 +474,7 @@ export function ISectionTabs(props: ISectionTabsProps) {
             ]
               .filter(Boolean)
               .join(' ')}
+            style={{ minWidth: chevronWidth, width: chevronWidth }}
             type="button"
             onClick={() => scrollBy(200)}>
             <IIcon icon="next" size={chevronSize} />
