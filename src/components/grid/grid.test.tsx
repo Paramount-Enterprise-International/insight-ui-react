@@ -1,5 +1,11 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { IGrid, IGridColumn, IGridDataSource, type IGridProps } from './grid';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  IGrid,
+  IGridColumn,
+  IGridDataSource,
+  type IGridHandle,
+  type IGridProps,
+} from './grid';
 
 describe('IGrid', () => {
   it('renders basic grid structure', async () => {
@@ -152,5 +158,91 @@ describe('IGrid sort behavior', () => {
     expect(screen.getByText('Name').closest('i-grid-header-cell')).toHaveStyle(
       'flex: 1 1 0%'
     );
+  });
+});
+
+describe('IGrid selection eligibility', () => {
+  type SelectionRow = { id: number; name: string; disabled?: boolean; hidden?: boolean };
+
+  function renderSelectionGrid(
+    props: Partial<IGridProps<SelectionRow>> = {},
+    ref?: React.Ref<IGridHandle<SelectionRow>>
+  ) {
+    const rows: SelectionRow[] = [
+      { id: 1, name: 'Available' },
+      { id: 2, name: 'Disabled', disabled: true },
+      { id: 3, name: 'Hidden', hidden: true },
+    ];
+
+    return {
+      rows,
+      ...render(
+        <IGrid
+          ref={ref}
+          dataSource={rows}
+          selectionMode="multiple"
+          showNumberColumn={false}
+          selectionRowDisabled={(row) => !!row.disabled}
+          selectionRowHidden={(row) => !!row.hidden}
+          {...props}>
+          <IGridColumn fieldName="name" title="Name" />
+        </IGrid>
+      ),
+    };
+  }
+
+  it('excludes hidden and disabled rows from select-all', () => {
+    const onSelectionChange = vi.fn();
+    const { rows, container } = renderSelectionGrid({ onSelectionChange });
+
+    const checkboxes = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+    fireEvent.click(checkboxes[0]);
+
+    expect(onSelectionChange).toHaveBeenLastCalledWith({
+      selected: [rows[0]],
+      lastChanged: null,
+    });
+    expect(checkboxes[2]).toBeDisabled();
+    expect(container.querySelectorAll('.i-grid-selection-spacer')).toHaveLength(1);
+  });
+
+  it('sets eligible rows atomically through the grid ref', () => {
+    const onSelectionChange = vi.fn();
+    const ref = { current: null } as React.MutableRefObject<IGridHandle<SelectionRow> | null>;
+    const { rows } = renderSelectionGrid({ onSelectionChange }, ref);
+
+    act(() => {
+      ref.current?.setSelected([rows[0], rows[1], rows[2]]);
+    });
+
+    expect(ref.current?.getSelected()).toEqual([rows[0]]);
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith({
+      selected: [rows[0]],
+      lastChanged: null,
+    });
+  });
+
+  it('toggles a selectable tree row when its row body is clicked', () => {
+    type TreeRow = { id: number; name: string; children?: TreeRow[] };
+    const root: TreeRow = { id: 1, name: 'Root' };
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <IGrid
+        dataSource={[root]}
+        selectionMode="multiple"
+        showNumberColumn={false}
+        tree
+        onSelectionChange={onSelectionChange}>
+        <IGridColumn fieldName="name" title="Name" />
+      </IGrid>
+    );
+
+    fireEvent.click(container.querySelector('i-grid-row')!);
+
+    expect(onSelectionChange).toHaveBeenCalledWith({
+      selected: [root],
+      lastChanged: root,
+    });
   });
 });

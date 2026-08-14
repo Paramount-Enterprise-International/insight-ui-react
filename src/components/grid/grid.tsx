@@ -26,9 +26,11 @@
 
 import React, {
   Children,
+  forwardRef,
   type ReactElement,
   type ReactNode,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -646,11 +648,12 @@ export function IGridExpandableRow<T>(_props: IGridExpandableRowProps<T>) {
 function IndeterminateCheckbox(props: {
   checked: boolean;
   indeterminate: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
   className?: string;
   stopRowClick?: boolean;
 }) {
-  const { checked, indeterminate, onChange, className, stopRowClick } = props;
+  const { checked, indeterminate, disabled = false, onChange, className, stopRowClick } = props;
   const ref = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -663,6 +666,7 @@ function IndeterminateCheckbox(props: {
       className={className}
       type="checkbox"
       checked={checked}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.checked)}
       onClick={(e) => {
         if (stopRowClick) e.stopPropagation();
@@ -729,6 +733,8 @@ export type IGridProps<T> = {
   dataSource: IGridDataSource<T> | T[];
 
   selectionMode?: IGridSelectionMode;
+  selectionRowHidden?: (row: T) => boolean;
+  selectionRowDisabled?: (row: T) => boolean;
 
   tree?: string | boolean | null;
   treeIndent?: number;
@@ -761,14 +767,25 @@ export type IGridProps<T> = {
   trackBy?: (row: T, index: number) => string | number;
 };
 
+export type IGridHandle<T> = {
+  /** Replaces selection atomically, ignoring rows that are unavailable or ineligible. */
+  setSelected: (rows: T[]) => void;
+  getSelected: () => T[];
+};
+
 /* ----------------------------------------------------
  * GRID
  * ---------------------------------------------------- */
 
-export function IGrid<T>(props: IGridProps<T>) {
+function IGridInner<T>(
+  props: IGridProps<T>,
+  ref: React.ForwardedRef<IGridHandle<T>>
+) {
   const {
     dataSource,
     selectionMode = false,
+    selectionRowHidden,
+    selectionRowDisabled,
 
     tree = null,
     treeIndent = 16,
@@ -822,6 +839,11 @@ export function IGrid<T>(props: IGridProps<T>) {
 
   const [selectionSet, setSelectionSet] = useState<Set<T>>(new Set());
   const [expandedSet, setExpandedSet] = useState<Set<T>>(new Set());
+  const selectionSetRef = useRef(selectionSet);
+
+  useEffect(() => {
+    selectionSetRef.current = selectionSet;
+  }, [selectionSet]);
 
   useEffect(() => {
     if (!(dataSource instanceof IGridDataSource)) return undefined;
@@ -1288,6 +1310,25 @@ export function IGrid<T>(props: IGridProps<T>) {
     return Array.isArray(value) ? (value as T[]) : [];
   };
 
+  const isSelectionHidden = (row: T): boolean => !!selectionRowHidden?.(row);
+  const isSelectionDisabled = (row: T): boolean => !!selectionRowDisabled?.(row);
+  const isRowSelectable = (row: T): boolean =>
+    !isSelectionHidden(row) && !isSelectionDisabled(row);
+
+  const getAllDataRows = (): T[] => {
+    if (!treeEnabled) {
+      return dataSource instanceof IGridDataSource ? dataSource.data : dataSource;
+    }
+
+    const rows: T[] = [];
+    const visit = (row: T) => {
+      rows.push(row);
+      getTreeChildren(row).forEach(visit);
+    };
+    treeRootsRef.current.forEach(visit);
+    return rows;
+  };
+
   const getTreeDescendants = (row: T): T[] => {
     const out: T[] = [];
     const visit = (r: T) => {
@@ -1309,7 +1350,7 @@ export function IGrid<T>(props: IGridProps<T>) {
   const getRowChecked = (row: T): boolean => {
     if (!treeEnabled) return selectionSet.has(row);
 
-    const descendants = getTreeDescendants(row);
+    const descendants = getTreeDescendants(row).filter(isRowSelectable);
     if (!descendants.length) return selectionSet.has(row);
 
     const total = descendants.length;
@@ -1329,7 +1370,7 @@ export function IGrid<T>(props: IGridProps<T>) {
   const getRowIndeterminate = (row: T): boolean => {
     if (!treeEnabled) return false;
 
-    const descendants = getTreeDescendants(row);
+    const descendants = getTreeDescendants(row).filter(isRowSelectable);
     if (!descendants.length) return false;
 
     const total = descendants.length;
@@ -1345,12 +1386,15 @@ export function IGrid<T>(props: IGridProps<T>) {
 
   const allVisibleSelected = (): boolean => {
     if (!selectionMode || !renderedData.length) return false;
-    return renderedData.every((r) => getRowChecked(r));
+    const selectable = renderedData.filter(isRowSelectable);
+    return selectable.length > 0 && selectable.every((r) => getRowChecked(r));
   };
 
   const someVisibleSelected = (): boolean => {
     if (!selectionMode || !renderedData.length) return false;
-    const anySelected = renderedData.some(
+    const selectable = renderedData.filter(isRowSelectable);
+    if (!selectable.length) return false;
+    const anySelected = selectable.some(
       (r) => getRowChecked(r) || getRowIndeterminate(r)
     );
     return anySelected && !allVisibleSelected();
@@ -1367,7 +1411,7 @@ export function IGrid<T>(props: IGridProps<T>) {
     let current = treeMetaRef.current.get(row)?.parent ?? null;
 
     while (current) {
-      const descendants = getTreeDescendants(current);
+      const descendants = getTreeDescendants(current).filter(isRowSelectable);
       if (!descendants.length) {
         current = treeMetaRef.current.get(current)?.parent ?? null;
         continue;
@@ -1391,13 +1435,14 @@ export function IGrid<T>(props: IGridProps<T>) {
       return;
     }
 
-    const all = [row, ...getTreeDescendants(row)];
+    const all = [row, ...getTreeDescendants(row)].filter(isRowSelectable);
     if (selected) all.forEach((r) => next.add(r));
     else all.forEach((r) => next.delete(r));
   };
 
   const onRowSelectionToggle = (row: T) => {
     if (!selectionMode) return;
+    if (!isRowSelectable(row)) return;
 
     if (selectionMode === 'single') {
       const next = new Set<T>();
@@ -1435,6 +1480,9 @@ export function IGrid<T>(props: IGridProps<T>) {
   const onToggleAllVisible = () => {
     if (selectionMode !== 'multiple') return;
 
+    const selectableRows = renderedData.filter(isRowSelectable);
+    if (!selectableRows.length) return;
+
     const shouldSelect = !allVisibleSelected();
 
     if (treeEnabled) {
@@ -1452,12 +1500,42 @@ export function IGrid<T>(props: IGridProps<T>) {
     }
 
     const next = new Set(selectionSet);
-    if (shouldSelect) renderedData.forEach((r) => next.add(r));
-    else renderedData.forEach((r) => next.delete(r));
+    if (shouldSelect) selectableRows.forEach((r) => next.add(r));
+    else selectableRows.forEach((r) => next.delete(r));
 
     setSelectionSet(next);
     emitSelectionChange(null, next);
   };
+
+  const setSelected = (rows: T[]) => {
+    if (!selectionMode) return;
+
+    const validRows = new Set(getAllDataRows());
+    const next = new Set(rows.filter((row) => validRows.has(row) && isRowSelectable(row)));
+
+    if (selectionMode === 'single' && next.size > 1) {
+      const first = next.values().next().value as T;
+      next.clear();
+      next.add(first);
+    }
+
+    const unchanged =
+      next.size === selectionSet.size &&
+      Array.from(next).every((row) => selectionSet.has(row));
+    if (unchanged) return;
+
+    selectionSetRef.current = next;
+    setSelectionSet(next);
+    emitSelectionChange(null, next);
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      setSelected,
+      getSelected: () => Array.from(selectionSetRef.current),
+    })
+  );
 
   /* ---------------- tree helpers ---------------- */
 
@@ -2011,6 +2089,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                     <IndeterminateCheckbox
                       checked={allVisibleSelected()}
                       indeterminate={someVisibleSelected()}
+                      disabled={renderedData.filter(isRowSelectable).length === 0}
                       onChange={() => onToggleAllVisible()}
                       stopRowClick
                     />
@@ -2071,6 +2150,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                             className="i-grid-tree-header-checkbox"
                             checked={allVisibleSelected()}
                             indeterminate={someVisibleSelected()}
+                            disabled={renderedData.filter(isRowSelectable).length === 0}
                             onChange={() => onToggleAllVisible()}
                             stopRowClick
                           />
@@ -2157,7 +2237,10 @@ export function IGrid<T>(props: IGridProps<T>) {
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => onRowClick?.(row)}>
+                onClick={() => {
+                  onRowClick?.(row);
+                  if (treeEnabled && selectionMode) onRowSelectionToggle(row);
+                }}>
                 {/* Expand control (flat mode) */}
                 {!treeEnabled && hasExpandableRow ? (
                   <Cell
@@ -2195,10 +2278,13 @@ export function IGrid<T>(props: IGridProps<T>) {
                       addFrozenClass: false,
                       stickyLeft: getStickyLeftForSelectionColumn(),
                     }}>
-                    {selectionMode === 'multiple' ? (
+                    {isSelectionHidden(row) ? (
+                      <span aria-hidden="true" className="i-grid-selection-spacer" />
+                    ) : selectionMode === 'multiple' ? (
                       <IndeterminateCheckbox
                         checked={getRowChecked(row)}
                         indeterminate={getRowIndeterminate(row)}
+                        disabled={isSelectionDisabled(row)}
                         onChange={() => onRowSelectionToggle(row)}
                         stopRowClick
                       />
@@ -2206,6 +2292,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                       <input
                         type="radio"
                         checked={selectionSet.has(row)}
+                        disabled={isSelectionDisabled(row)}
                         name={`i-grid-radio-${idRef.current}`}
                         onChange={() => onRowSelectionToggle(row)}
                         onClick={(e) => e.stopPropagation()}
@@ -2244,7 +2331,6 @@ export function IGrid<T>(props: IGridProps<T>) {
                       <Cell
                         key={`c-${rowIndex}-${colIndex}`}
                         col={col}
-                        onClickStop
                         auto={!!col.isAuto}>
                         <span className="i-grid-tree-inline">
                           <span
@@ -2267,11 +2353,17 @@ export function IGrid<T>(props: IGridProps<T>) {
                             <span className="i-grid-tree-spacer" />
                           )}
 
-                          {selectionMode === 'multiple' ? (
+                          {isSelectionHidden(row) ? (
+                            <span
+                              aria-hidden="true"
+                              className="i-grid-tree-selection-spacer"
+                            />
+                          ) : selectionMode === 'multiple' ? (
                             <IndeterminateCheckbox
                               className="i-grid-tree-checkbox"
                               checked={getRowChecked(row)}
                               indeterminate={getRowIndeterminate(row)}
+                              disabled={isSelectionDisabled(row)}
                               onChange={() => onRowSelectionToggle(row)}
                               stopRowClick
                             />
@@ -2280,6 +2372,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                               className="i-grid-tree-radio"
                               type="radio"
                               checked={selectionSet.has(row)}
+                              disabled={isSelectionDisabled(row)}
                               name={`i-grid-radio-${idRef.current}`}
                               onChange={() => onRowSelectionToggle(row)}
                               onClick={(e) => e.stopPropagation()}
@@ -2368,3 +2461,7 @@ export function IGrid<T>(props: IGridProps<T>) {
     </i-grid>
   );
 }
+
+export const IGrid = forwardRef(IGridInner) as <T>(
+  props: IGridProps<T> & { ref?: React.ForwardedRef<IGridHandle<T>> }
+) => React.ReactElement;
