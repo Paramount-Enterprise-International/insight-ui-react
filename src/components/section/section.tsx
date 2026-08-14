@@ -1,5 +1,12 @@
 // section.tsx
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { IIcon, type IIconSize } from '../icon';
 
 export type ISectionTabBadge =
   | boolean
@@ -217,6 +224,14 @@ export type ISectionTabsProps = React.HTMLAttributes<HTMLElement> & {
   selectedIndex?: number | null;
   onSelectedIndexChange?: (index: number) => void;
   height?: ISectionTabsHeight;
+  sticky?: boolean;
+  stickyTopOffset?: string;
+  scrollable?: boolean;
+  chevronSize?: Extract<IIconSize, 'sm' | 'md' | 'lg' | 'xl'>;
+  tabMinHeight?: string;
+  headerClass?: string;
+  tabClass?: string;
+  styleVariant?: 'default' | 'bar';
   children?: React.ReactNode;
 };
 
@@ -225,6 +240,14 @@ export function ISectionTabs(props: ISectionTabsProps) {
     selectedIndex = null,
     onSelectedIndexChange,
     height = 'wrap',
+    sticky = false,
+    stickyTopOffset = '-16px',
+    scrollable = false,
+    chevronSize = 'lg',
+    tabMinHeight = '',
+    headerClass = '',
+    tabClass = '',
+    styleVariant = 'default',
     children,
     className,
     ...rest
@@ -258,6 +281,9 @@ export function ISectionTabs(props: ISectionTabsProps) {
   const [activeIndex, setActiveIndex] = useState<number>(() =>
     computeNextIndex()
   );
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const [showLeftChevron, setShowLeftChevron] = useState(false);
+  const [showRightChevron, setShowRightChevron] = useState(false);
 
   useEffect(() => {
     setActiveIndex(computeNextIndex());
@@ -278,27 +304,169 @@ export function ISectionTabs(props: ISectionTabsProps) {
     [onSelectedIndexChange, tabs.length]
   );
 
-  return (
-    <i-section-tabs class={className} {...rest}>
-      <div className="i-section-tabs-headers" role="tablist">
-        {tabs.map((tab, index) => {
-          const isActive = index === activeIndex;
+  const checkOverflow = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !scrollable) {
+      setShowLeftChevron(false);
+      setShowRightChevron(false);
+      return;
+    }
 
-          return (
-            <button
-              key={tab.key}
-              className={['i-section-tabs-header', isActive ? 'active' : null]
-                .filter(Boolean)
-                .join(' ')}
-              role="tab"
-              type="button"
-              aria-selected={isActive}
-              tabIndex={isActive ? 0 : -1}
-              onClick={() => setActive(index, true)}>
-              {tab.headerNode}
-            </button>
-          );
-        })}
+    setShowLeftChevron(container.scrollLeft > 2);
+    setShowRightChevron(
+      container.scrollLeft + container.clientWidth < container.scrollWidth - 2
+    );
+  }, [scrollable]);
+
+  useEffect(() => {
+    checkOverflow();
+
+    const container = scrollContainerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') return undefined;
+
+    const observer = new ResizeObserver(checkOverflow);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [checkOverflow, tabs]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container || !scrollable) return;
+
+    const activeHeader = container.querySelector<HTMLElement>(
+      '.i-section-tabs-header.active'
+    );
+    if (typeof activeHeader?.scrollIntoView === 'function') {
+      activeHeader.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'start',
+      });
+    }
+    checkOverflow();
+  }, [activeIndex, checkOverflow, scrollable]);
+
+  const activateFromKeyboard = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+      const lastIndex = tabs.length - 1;
+      let nextIndex: number | null = null;
+
+      if (event.key === 'ArrowLeft') nextIndex = index === 0 ? lastIndex : index - 1;
+      if (event.key === 'ArrowRight') nextIndex = index === lastIndex ? 0 : index + 1;
+      if (event.key === 'Home') nextIndex = 0;
+      if (event.key === 'End') nextIndex = lastIndex;
+      if (nextIndex === null) return;
+
+      event.preventDefault();
+      setActive(nextIndex, true);
+
+      const headers = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+        '.i-section-tabs-header'
+      );
+      headers?.[nextIndex]?.focus();
+    },
+    [setActive, tabs.length]
+  );
+
+  const scrollBy = useCallback(
+    (left: number) => {
+      const container = scrollContainerRef.current;
+      if (typeof container?.scrollBy === 'function') {
+        container.scrollBy({ left, behavior: 'smooth' });
+      }
+    },
+    []
+  );
+
+  return (
+    <i-section-tabs
+      class={[
+        styleVariant === 'bar' ? 'i-section-tabs--bar' : null,
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      {...rest}>
+      <div
+        className={[
+          'i-section-tabs-headers',
+          sticky ? 'i-section-tabs-headers--sticky' : null,
+          headerClass,
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        role="tablist"
+        style={
+          sticky
+            ? { '--i-section-tabs-sticky-top': stickyTopOffset } as React.CSSProperties
+            : undefined
+        }>
+        {scrollable ? (
+          <button
+            aria-label="Scroll tabs left"
+            className={[
+              'i-section-tabs-chevron',
+              'i-section-tabs-chevron--left',
+              !showLeftChevron ? 'hidden' : null,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            type="button"
+            onClick={() => scrollBy(-200)}>
+            <IIcon icon="prev" size={chevronSize} />
+          </button>
+        ) : null}
+
+        <div
+          ref={scrollContainerRef}
+          className={[
+            'i-section-tabs-scroll',
+            scrollable ? 'i-section-tabs-scroll--scrollable' : null,
+          ]
+            .filter(Boolean)
+            .join(' ')}
+          onScroll={checkOverflow}>
+          {tabs.map((tab, index) => {
+            const isActive = index === activeIndex;
+
+            return (
+              <button
+                key={tab.key}
+                className={[
+                  'i-section-tabs-header',
+                  isActive ? 'active' : null,
+                  tabClass,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                role="tab"
+                type="button"
+                aria-selected={isActive}
+                tabIndex={isActive ? 0 : -1}
+                style={tabMinHeight ? { minHeight: tabMinHeight } : undefined}
+                onClick={() => setActive(index, true)}
+                onKeyDown={(event) => activateFromKeyboard(event, index)}>
+                {tab.headerNode}
+              </button>
+            );
+          })}
+        </div>
+
+        {scrollable ? (
+          <button
+            aria-label="Scroll tabs right"
+            className={[
+              'i-section-tabs-chevron',
+              'i-section-tabs-chevron--right',
+              !showRightChevron ? 'hidden' : null,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            type="button"
+            onClick={() => scrollBy(200)}>
+            <IIcon icon="next" size={chevronSize} />
+          </button>
+        ) : null}
       </div>
 
       <div
