@@ -5,11 +5,16 @@ import {
   resolveInsightAuthConfig,
 } from './auth-config';
 import { AuthService } from './auth.service';
+import { buildExternalSigninUrl } from './build-signin-redirect-url';
 import { InsightAuthContext, type IInsightAuthContext } from './insight-auth-context';
 import { CsrfService } from '../csrf/csrf.service';
 import { createApiClient } from '../api/api.client';
 import { SessionService } from '../session/session.service';
-import { SessionExpiredService } from '../session-expired/session-expired.service';
+import {
+  extractProblemDetailsErrorCode,
+  SessionExpiredService,
+  toSessionExpiredReason,
+} from '../session-expired/session-expired.service';
 import { CurrentUserService, UserMenuService } from '../user';
 import { UserMenuStore } from '../store/user-menu.store';
 
@@ -58,9 +63,25 @@ export function InsightAuthProvider({
       config: resolved,
       csrf,
       session,
-      onSessionExpired: () => {
-        // Session-expired overlay state is handled by SessionService during
-        // tryRestoreSession; here we just ensure the api client surfaces the error.
+      onSessionExpired: (err) => {
+        const errorCode = extractProblemDetailsErrorCode(err);
+        const reason = toSessionExpiredReason(errorCode);
+        if (reason) {
+          // Session revoked/replaced/expired → show the session-expired
+          // overlay (the consumer renders it); the user's "Login again" action
+          // then redirects to signin. Matches the shared SSO UX.
+          sessionExpired.show(
+            window.location.pathname,
+            reason,
+            errorCode,
+            (err as { detail?: string })?.detail,
+          );
+        } else {
+          // Not a session-expiry error — clear and go to signin directly.
+          session.clearSession();
+          const targetPath = window.location.pathname + window.location.search;
+          window.location.href = buildExternalSigninUrl(resolved, targetPath);
+        }
       },
     });
     const currentUserService = new CurrentUserService(resolved, api);

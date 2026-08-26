@@ -10,6 +10,7 @@ import React, {
   type JSX,
 } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { IAvatar } from '../avatar';
 import { IHostApiProvider, useHostApiOptional } from './host-api.context';
 import type {
   IBreadcrumbItem,
@@ -21,10 +22,14 @@ import type {
 } from './host-api.types';
 import { IHostUiProvider, useHostUi } from './host-ui.context';
 import {
+  getMenuChildren,
   getMenuKey,
   getMenuLabel,
   getMenuRoute,
+  hasMenuChildren,
+  isGroupNode,
   isHttpRoute,
+  isLeafItem,
   isModuleMenu,
   isNewTabMenu,
   isReloadMenu,
@@ -92,15 +97,22 @@ const Highlighted = memo(function Highlighted(props: {
 /** Fallback FontAwesome class used by sidebar rows when a menu icon is missing. */
 const MENU_ICON_FALLBACK = 'fa-brands fa-microsoft';
 
-/** True when a FontAwesome class looks valid (`fa`/`fas`/`far`/`fab` + `fa-...`). */
-function isValidFaClass(icon: string | null | undefined): boolean {
-  return /(^|\s)(fa|fas|far|fal|fad|fab)(\s|$)/i.test(icon ?? '') && /fa-/.test(icon ?? '');
+/** Synthetic group id used by the sidebar's Favorites section — keeps its icon. */
+const SIDEBAR_FAVORITES_GROUP_ID = 'favorites';
+
+/** True when the class string contains a FontAwesome `fa-*` token (matches Angular). */
+function hasFaToken(icon: string | null | undefined): boolean {
+  return /(?:^|\s)fa-[a-z0-9-]+(?:\s|$)/i.test(icon ?? '');
 }
 
-/** Resolve a menu icon to a concrete FontAwesome class (fallback when missing/invalid). */
+/**
+ * Resolve a menu icon to a concrete FontAwesome class (fallback when missing or
+ * not a valid `fa-*` token), appending `fa-fw` for fixed-width alignment —
+ * matches the Angular `menuIcon` getter.
+ */
 function resolveMenuIcon(icon: string | null | undefined): string {
   const value = (icon ?? '').trim();
-  return isValidFaClass(value) ? value : MENU_ICON_FALLBACK;
+  return `${hasFaToken(value) ? value : MENU_ICON_FALLBACK} fa-fw`;
 }
 
 function appendMenuFilterToUrl(raw: string, rawFilter: string): string {
@@ -157,6 +169,11 @@ export function IHContent(props: {
 
   const { onNavigate } = props;
 
+  // Asset base from the consumer app's Vite `base` (e.g. "/-/atlas-react/"),
+  // so bundled assets like /svgs/* resolve under the app's base path instead
+  // of the origin root. Falls back to "/" when not under Vite.
+  const assetBase = import.meta.env.BASE_URL ?? '/';
+
   const crumbs = useMemo(
     () => normalizeCrumbs(props.breadcrumbs),
     [props.breadcrumbs]
@@ -202,9 +219,9 @@ export function IHContent(props: {
       <div className="ih-content-header">
         <a className="i-clickable" onClick={toggleSidebar}>
           {sidebarVisibility ? (
-            <img alt="sidebar-left" src="/svgs/sidebar-left.svg" />
+            <img alt="sidebar-left" src={`${assetBase}svgs/sidebar-left.svg`} />
           ) : (
-            <img alt="sidebar-right" src="/svgs/sidebar-right.svg" />
+            <img alt="sidebar-right" src={`${assetBase}svgs/sidebar-right.svg`} />
           )}
         </a>
 
@@ -359,6 +376,12 @@ type IHMenuProps = {
   onToggleGroup: (menuId: string | number) => void;
   collapsible?: boolean;
   favoriteMode?: boolean;
+  /** Render leaf rows draggable (used by the Favorites section for reorder). */
+  dragEnabled?: boolean;
+  /** Nesting depth from the sidebar root (0 = top level) — drives indentation + the top-level "no group icon" rule. */
+  depth?: number;
+  /** Render the owning application name next to leaf labels (used by the Favorites section). */
+  showApplication?: boolean;
   onFavoriteToggle?: (event: IMenuFavoriteToggleEvent) => void;
 };
 
@@ -370,19 +393,35 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     onToggleGroup,
     collapsible,
     favoriteMode,
+    dragEnabled,
+    depth = 0,
+    showApplication = false,
     onFavoriteToggle,
   } = props;
   const navigate = useNavigate();
 
   const menuItemRef = useRef<HTMLElement | null>(null);
-  const hasChild = !!menu?.child?.length;
 
   const menuKey = useMemo(() => getMenuKey(menu), [menu]);
   const menuLabel = useMemo(() => getMenuLabel(menu), [menu]);
+  const menuRoute = useMemo(() => getMenuRoute(menu), [menu]);
+  const hasChild = useMemo(() => hasMenuChildren(menu), [menu]);
+  const menuChildren = useMemo(() => getMenuChildren(menu), [menu]);
   const isModuleNode = useMemo(() => isModuleMenu(menu), [menu]);
+  const isGroupNodeValue = useMemo(() => isGroupNode(menu), [menu]);
+  const isLeaf = useMemo(() => isLeafItem(menu), [menu]);
+  const isFavoritesGroup = menuKey === SIDEBAR_FAVORITES_GROUP_ID;
+  const isNewTab = isNewTabMenu(menu);
+  const isReload = isReloadMenu(menu);
+  const isSpa = isSpaMenu(menu);
+  const menuIsFavorite = !!menu?.isFavorite;
   const iconClass = useMemo(() => resolveMenuIcon(menu?.icon), [menu]);
 
-  const menuRoute = useMemo(() => getMenuRoute(menu), [menu]);
+  // Expanded unless collapsible + explicitly collapsed (flat menus never collapse).
+  const isGroupExpanded = useMemo(() => {
+    if (!collapsible) return true;
+    return menu?.visibility !== 'collapsed';
+  }, [collapsible, menu?.visibility]);
 
   const href = useMemo(() => {
     if (!menuRoute) return '#';
@@ -392,33 +431,10 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
   const isSelected = useMemo(() => {
     if (!menu) return false;
-
     const matchesId = menuKey !== null && menuKey === selectedMenuId;
     if (!matchesId) return false;
-
-    const children = menu.child ?? [];
-    const hasChildren = children.length > 0;
-
-    const isLeaf =
-      Number(menu.menuTypeId) === 3 &&
-      (!hasChildren || menu.visibility === 'no-child');
-
     return isLeaf;
-  }, [menu, menuKey, selectedMenuId]);
-
-  const linkTarget = useMemo(() => {
-    if (!menu) return '_self';
-
-    if (isNewTabMenu(menu)) return '_blank';
-
-    return '_self';
-  }, [menu]);
-
-  const linkRel = useMemo(() => {
-    if (!menu) return undefined;
-
-    return isNewTabMenu(menu) ? 'noopener noreferrer' : undefined;
-  }, [menu]);
+  }, [menu, menuKey, selectedMenuId, isLeaf]);
 
   useLayoutEffect(() => {
     if (isSelected && menuItemRef.current) {
@@ -435,10 +451,15 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     if (menu.visibility !== 'no-child') onToggleGroup(menuKey);
   }, [menu, menuKey, onToggleGroup]);
 
-  const renderIndent = (level: number | undefined) => {
-    if (!level || level <= 0) return null;
+  const renderIndent = () => {
+    // First-level children of a group render flush-left (0); deeper levels
+    // indent from there — matches Angular's `indentLevel = depth - 1`.
+    const indentLevel = Math.max(0, depth - 1);
+    if (!indentLevel) return null;
 
-    return Array.from({ length: level }).map((_, i) => <span key={i} />);
+    return Array.from({ length: indentLevel }).map((_, i) => (
+      <span key={i} className={`indent-${depth}`}></span>
+    ));
   };
 
   const onLeafClick = useCallback(
@@ -449,17 +470,17 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
       // keep browser behavior for right click, middle click, cmd/ctrl-click, etc
       if (!isPlainLeftClick(e)) return;
 
-      // new tab, reload, and http routes should use normal browser navigation
-      if (isNewTabMenu(menu)) return;
-      if (isReloadMenu(menu)) return;
+      // new tab, reload, and http routes use normal browser navigation
+      if (isNewTab) return;
+      if (isReload) return;
 
       // only SPA route should be handled by React Router
-      if (isSpaMenu(menu)) {
+      if (isSpa) {
         e.preventDefault();
         navigate(href);
       }
     },
-    [menu, menuRoute, href, navigate]
+    [menu, menuRoute, isNewTab, isReload, isSpa, href, navigate]
   );
 
   const onToggleFavorite = useCallback(
@@ -467,15 +488,53 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
       e.preventDefault();
       e.stopPropagation();
       if (menuKey === null) return;
-      onFavoriteToggle?.({ id: menuKey, isFavorite: !menu?.isFavorite });
+      onFavoriteToggle?.({ id: menuKey, isFavorite: !menuIsFavorite });
     },
-    [menuKey, menu?.isFavorite, onFavoriteToggle]
+    [menuKey, menuIsFavorite, onFavoriteToggle]
   );
 
   if (!menu) return null;
 
+  const menuDragProps = {
+    'data-menu-id': dragEnabled && menuKey != null ? String(menuKey) : undefined,
+  };
+
+  const renderLeafInner = () => (
+    <>
+      {renderIndent()}
+
+      <i className={iconClass}></i>
+
+      <span
+        className={[
+          'ih-menu-label',
+          showApplication ? 'ih-menu-label--compact' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}>
+        <h6>
+          <Highlighted text={menuLabel} term={filter} />
+        </h6>
+        {showApplication && menu.application?.name ? (
+          <small className="ih-menu-application">{menu.application.name}</small>
+        ) : null}
+      </span>
+
+      {favoriteMode && onFavoriteToggle ? (
+        <i
+          className={`ih-menu-favorite ${
+            menuIsFavorite ? 'fa-solid fa-star is-favorite' : 'fa-regular fa-star'
+          }`}
+          role="button"
+          tabIndex={0}
+          aria-label={menuIsFavorite ? 'Remove from favorites' : 'Add to favorites'}
+          onClick={onToggleFavorite}></i>
+      ) : null}
+    </>
+  );
+
   return (
-    <ih-menu>
+    <ih-menu data-ih-menu>
       <li
         className={[
           isModuleNode ? 'is-module' : '',
@@ -485,77 +544,100 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
           .join(' ')}>
         {isModuleNode ? (
           <small
-            className={collapsible && hasChild ? 'ih-menu-module--collapsible' : undefined}
+            className={[
+              'ih-menu-module',
+              collapsible && hasChild ? 'ih-menu-module--collapsible' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             onClick={collapsible && hasChild ? clickGroup : undefined}>
-            <Highlighted text={menuLabel} term={filter} />
+            <span>
+              <Highlighted text={menuLabel} term={filter} />
+            </span>
 
             {collapsible && hasChild ? (
               <i
-                className={
-                  menu.visibility === 'expanded'
-                    ? 'fas fa-angle-up'
-                    : 'fas fa-angle-down'
-                }></i>
+                className={[
+                  'ih-menu-chevron',
+                  isGroupExpanded ? 'fas fa-angle-up' : 'fas fa-angle-down',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}></i>
             ) : null}
           </small>
-        ) : Number(menu.menuTypeId) === 3 ? (
-          hasChild ? (
-            <div onClick={clickGroup}>
-              {renderIndent(menu.level)}
+        ) : isGroupNodeValue ? (
+          <div
+            className={[
+              'ih-menu-group',
+              collapsible ? 'ih-menu-group--collapsible' : '',
+              depth === 0 ? 'ih-menu-group--top' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            data-menu-id={dragEnabled && menuKey != null ? String(menuKey) : undefined}
+            onClick={collapsible ? clickGroup : undefined}>
+            {renderIndent()}
 
-              <i className={iconClass}></i>
+            {depth > 0 || isFavoritesGroup ? <i className={iconClass}></i> : null}
 
-              <h6>
-                <Highlighted text={menuLabel} term={filter} />
-              </h6>
+            <h6>
+              <Highlighted text={menuLabel} term={filter} />
+            </h6>
 
+            {collapsible ? (
               <i
-                className={
-                  menu.visibility === 'expanded'
-                    ? 'fas fa-angle-up'
-                    : 'fas fa-angle-down'
-                }></i>
-            </div>
-          ) : (
-            <a
-              ref={(el) => {
-                menuItemRef.current = el as unknown as HTMLElement | null;
-              }}
-              className={isSelected ? 'is-selected' : ''}
-              href={href}
-              target={linkTarget}
-              rel={linkRel}
-              onClick={onLeafClick}>
-              {renderIndent(menu.level)}
-
-              <i className={iconClass}></i>
-
-              <h6>
-                <Highlighted text={menuLabel} term={filter} />
-              </h6>
-
-              {favoriteMode && onFavoriteToggle ? (
-                <span
-                  className="ih-menu-favorite"
-                  role="button"
-                  tabIndex={-1}
-                  aria-label={
-                    menu.isFavorite ? 'Remove from favorites' : 'Add to favorites'
-                  }
-                  onClick={onToggleFavorite}>
-                  <i
-                    className={
-                      menu.isFavorite ? 'fas fa-star' : 'far fa-star'
-                    }></i>
-                </span>
-              ) : null}
-            </a>
-          )
-        ) : null}
+                className={[
+                  'ih-menu-chevron',
+                  isGroupExpanded ? 'fas fa-angle-up' : 'fas fa-angle-down',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}></i>
+            ) : null}
+          </div>
+        ) : (
+          <>
+            {isNewTab && menuRoute ? (
+              <a
+                className={isSelected ? 'is-new-tab is-selected' : 'is-new-tab'}
+                rel="noopener noreferrer"
+                target="_blank"
+                href={href}
+                {...menuDragProps}>
+                {renderLeafInner()}
+              </a>
+            ) : isReload && menuRoute ? (
+              <a
+                className={isSelected ? 'is-reload is-selected' : 'is-reload'}
+                target="_self"
+                href={href}
+                {...menuDragProps}>
+                {renderLeafInner()}
+              </a>
+            ) : isSpa && menuRoute ? (
+              <a
+                ref={(el) => {
+                  menuItemRef.current = el as unknown as HTMLElement | null;
+                }}
+                className={isSelected ? 'is-spa is-selected' : 'is-spa'}
+                href={href}
+                onClick={onLeafClick}
+                {...menuDragProps}>
+                {renderLeafInner()}
+              </a>
+            ) : null}
+          </>
+        )}
 
         {hasChild ? (
-          <ul className={Number(menu.menuTypeId) === 3 ? (menu.visibility ?? '') : ''}>
-            {(menu.child ?? []).map((m) => (
+          <ul
+            className={
+              (isGroupNodeValue || isModuleNode) && collapsible
+                ? isGroupExpanded
+                  ? 'expanded'
+                  : 'collapsed'
+                : ''
+            }>
+            {menuChildren.map((m) => (
               <IHMenu
                 key={String(getMenuKey(m))}
                 menu={m}
@@ -564,6 +646,9 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
                 onToggleGroup={onToggleGroup}
                 collapsible={collapsible}
                 favoriteMode={favoriteMode}
+                dragEnabled={dragEnabled}
+                showApplication={showApplication}
+                depth={depth + 1}
                 onFavoriteToggle={onFavoriteToggle}
               />
             ))}
@@ -580,102 +665,193 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
 function FavoritesSection({
   favorites,
+  collapsible,
   onFavoriteToggle,
   onFavoriteReorder,
 }: {
   favorites: IMenu[];
+  collapsible?: boolean;
   onFavoriteToggle?: (event: IMenuFavoriteToggleEvent) => void;
   onFavoriteReorder?: (event: IMenuFavoriteReorderEvent) => void;
 }) {
-  const navigate = useNavigate();
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  // Local collapsed state for the synthetic Favorites group (it is not part of
+  // the sidebar's menuTree, so IHSidebar's onToggleGroup cannot manage it).
+  const [favoritesCollapsed, setFavoritesCollapsed] = useState(false);
 
-  const onDrop = useCallback(
-    (dropIndex: number) => {
-      if (dragIndex === null || dragIndex === dropIndex) {
-        setDragIndex(null);
-        return;
-      }
-      const reordered = [...favorites];
-      const [moved] = reordered.splice(dragIndex, 1);
-      reordered.splice(dropIndex, 0, moved);
-      setDragIndex(null);
-      onFavoriteReorder?.({
-        menuIds: reordered
-          .map((f) => getMenuKey(f))
-          .filter((k): k is string | number => k !== null && k !== ''),
-      });
+  // Local order — live-updates during a pointer drag (mirrors Angular's
+  // `favoriteItems` signal). The real order is owned by the host app.
+  const [favoriteItems, setFavoriteItems] = useState<IMenu[]>(favorites);
+  const [dragOver, setDragOver] = useState(false);
+
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const itemsRef = useRef<IMenu[]>(favorites);
+  const dragRef = useRef<{
+    menuId: string;
+    startY: number;
+    moved: boolean;
+    lastTargetIndex: number | null;
+    ghost: HTMLElement | null;
+  } | null>(null);
+  const dragHandlersRef = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
+
+  useEffect(() => {
+    itemsRef.current = favorites;
+    setFavoriteItems(favorites);
+  }, [favorites]);
+
+  // Synthetic "Favorites" group rendered through the standard IHMenu so it gets
+  // the exact same styling as the Angular sidebar (ih-menu classes + star).
+  const group = useMemo<IMenu | null>(() => {
+    if (!favoriteItems?.length) return null;
+    const node: IMenu = {
+      id: SIDEBAR_FAVORITES_GROUP_ID,
+      name: 'Favorites',
+      type: 'group',
+      icon: 'fa-solid fa-star',
+      visibility: favoritesCollapsed ? 'collapsed' : 'expanded',
+      children: favoriteItems,
+    };
+    return normalizeMenuTree([node])[0] ?? null;
+  }, [favoriteItems, favoritesCollapsed]);
+
+  const computeDropIndex = useCallback((clientY: number): number => {
+    const host = listRef.current;
+    if (!host) return 0;
+    // Only count LEAF rows — exclude the synthetic "Favorites" group header so
+    // the returned index maps 1:1 onto the favorites array (otherwise every
+    // index is offset by +1 and bottom-to-top drags land in the wrong slot).
+    const leaves = Array.from(
+      host.querySelectorAll<HTMLElement>('.ih-sidebar-favorites [data-menu-id]'),
+    ).filter((el) => el.getAttribute('data-menu-id') !== SIDEBAR_FAVORITES_GROUP_ID);
+    for (let i = 0; i < leaves.length; i++) {
+      const rect = leaves[i].getBoundingClientRect();
+      if (clientY < rect.top + rect.height / 2) return i;
+    }
+    return leaves.length;
+  }, []);
+
+  /** Live-reorders the favorites so the target position is previewed while dragging. */
+  const reorderLive = useCallback((menuId: string, targetIndex: number) => {
+    const items = itemsRef.current;
+    const sourceIndex = items.findIndex((menu) => String(getMenuKey(menu)) === menuId);
+    if (sourceIndex === -1) return;
+    // Removing from before the target shifts the insertion point by one.
+    const insertAt = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+    if (insertAt === sourceIndex) return;
+    const reordered = [...items];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(insertAt, 0, moved);
+    itemsRef.current = reordered;
+    setFavoriteItems(reordered);
+  }, []);
+
+  const cleanupDrag = useCallback(() => {
+    const handlers = dragHandlersRef.current;
+    const ghost = dragRef.current?.ghost ?? null;
+    dragRef.current = null;
+    dragHandlersRef.current = null;
+    setDragOver(false);
+    listRef.current
+      ?.querySelectorAll('.is-dragging')
+      .forEach((el) => el.classList.remove('is-dragging'));
+    if (handlers) {
+      document.removeEventListener('mousemove', handlers.move);
+      document.removeEventListener('mouseup', handlers.up);
+    }
+    ghost?.remove();
+  }, []);
+
+  /** Begins a pointer-based favorites drag from a leaf inside the favorites list. */
+  const startDrag = useCallback(
+    (event: React.MouseEvent) => {
+      const target = event.target as HTMLElement;
+      const leaf = target.closest<HTMLElement>('.ih-sidebar-favorites [data-menu-id]');
+      if (!leaf) return;
+      const menuId = leaf.dataset['menuId'];
+      if (!menuId) return;
+
+      // Prevent text selection and any native drag/OS behavior.
+      event.preventDefault();
+
+      // Translucent clone (drag ghost) that follows the pointer — hidden until
+      // the drag actually starts (past the 5px threshold).
+      const ghost = leaf.cloneNode(true) as HTMLElement;
+      ghost.classList.add('ih-drag-ghost');
+      ghost.classList.remove('is-dragging');
+      ghost.style.display = 'none';
+      document.body.appendChild(ghost);
+
+      dragRef.current = {
+        menuId,
+        startY: event.clientY,
+        moved: false,
+        lastTargetIndex: null,
+        ghost,
+      };
+      leaf.classList.add('is-dragging');
+
+      const move = (e: MouseEvent) => {
+        const state = dragRef.current;
+        if (!state) return;
+        // Ignore tiny jitters so a plain click isn't treated as a drag.
+        if (!state.moved && Math.abs(e.clientY - state.startY) < 5) return;
+        state.moved = true;
+        if (state.ghost) {
+          state.ghost.style.display = '';
+          state.ghost.style.left = `${e.clientX}px`;
+          state.ghost.style.top = `${e.clientY}px`;
+        }
+        const targetIndex = computeDropIndex(e.clientY);
+        if (targetIndex !== state.lastTargetIndex) {
+          reorderLive(state.menuId, targetIndex);
+          state.lastTargetIndex = targetIndex;
+        }
+        setDragOver(true);
+      };
+
+      const up = () => {
+        const state = dragRef.current;
+        if (!state) return;
+        if (state.moved) {
+          const reordered = itemsRef.current;
+          cleanupDrag();
+          const menuIds = reordered
+            .map((menu) => getMenuKey(menu))
+            .filter((key): key is string | number => key !== null && key !== undefined);
+          onFavoriteReorder?.({ menuIds });
+        } else {
+          cleanupDrag();
+        }
+      };
+
+      dragHandlersRef.current = { move, up };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
     },
-    [dragIndex, favorites, onFavoriteReorder]
+    [computeDropIndex, reorderLive, cleanupDrag, onFavoriteReorder],
   );
 
-  const onFavoriteItemClick = useCallback(
-    (e: React.MouseEvent<HTMLAnchorElement>, menu: IMenu) => {
-      if (!isPlainLeftClick(e)) return;
-      const route = getMenuRoute(menu);
-      if (!route) return;
-      if (isNewTabMenu(menu)) return;
-      if (isReloadMenu(menu)) return;
-      if (isSpaMenu(menu)) {
-        e.preventDefault();
-        navigate(route);
-      }
-    },
-    [navigate]
-  );
-
-  if (!favorites?.length) {
-    return null;
-  }
+  if (!group) return null;
 
   return (
-    <div className="ih-sidebar-favorites">
-      <div className="ih-sidebar-favorites__header">
-        <small className="text-subtle">Favorites</small>
-      </div>
-      <ul>
-        {favorites.map((favorite, index) => {
-          const route = getMenuRoute(favorite);
-          const key = getMenuKey(favorite);
-          return (
-            <li
-              key={String(key)}
-              draggable
-              onDragStart={() => setDragIndex(index)}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => {
-                e.preventDefault();
-                onDrop(index);
-              }}>
-              <a
-                href={route ?? '#'}
-                target={isNewTabMenu(favorite) ? '_blank' : '_self'}
-                rel={isNewTabMenu(favorite) ? 'noopener noreferrer' : undefined}
-                onClick={(e) => onFavoriteItemClick(e, favorite)}>
-                <i className={resolveMenuIcon(favorite.icon)}></i>
-                <span>{getMenuLabel(favorite)}</span>
-              </a>
-
-              {onFavoriteToggle ? (
-                <span
-                  className="ih-menu-favorite"
-                  role="button"
-                  tabIndex={-1}
-                  aria-label="Remove from favorites"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (key === null) return;
-                    onFavoriteToggle({ id: key, isFavorite: false });
-                  }}>
-                  <i className="fas fa-star"></i>
-                </span>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <ul
+      ref={listRef}
+      className={['ih-sidebar-favorites', dragOver ? 'is-drag-over' : '']
+        .filter(Boolean)
+        .join(' ')}
+      onMouseDown={startDrag}>
+      <IHMenu
+        menu={group}
+        filter=""
+        selectedMenuId={null}
+        onToggleGroup={() => setFavoritesCollapsed((c) => !c)}
+        collapsible={collapsible}
+        favoriteMode
+        onFavoriteToggle={onFavoriteToggle}
+        dragEnabled
+        showApplication
+      />
+    </ul>
   );
 }
 
@@ -883,8 +1059,10 @@ export function IHSidebar(props: IHSidebarProps) {
       list.map((m) => {
         if (getMenuKey(m) === menuId) {
           if (m.visibility !== 'no-child') {
-            const nextVis =
-              m.visibility === 'expanded' ? 'collapsed' : 'expanded';
+            // Treat unset visibility as expanded so a default (flat) group
+            // collapses on the first click (matches Angular).
+            const isExpanded = m.visibility !== 'collapsed';
+            const nextVis = isExpanded ? 'collapsed' : 'expanded';
 
             return { ...m, visibility: nextVis };
           }
@@ -906,7 +1084,7 @@ export function IHSidebar(props: IHSidebarProps) {
         {user ? (
           <>
             <div className="user-image">
-              <img alt="User Image" src={user.userImagePath} />
+              <IAvatar alt={user.fullName} size={28} src={user.userImagePath} />
             </div>
 
             <div className="user-info">
@@ -931,6 +1109,7 @@ export function IHSidebar(props: IHSidebarProps) {
         {favoriteMode ? (
           <FavoritesSection
             favorites={favorites}
+            collapsible={collapsible}
             onFavoriteToggle={onFavoriteToggle}
             onFavoriteReorder={onFavoriteReorder}
           />

@@ -78,10 +78,13 @@ export async function rawRequest<T = unknown>(
 ): Promise<T> {
   const method = options.method ?? 'GET';
   const url = buildUrl(baseUrl, path, options.params);
+  const hasBody = options.body !== undefined;
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
+    // Only send Content-Type when there is a body — a JSON Content-Type with an
+    // EMPTY body is rejected by the backend (e.g. DELETE /me/menus/{id}/favorite).
+    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers ?? {}),
   };
 
@@ -190,7 +193,7 @@ export type IApiClient = {
  * Consumer-facing HTTP client for @insight/ui apps — the React analog of the
  * Angular `IApiService` + `authInterceptor` combo:
  * - CSRF header + `credentials: 'include'`
- * - `Authorization: <accessToken>` attached (except /auth/csrf + /auth/refresh)
+ * - `Authorization: Bearer <accessToken>` attached (except /auth/csrf + /auth/refresh)
  * - on 401: single silent refresh (single-flight) + one retry
  * - on refresh failure: `clearSession()` + `onSessionExpired()` + redirect to signin
  * - RFC 9457 Problem Details error enrichment
@@ -207,11 +210,11 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
     const baseUrl = options.apiUrl ?? base;
     const skipAuth = isAuthSkipUrl(path);
 
-    // Attach Authorization unless explicitly skipped.
+    // Attach Authorization unless explicitly skipped (Bearer prefix required).
     const headers = { ...(options.headers ?? {}) };
     const token = deps.session.getAccessToken();
     if (!skipAuth && token && !headers['Authorization']) {
-      headers['Authorization'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     try {
@@ -229,15 +232,15 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
 
       // 401 → try a silent refresh once, then retry the original request.
       const newToken = await deps.session.refreshToken().catch((refreshErr: unknown) => {
-        deps.session.clearSession();
+        // Surface the error to the wired `onSessionExpired` handler instead of
+        // hard-redirecting here — the consumer app decides the UX (e.g. show a
+        // "session expired — login again" dialog before navigating to signin).
         deps.onSessionExpired?.(refreshErr as IApiError);
-        const targetPath = window.location.pathname + window.location.search;
-        window.location.href = buildExternalSigninUrlFor(deps.config, targetPath);
         throw refreshErr;
       });
 
       if (!headers['Authorization']) {
-        headers['Authorization'] = newToken;
+        headers['Authorization'] = `Bearer ${newToken}`;
       }
       return rawRequest<T>(baseUrl, path, deps.csrf, { method, body, headers, params: options.params });
     }
@@ -255,11 +258,4 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
     delete: <T>(path: string, options?: IApiOptions) =>
       doRequest<T>(path, 'DELETE', options?.body, options),
   };
-}
-
-/** Small helper to avoid a circular import with `build-signin-redirect-url.ts`. */
-function buildExternalSigninUrlFor(config: IInsightAuthConfig, targetPath: string): string {
-  const callbackPath = config.callbackPath ?? '/auth/callback';
-  const callbackUrl = `${window.location.origin}${callbackPath}?returnUrl=${encodeURIComponent(targetPath)}`;
-  return `${config.signinUrl}?returnUrl=${encodeURIComponent(callbackUrl)}`;
 }

@@ -2,7 +2,7 @@ import { useEffect, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
-import { useInsightAuth, useSession } from '../auth/insight-auth-context';
+import { useInsightAuth, useSession, useSessionExpired } from '../auth/insight-auth-context';
 
 /**
  * Cross-domain auth guard for @insight/ui consumer apps — the React analog of
@@ -21,6 +21,10 @@ import { useInsightAuth, useSession } from '../auth/insight-auth-context';
  * While the session is `initializing` (cold-start restore), a loading
  * placeholder is rendered instead of a redirect — this prevents a flash /
  * redirect loop during the restore.
+ *
+ * When the session-expired overlay is visible (session revoked/replaced by a
+ * new login elsewhere), the guard does NOT redirect — the overlay's
+ * "Login again" action owns the redirect to signin.
  */
 export function RequireAuth({
   children,
@@ -32,18 +36,27 @@ export function RequireAuth({
 }) {
   const session = useSession();
   const { config } = useInsightAuth();
+  const sessionExpired = useSessionExpired();
   const location = useLocation();
 
   const isInitializing = session.initializing;
   const isAuth = session.isAuth();
+  const overlayVisible = sessionExpired.visible;
 
   useEffect(() => {
+    if (overlayVisible) return; // session-expired dialog is showing — it owns the redirect
     if (isInitializing) return;
     if (isAuth) return;
 
     const targetPath = location.pathname + location.search;
     window.location.href = buildExternalSigninUrl(config, targetPath);
-  }, [isInitializing, isAuth, config, location.pathname, location.search]);
+  }, [overlayVisible, isInitializing, isAuth, config, location.pathname, location.search]);
+
+  if (overlayVisible) {
+    // The dialog covers the UI; render children behind it (interaction is
+    // blocked by the overlay). "Login again" redirects to signin.
+    return <>{children}</>;
+  }
 
   if (isInitializing) {
     return (loading as ReactNode) ?? <div className="ih-route-loading">Loading session...</div>;
