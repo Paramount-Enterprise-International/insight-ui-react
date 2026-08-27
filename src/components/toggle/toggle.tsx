@@ -1,5 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 
+export type IToggleSize = 'xs' | 'sm' | 'md' | 'lg';
+
 /* =========================================
  * Types
  * ========================================= */
@@ -15,6 +17,9 @@ export type IToggleProps = Omit<
   defaultChecked?: boolean;
 
   disabled?: boolean;
+
+  /** Toggle size. Uses the matching Insight design token. */
+  size?: IToggleSize;
 
   /** Label content: <IToggle>Label</IToggle> */
   children?: React.ReactNode;
@@ -80,6 +85,7 @@ export function IToggle(props: IToggleProps) {
     checked,
     defaultChecked = false,
     disabled = false,
+    size = 'md',
     labelPosition = 'right',
     onChange,
     onTouched,
@@ -107,6 +113,17 @@ export function IToggle(props: IToggleProps) {
       .filter(Boolean)
       .join(' ');
   }, [currentChecked, disabled, labelPosition, className]);
+
+  const sizeStyle = useMemo<React.CSSProperties | undefined>(() => {
+    if (size === 'md') return undefined;
+
+    const designToken = `var(--i-size-${size})`;
+    return {
+      '--i-toggle-height': designToken,
+      '--i-toggle-width': `calc(${designToken} * 1.75)`,
+      '--i-toggle-handle-size': `calc(${designToken} - (var(--i-toggle-padding) * 2))`,
+    } as React.CSSProperties;
+  }, [size]);
 
   const emitChange = useCallback(
     (next: boolean) => {
@@ -154,6 +171,8 @@ export function IToggle(props: IToggleProps) {
     <i-toggle
       {...rest}
       class={hostClassName}
+      size={size}
+      style={sizeStyle}
       onClick={handleHostClick}>
       <input
         ref={inputRef}

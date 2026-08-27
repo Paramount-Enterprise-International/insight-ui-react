@@ -10,7 +10,11 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { IButton, type IButtonVariant } from '../button/button';
+import {
+  IButton,
+  type IButtonType,
+  type IButtonVariant,
+} from '../button/button';
 import { IIcon, type IIconName } from '../icon/icon';
 import { IFCTextArea } from '../textarea/textarea';
 
@@ -314,21 +318,33 @@ export type IDialogActionType = IDialogActionTypes['type'];
 
 export type IDialogActionCancel = {
   type: 'cancel';
+  disabled?: boolean;
+  loading?: boolean;
+  buttonType?: IButtonType;
   className?: string;
 };
 
 export type IDialogActionSave = {
   type: 'save';
+  disabled?: boolean;
+  loading?: boolean;
+  buttonType?: IButtonType;
   className?: string;
 };
 
 export type IDialogActionOK = {
   type: 'ok';
+  disabled?: boolean;
+  loading?: boolean;
+  buttonType?: IButtonType;
   className?: string;
 };
 
 export type IDialogActionConfirm = {
   type: 'confirm';
+  disabled?: boolean;
+  loading?: boolean;
+  buttonType?: IButtonType;
   className?: string;
 };
 
@@ -337,6 +353,9 @@ export type IDialogActionCustom = {
   label: string;
   variant?: IButtonVariant;
   icon?: IIconName | string;
+  disabled?: boolean;
+  loading?: boolean;
+  buttonType?: IButtonType;
   className?: string;
   onClick?: () => void;
 };
@@ -430,8 +449,11 @@ export function IDialog(props: IDialogProps) {
             ? customActions.map((a, idx) => (
                 <IButton
                   key={idx}
+                  disabled={a.disabled}
                   icon={a.icon as any}
                   className={a.className}
+                  loading={a.loading}
+                  type={a.buttonType ?? 'button'}
                   variant={a.variant || 'primary'}
                   onClick={() => {
                     // Angular: only emits onCustomAction (does NOT call a.onClick)
@@ -448,9 +470,12 @@ export function IDialog(props: IDialogProps) {
 
           {okAction ? (
             <IButton
+              disabled={okAction.disabled}
               icon="check"
               variant="primary"
               className={okAction.className}
+              loading={okAction.loading}
+              type={okAction.buttonType ?? 'button'}
               onClick={() => onOk?.()}>
               OK
             </IButton>
@@ -458,9 +483,12 @@ export function IDialog(props: IDialogProps) {
 
           {confirmAction ? (
             <IButton
+              disabled={confirmAction.disabled}
               icon="save"
               variant="primary"
               className={confirmAction.className}
+              loading={confirmAction.loading}
+              type={confirmAction.buttonType ?? 'button'}
               onClick={() => onConfirm?.()}>
               Confirm
             </IButton>
@@ -468,9 +496,12 @@ export function IDialog(props: IDialogProps) {
 
           {saveAction ? (
             <IButton
+              disabled={saveAction.disabled}
               icon="save"
               variant="primary"
               className={saveAction.className}
+              loading={saveAction.loading}
+              type={saveAction.buttonType ?? 'button'}
               onClick={() => onSave?.()}>
               Save
             </IButton>
@@ -478,9 +509,12 @@ export function IDialog(props: IDialogProps) {
 
           {cancelAction ? (
             <IButton
+              disabled={cancelAction.disabled}
               icon="cancel"
               variant="danger"
               className={cancelAction.className}
+              loading={cancelAction.loading}
+              type={cancelAction.buttonType ?? 'button'}
               onClick={(e) => {
                 e.preventDefault();
                 dialogRef?.close(undefined); // Angular closes with undefined

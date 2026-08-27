@@ -398,19 +398,6 @@ export function IDatepicker(props: IDatepickerProps) {
     setYears((prev) => ensureYearRange(base.getFullYear(), prev));
   }, [value, format]);
 
-  // ngOnInit parity: default visual today (only if truly blank on mount)
-  useEffect(() => {
-    if (!modelValue && !displayText) {
-      const today = startOfDay(new Date());
-      setModelValue(today);
-      setDisplayText(formatDateLocal(today, format));
-      setViewYear(today.getFullYear());
-      setViewMonth(today.getMonth());
-      setYears((p) => ensureYearRange(today.getFullYear(), p));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   useEffect(() => {
     if (!viewYear) return;
     setYears((p) => ensureYearRange(viewYear, p));
@@ -1000,11 +987,17 @@ export function IDatepicker(props: IDatepickerProps) {
         hostRef.current = el as any;
         refreshInnerInputRef();
       }}
-      class={className}
+      class={[
+        className,
+        disabled ? 'i-datepicker--disabled' : null,
+      ]
+        .filter(Boolean)
+        .join(' ')}
       onInput={onHostInputCapture as any}
       {...rest}>
       <IInput
         append={appendAddon}
+        autoDefault={false}
         mask={dateMask}
         invalid={invalid}
         placeholder={placeholder}
