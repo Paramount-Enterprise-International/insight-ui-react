@@ -26,9 +26,11 @@
 
 import React, {
   Children,
+  forwardRef,
   type ReactElement,
   type ReactNode,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
@@ -117,6 +119,22 @@ export type IGridPaginatorInput =
       pageSizeOptions?: number[];
     };
 
+export type IGridServerPage = {
+  pageIndex: number;
+  pageSize: number;
+};
+
+/**
+ * Delegates individual grid operations to a server. Operations without a
+ * callback retain their current client-side behavior, enabling mixed modes.
+ */
+export type IGridServerSideConfig = {
+  totalRowCount: number;
+  onSortChange?: (sort: ISortState[]) => void;
+  onPageChange?: (page: IGridServerPage) => void;
+  onFilterChange?: (filter: string) => void;
+};
+
 /**
  * NOTE:
  * No generic here because it's unused (fixes "T is declared but never read")
@@ -134,6 +152,7 @@ export type IGridDataSourceConfig = {
    * - { pageIndex?, pageSize?, pageSizeOptions? } → enabled + overridden
    */
   paginator?: IGridPaginatorInput;
+  serverSide?: IGridServerSideConfig;
 };
 
 type Listener<T> = (rows: T[]) => void;
@@ -161,11 +180,18 @@ export class IGridDataSource<T = unknown> {
   private _pageSize = 10;
   private _pageSizeOptions = [10, 50, 100];
 
+  private _serverSide: IGridServerSideConfig | null = null;
+  private _serverSortListeners = new Set<(sort: ISortState[]) => void>();
+  private _serverPageListeners = new Set<(page: IGridServerPage) => void>();
+  private _serverFilterListeners = new Set<(filter: string) => void>();
+
   // listeners
   private _listeners = new Set<Listener<T>>();
 
   constructor(initialData: T[] = [], config: IGridDataSourceConfig = {}) {
     this._rawData = initialData || [];
+
+    this._serverSide = config.serverSide ?? null;
 
     // filter (uses setter to normalize)
     if (config.filter !== null) {
@@ -225,6 +251,14 @@ export class IGridDataSource<T = unknown> {
     if (!this._paginatorEnabled || !state) return;
     this._pageIndex = state.pageIndex;
     this._pageSize = state.pageSize;
+
+    if (this._delegatesPage()) {
+      const page = { pageIndex: state.pageIndex, pageSize: state.pageSize };
+      this._serverSide?.onPageChange?.(page);
+      this._serverPageListeners.forEach((listener) => listener(page));
+      return;
+    }
+
     this._emit();
   }
 
@@ -245,7 +279,48 @@ export class IGridDataSource<T = unknown> {
   }
 
   get length(): number {
+    if (this._delegatesPage()) return this._serverSide?.totalRowCount ?? 0;
     return this._rawData.length;
+  }
+
+  get serverSide(): IGridServerSideConfig | null {
+    return this._serverSide;
+  }
+
+  set serverSide(config: IGridServerSideConfig | null) {
+    this._serverSide = config;
+  }
+
+  /** Push a server response and synchronize its pagination metadata. */
+  setData(
+    rows: T[],
+    options?: { total?: number; pageIndex?: number; pageSize?: number }
+  ): void {
+    this._rawData = rows || [];
+
+    if (this._serverSide) {
+      if (options?.total !== undefined) this._serverSide.totalRowCount = options.total;
+      if (options?.pageIndex !== undefined) this._pageIndex = options.pageIndex;
+      if (options?.pageSize !== undefined) this._pageSize = options.pageSize;
+    }
+
+    this._emit();
+  }
+
+  /** Subscribe to grid-level server delegation outputs. */
+  subscribeServerSort(listener: (sort: ISortState[]) => void): () => void {
+    this._serverSortListeners.add(listener);
+    return () => this._serverSortListeners.delete(listener);
+  }
+
+  subscribeServerPage(listener: (page: IGridServerPage) => void): () => void {
+    this._serverPageListeners.add(listener);
+    return () => this._serverPageListeners.delete(listener);
+  }
+
+  subscribeServerFilter(listener: (filter: string) => void): () => void {
+    this._serverFilterListeners.add(listener);
+    return () => this._serverFilterListeners.delete(listener);
   }
 
   /* ---------------- filter / sort ---------------- */
@@ -260,7 +335,7 @@ export class IGridDataSource<T = unknown> {
       this._filter = '';
       this._recursive = false;
       this._childrenKey = 'children';
-      this._emit();
+      this._notifyOrEmitFilter('');
       return;
     }
 
@@ -268,7 +343,7 @@ export class IGridDataSource<T = unknown> {
       this._filter = value.toLowerCase().trim();
       this._recursive = false;
       this._childrenKey = 'children';
-      this._emit();
+      this._notifyOrEmitFilter(this._filter);
       return;
     }
 
@@ -277,7 +352,7 @@ export class IGridDataSource<T = unknown> {
     this._recursive = value.recursive === true;
     this._childrenKey = (value.key || 'children').trim() || 'children';
 
-    this._emit();
+    this._notifyOrEmitFilter(this._filter);
   }
 
   /**
@@ -294,6 +369,12 @@ export class IGridDataSource<T = unknown> {
 
   set sort(value: ISortConfig) {
     this._sort = this._normalizeSort(value);
+    if (this._delegatesSort()) {
+      const sort = this._sort ?? [];
+      this._serverSide?.onSortChange?.(sort);
+      this._serverSortListeners.forEach((listener) => listener(sort));
+      return;
+    }
     this._emit();
   }
 
@@ -343,6 +424,27 @@ export class IGridDataSource<T = unknown> {
 
   disconnect(): void {
     this._listeners.clear();
+  }
+
+  private _delegatesSort(): boolean {
+    return !!this._serverSide?.onSortChange || this._serverSortListeners.size > 0;
+  }
+
+  private _delegatesPage(): boolean {
+    return !!this._serverSide?.onPageChange || this._serverPageListeners.size > 0;
+  }
+
+  private _delegatesFilter(): boolean {
+    return !!this._serverSide?.onFilterChange || this._serverFilterListeners.size > 0;
+  }
+
+  private _notifyOrEmitFilter(filter: string): void {
+    if (this._delegatesFilter()) {
+      this._serverSide?.onFilterChange?.(filter);
+      this._serverFilterListeners.forEach((listener) => listener(filter));
+      return;
+    }
+    this._emit();
   }
 
   /* ---------------- internals ---------------- */
@@ -413,7 +515,7 @@ export class IGridDataSource<T = unknown> {
     let data: T[] = [...this._rawData];
 
     // FILTER
-    if (this._filter) {
+    if (this._filter && !this._delegatesFilter()) {
       const f = this._filter;
 
       if (this._recursive) {
@@ -424,7 +526,7 @@ export class IGridDataSource<T = unknown> {
     }
 
     // SORT (multi-column)
-    if (this._sort && this._sort.length > 0) {
+    if (this._sort && this._sort.length > 0 && !this._delegatesSort()) {
       const sorts = [...this._sort];
 
       data.sort((a: T, b: T) => {
@@ -446,7 +548,7 @@ export class IGridDataSource<T = unknown> {
     }
 
     // PAGINATION
-    if (this._paginatorEnabled) {
+    if (this._paginatorEnabled && !this._delegatesPage()) {
       const start = this._pageIndex * this._pageSize;
       data = data.slice(start, start + this._pageSize);
     }
@@ -546,11 +648,12 @@ export function IGridExpandableRow<T>(_props: IGridExpandableRowProps<T>) {
 function IndeterminateCheckbox(props: {
   checked: boolean;
   indeterminate: boolean;
+  disabled?: boolean;
   onChange: (checked: boolean) => void;
   className?: string;
   stopRowClick?: boolean;
 }) {
-  const { checked, indeterminate, onChange, className, stopRowClick } = props;
+  const { checked, indeterminate, disabled = false, onChange, className, stopRowClick } = props;
   const ref = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -563,6 +666,7 @@ function IndeterminateCheckbox(props: {
       className={className}
       type="checkbox"
       checked={checked}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.checked)}
       onClick={(e) => {
         if (stopRowClick) e.stopPropagation();
@@ -629,6 +733,8 @@ export type IGridProps<T> = {
   dataSource: IGridDataSource<T> | T[];
 
   selectionMode?: IGridSelectionMode;
+  selectionRowHidden?: (row: T) => boolean;
+  selectionRowDisabled?: (row: T) => boolean;
 
   tree?: string | boolean | null;
   treeIndent?: number;
@@ -636,12 +742,18 @@ export type IGridProps<T> = {
   treeInitialExpandLevel?: number | null;
 
   showNumberColumn?: boolean;
+  sortMode?: 'multi' | 'single';
 
   onSelectionChange?: (e: IGridSelectionChange<T>) => void;
   onRowClick?: (row: T) => void;
 
   onRowExpandChange?: (e: { row: T; expanded: boolean }) => void;
   onExpandedRowsChange?: (rows: T[]) => void;
+
+  /** Alternative React callback wiring for server-side data sources. */
+  onServerSortChange?: (sort: ISortState[]) => void;
+  onServerPageChange?: (page: IGridServerPage) => void;
+  onServerFilterChange?: (filter: string) => void;
 
   children?: ReactNode;
 
@@ -655,14 +767,25 @@ export type IGridProps<T> = {
   trackBy?: (row: T, index: number) => string | number;
 };
 
+export type IGridHandle<T> = {
+  /** Replaces selection atomically, ignoring rows that are unavailable or ineligible. */
+  setSelected: (rows: T[]) => void;
+  getSelected: () => T[];
+};
+
 /* ----------------------------------------------------
  * GRID
  * ---------------------------------------------------- */
 
-export function IGrid<T>(props: IGridProps<T>) {
+function IGridInner<T>(
+  props: IGridProps<T>,
+  ref: React.ForwardedRef<IGridHandle<T>>
+) {
   const {
     dataSource,
     selectionMode = false,
+    selectionRowHidden,
+    selectionRowDisabled,
 
     tree = null,
     treeIndent = 16,
@@ -670,12 +793,16 @@ export function IGrid<T>(props: IGridProps<T>) {
     treeInitialExpandLevel = null,
 
     showNumberColumn = true,
+    sortMode = 'multi',
 
     onSelectionChange,
     onRowClick,
 
     onRowExpandChange,
     onExpandedRowsChange,
+    onServerSortChange,
+    onServerPageChange,
+    onServerFilterChange,
 
     children,
     highlightSearch,
@@ -712,6 +839,29 @@ export function IGrid<T>(props: IGridProps<T>) {
 
   const [selectionSet, setSelectionSet] = useState<Set<T>>(new Set());
   const [expandedSet, setExpandedSet] = useState<Set<T>>(new Set());
+  const selectionSetRef = useRef(selectionSet);
+
+  useEffect(() => {
+    selectionSetRef.current = selectionSet;
+  }, [selectionSet]);
+
+  useEffect(() => {
+    if (!(dataSource instanceof IGridDataSource)) return undefined;
+
+    const unsubscribers = [
+      onServerSortChange
+        ? dataSource.subscribeServerSort(onServerSortChange)
+        : undefined,
+      onServerPageChange
+        ? dataSource.subscribeServerPage(onServerPageChange)
+        : undefined,
+      onServerFilterChange
+        ? dataSource.subscribeServerFilter(onServerFilterChange)
+        : undefined,
+    ].filter((unsubscribe): unsubscribe is () => void => !!unsubscribe);
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
+  }, [dataSource, onServerFilterChange, onServerPageChange, onServerSortChange]);
 
   // tree meta
   const treeMetaRef = useRef<
@@ -898,7 +1048,7 @@ export function IGrid<T>(props: IGridProps<T>) {
   const getColumnFlex = (col: IGridColumnLike<T>): string => {
     const px = getColumnWidth(col);
     if (px !== null) return `0 0 ${px}px`;
-    return '1 1 0';
+    return '1 1 0%';
   };
 
   const setColumnWidth = (col: IGridColumnLike<T>, width: number) => {
@@ -1160,6 +1310,25 @@ export function IGrid<T>(props: IGridProps<T>) {
     return Array.isArray(value) ? (value as T[]) : [];
   };
 
+  const isSelectionHidden = (row: T): boolean => !!selectionRowHidden?.(row);
+  const isSelectionDisabled = (row: T): boolean => !!selectionRowDisabled?.(row);
+  const isRowSelectable = (row: T): boolean =>
+    !isSelectionHidden(row) && !isSelectionDisabled(row);
+
+  const getAllDataRows = (): T[] => {
+    if (!treeEnabled) {
+      return dataSource instanceof IGridDataSource ? dataSource.data : dataSource;
+    }
+
+    const rows: T[] = [];
+    const visit = (row: T) => {
+      rows.push(row);
+      getTreeChildren(row).forEach(visit);
+    };
+    treeRootsRef.current.forEach(visit);
+    return rows;
+  };
+
   const getTreeDescendants = (row: T): T[] => {
     const out: T[] = [];
     const visit = (r: T) => {
@@ -1181,7 +1350,7 @@ export function IGrid<T>(props: IGridProps<T>) {
   const getRowChecked = (row: T): boolean => {
     if (!treeEnabled) return selectionSet.has(row);
 
-    const descendants = getTreeDescendants(row);
+    const descendants = getTreeDescendants(row).filter(isRowSelectable);
     if (!descendants.length) return selectionSet.has(row);
 
     const total = descendants.length;
@@ -1201,7 +1370,7 @@ export function IGrid<T>(props: IGridProps<T>) {
   const getRowIndeterminate = (row: T): boolean => {
     if (!treeEnabled) return false;
 
-    const descendants = getTreeDescendants(row);
+    const descendants = getTreeDescendants(row).filter(isRowSelectable);
     if (!descendants.length) return false;
 
     const total = descendants.length;
@@ -1217,12 +1386,15 @@ export function IGrid<T>(props: IGridProps<T>) {
 
   const allVisibleSelected = (): boolean => {
     if (!selectionMode || !renderedData.length) return false;
-    return renderedData.every((r) => getRowChecked(r));
+    const selectable = renderedData.filter(isRowSelectable);
+    return selectable.length > 0 && selectable.every((r) => getRowChecked(r));
   };
 
   const someVisibleSelected = (): boolean => {
     if (!selectionMode || !renderedData.length) return false;
-    const anySelected = renderedData.some(
+    const selectable = renderedData.filter(isRowSelectable);
+    if (!selectable.length) return false;
+    const anySelected = selectable.some(
       (r) => getRowChecked(r) || getRowIndeterminate(r)
     );
     return anySelected && !allVisibleSelected();
@@ -1239,7 +1411,7 @@ export function IGrid<T>(props: IGridProps<T>) {
     let current = treeMetaRef.current.get(row)?.parent ?? null;
 
     while (current) {
-      const descendants = getTreeDescendants(current);
+      const descendants = getTreeDescendants(current).filter(isRowSelectable);
       if (!descendants.length) {
         current = treeMetaRef.current.get(current)?.parent ?? null;
         continue;
@@ -1263,13 +1435,14 @@ export function IGrid<T>(props: IGridProps<T>) {
       return;
     }
 
-    const all = [row, ...getTreeDescendants(row)];
+    const all = [row, ...getTreeDescendants(row)].filter(isRowSelectable);
     if (selected) all.forEach((r) => next.add(r));
     else all.forEach((r) => next.delete(r));
   };
 
   const onRowSelectionToggle = (row: T) => {
     if (!selectionMode) return;
+    if (!isRowSelectable(row)) return;
 
     if (selectionMode === 'single') {
       const next = new Set<T>();
@@ -1307,6 +1480,9 @@ export function IGrid<T>(props: IGridProps<T>) {
   const onToggleAllVisible = () => {
     if (selectionMode !== 'multiple') return;
 
+    const selectableRows = renderedData.filter(isRowSelectable);
+    if (!selectableRows.length) return;
+
     const shouldSelect = !allVisibleSelected();
 
     if (treeEnabled) {
@@ -1324,12 +1500,42 @@ export function IGrid<T>(props: IGridProps<T>) {
     }
 
     const next = new Set(selectionSet);
-    if (shouldSelect) renderedData.forEach((r) => next.add(r));
-    else renderedData.forEach((r) => next.delete(r));
+    if (shouldSelect) selectableRows.forEach((r) => next.add(r));
+    else selectableRows.forEach((r) => next.delete(r));
 
     setSelectionSet(next);
     emitSelectionChange(null, next);
   };
+
+  const setSelected = (rows: T[]) => {
+    if (!selectionMode) return;
+
+    const validRows = new Set(getAllDataRows());
+    const next = new Set(rows.filter((row) => validRows.has(row) && isRowSelectable(row)));
+
+    if (selectionMode === 'single' && next.size > 1) {
+      const first = next.values().next().value as T;
+      next.clear();
+      next.add(first);
+    }
+
+    const unchanged =
+      next.size === selectionSet.size &&
+      Array.from(next).every((row) => selectionSet.has(row));
+    if (unchanged) return;
+
+    selectionSetRef.current = next;
+    setSelectionSet(next);
+    emitSelectionChange(null, next);
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      setSelected,
+      getSelected: () => Array.from(selectionSetRef.current),
+    })
+  );
 
   /* ---------------- tree helpers ---------------- */
 
@@ -1510,6 +1716,14 @@ export function IGrid<T>(props: IGridProps<T>) {
     const next = prev.map((s) => ({ ...s })); // clone
     const idx = next.findIndex((s) => s.active === columnId);
 
+    if (sortMode === 'single') {
+      if (idx === -1) return [{ active: columnId, direction: 'asc' }];
+      if (next[idx].direction === 'asc') {
+        return [{ active: columnId, direction: 'desc' }];
+      }
+      return [];
+    }
+
     if (idx === -1) {
       // first click -> asc
       next.push({ active: columnId, direction: 'asc' });
@@ -1542,6 +1756,7 @@ export function IGrid<T>(props: IGridProps<T>) {
     const next = computeNextSort(sortStatesRef.current, columnId);
 
     // ✅ 1) update UI state
+    sortStatesRef.current = next;
     setSortStates(next);
 
     // ✅ 2) side effect OUTSIDE setState updater
@@ -1874,6 +2089,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                     <IndeterminateCheckbox
                       checked={allVisibleSelected()}
                       indeterminate={someVisibleSelected()}
+                      disabled={renderedData.filter(isRowSelectable).length === 0}
                       onChange={() => onToggleAllVisible()}
                       stopRowClick
                     />
@@ -1934,6 +2150,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                             className="i-grid-tree-header-checkbox"
                             checked={allVisibleSelected()}
                             indeterminate={someVisibleSelected()}
+                            disabled={renderedData.filter(isRowSelectable).length === 0}
                             onChange={() => onToggleAllVisible()}
                             stopRowClick
                           />
@@ -2020,7 +2237,10 @@ export function IGrid<T>(props: IGridProps<T>) {
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => onRowClick?.(row)}>
+                onClick={() => {
+                  onRowClick?.(row);
+                  if (treeEnabled && selectionMode) onRowSelectionToggle(row);
+                }}>
                 {/* Expand control (flat mode) */}
                 {!treeEnabled && hasExpandableRow ? (
                   <Cell
@@ -2058,10 +2278,13 @@ export function IGrid<T>(props: IGridProps<T>) {
                       addFrozenClass: false,
                       stickyLeft: getStickyLeftForSelectionColumn(),
                     }}>
-                    {selectionMode === 'multiple' ? (
+                    {isSelectionHidden(row) ? (
+                      <span aria-hidden="true" className="i-grid-selection-spacer" />
+                    ) : selectionMode === 'multiple' ? (
                       <IndeterminateCheckbox
                         checked={getRowChecked(row)}
                         indeterminate={getRowIndeterminate(row)}
+                        disabled={isSelectionDisabled(row)}
                         onChange={() => onRowSelectionToggle(row)}
                         stopRowClick
                       />
@@ -2069,6 +2292,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                       <input
                         type="radio"
                         checked={selectionSet.has(row)}
+                        disabled={isSelectionDisabled(row)}
                         name={`i-grid-radio-${idRef.current}`}
                         onChange={() => onRowSelectionToggle(row)}
                         onClick={(e) => e.stopPropagation()}
@@ -2107,7 +2331,6 @@ export function IGrid<T>(props: IGridProps<T>) {
                       <Cell
                         key={`c-${rowIndex}-${colIndex}`}
                         col={col}
-                        onClickStop
                         auto={!!col.isAuto}>
                         <span className="i-grid-tree-inline">
                           <span
@@ -2130,11 +2353,17 @@ export function IGrid<T>(props: IGridProps<T>) {
                             <span className="i-grid-tree-spacer" />
                           )}
 
-                          {selectionMode === 'multiple' ? (
+                          {isSelectionHidden(row) ? (
+                            <span
+                              aria-hidden="true"
+                              className="i-grid-tree-selection-spacer"
+                            />
+                          ) : selectionMode === 'multiple' ? (
                             <IndeterminateCheckbox
                               className="i-grid-tree-checkbox"
                               checked={getRowChecked(row)}
                               indeterminate={getRowIndeterminate(row)}
+                              disabled={isSelectionDisabled(row)}
                               onChange={() => onRowSelectionToggle(row)}
                               stopRowClick
                             />
@@ -2143,6 +2372,7 @@ export function IGrid<T>(props: IGridProps<T>) {
                               className="i-grid-tree-radio"
                               type="radio"
                               checked={selectionSet.has(row)}
+                              disabled={isSelectionDisabled(row)}
                               name={`i-grid-radio-${idRef.current}`}
                               onChange={() => onRowSelectionToggle(row)}
                               onClick={(e) => e.stopPropagation()}
@@ -2231,3 +2461,7 @@ export function IGrid<T>(props: IGridProps<T>) {
     </i-grid>
   );
 }
+
+export const IGrid = forwardRef(IGridInner) as <T>(
+  props: IGridProps<T> & { ref?: React.ForwardedRef<IGridHandle<T>> }
+) => React.ReactElement;
