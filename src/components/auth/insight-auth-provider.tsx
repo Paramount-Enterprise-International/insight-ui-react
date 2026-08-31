@@ -64,9 +64,15 @@ export function InsightAuthProvider({
       csrf,
       session,
       onSessionExpired: (err) => {
+        if (resolved.onUnauthorized) {
+          // Consumer-provided handler takes full control of the unauthorized flow.
+          resolved.onUnauthorized(err);
+          return;
+        }
         const errorCode = extractProblemDetailsErrorCode(err);
         const reason = toSessionExpiredReason(errorCode);
-        if (reason) {
+        const showDialog = (resolved.unauthorizedHandling ?? 'dialog') === 'dialog';
+        if (reason && showDialog) {
           // Session revoked/replaced/expired → show the session-expired
           // overlay (the consumer renders it); the user's "Login again" action
           // then redirects to signin. Matches the shared SSO UX.
@@ -77,7 +83,8 @@ export function InsightAuthProvider({
             (err as { detail?: string })?.detail,
           );
         } else {
-          // Not a session-expiry error — clear and go to signin directly.
+          // Not a session-expiry error (or unauthorizedHandling='redirect') —
+          // clear and go to signin directly.
           session.clearSession();
           const targetPath = window.location.pathname + window.location.search;
           window.location.href = buildExternalSigninUrl(resolved, targetPath);

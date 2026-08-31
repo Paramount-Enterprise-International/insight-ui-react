@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { IAvatar } from '../avatar';
+import { useSession, useUserMenuStore } from '../auth/insight-auth-context';
 import { IHostApiProvider, useHostApiOptional } from './host-api.context';
 import type {
   IBreadcrumbItem,
@@ -164,10 +165,20 @@ export function IHContent(props: {
   onSidebarToggled?: (visible: boolean) => void;
   defaultSidebarVisible?: boolean;
   onNavigate?: (url: string) => void;
+  /** Current boot loading state — consumed by parent apps to render their own loader. */
+  loading?: boolean;
+  /** Invoked whenever the boot loading state changes. */
+  onLoadingChange?: (loading: boolean) => void;
 }) {
   const nav = useNavigate();
 
-  const { onNavigate } = props;
+  const { onNavigate, loading, onLoadingChange } = props;
+
+  // Surface loading-state changes (transitions only; the initial value is
+  // provided via the `loading` prop).
+  useEffect(() => {
+    onLoadingChange?.(loading ?? false);
+  }, [loading, onLoadingChange]);
 
   // Asset base from the consumer app's Vite `base` (e.g. "/-/atlas-react/"),
   // so bundled assets like /svgs/* resolve under the app's base path instead
@@ -289,14 +300,20 @@ export function IHContent(props: {
  * - Uses hostApi.navigate when available (MF host mode),
  *   otherwise IHContent falls back to react-router navigate()
  */
-export function IHContentLayout() {
+export function IHContentLayout(props: {
+  onLoadingChange?: (loading: boolean) => void;
+}) {
   const ui = useHostUi();
   const hostApi = useHostApiOptional();
+  const session = useSession();
+  const store = useUserMenuStore();
 
   return (
     <IHContent
       title={ui.title}
       breadcrumbs={ui.breadcrumbs}
+      loading={session.initializing || store.initializing}
+      onLoadingChange={props.onLoadingChange}
       onNavigate={hostApi ? (url) => void hostApi.navigate(url) : undefined}
     />
   );
