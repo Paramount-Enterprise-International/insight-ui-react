@@ -48,6 +48,18 @@ export type IInsightAuthConfig = {
   tokenLifespan: IInsightTokenLifespan;
   /** CSRF token max age in seconds (backend cookie maxAge minus a safety buffer). */
   csrfTokenMaxAgeSeconds: number;
+  /**
+   * This app's registered application API key (iam-user-api `application.api_key`).
+   * Attached as an `Api-Key` header on every request. Empty/undefined disables it.
+   */
+  apiKey?: string;
+  /**
+   * This app's application id (iam-user-api `application.id`). Used as the
+   * default `applicationId` when loading the effective menus, so each app only
+   * sees its own application's navigation. Empty/undefined keeps the legacy
+   * all-applications behaviour.
+   */
+  appId?: string;
 };
 
 /**
@@ -85,6 +97,8 @@ export function getDefaultInsightAuthConfig(): IInsightAuthConfig {
     cookieDomain: window.location.hostname,
     tokenLifespan: { ...defaultEnvironment.tokenLifespan },
     csrfTokenMaxAgeSeconds: defaultEnvironment.csrfTokenMaxAgeSeconds,
+    apiKey: defaultEnvironment.apiKey,
+    appId: defaultEnvironment.appId,
   };
 }
 

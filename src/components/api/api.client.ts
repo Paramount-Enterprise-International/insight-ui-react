@@ -160,6 +160,12 @@ export type IApiOptions = {
   /** Request body (only used by DELETE requests that send a payload). */
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined> | URLSearchParams;
+  /**
+   * Skip attaching the `Authorization: Bearer` header for this call. The flag
+   * also disables the 401 refresh-retry for this request (a bearer-less call
+   * cannot be fixed by refreshing the token).
+   */
+  skipBearer?: boolean;
 };
 
 export type IApiClientDeps = {
@@ -175,7 +181,9 @@ export type IApiClientDeps = {
   onSessionExpired?: (error: IApiError) => void;
 };
 
-// Endpoints that must never receive a Bearer header (would be circular / not yet authenticated).
+// Endpoints that must never receive a Bearer header (would be circular / not
+// yet authenticated) — CSRF + silent refresh are called before a token exists.
+// Per-request opt-out is available via `IApiOptions.skipBearer`.
 const AUTH_SKIP_URLS = ['/auth/csrf', '/auth/refresh'];
 
 const isAuthSkipUrl = (url: string): boolean =>
@@ -208,10 +216,14 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
     options: IApiOptions = {},
   ): Promise<T> {
     const baseUrl = options.apiUrl ?? base;
-    const skipAuth = isAuthSkipUrl(path);
+    const skipAuth = isAuthSkipUrl(path) || options.skipBearer === true;
 
-    // Attach Authorization unless explicitly skipped (Bearer prefix required).
+    // Attach the application API key (when configured) + Authorization unless
+    // explicitly skipped via `skipBearer` or an auth-skip URL.
     const headers = { ...(options.headers ?? {}) };
+    if (deps.config.apiKey) {
+      headers['Api-Key'] = deps.config.apiKey;
+    }
     const token = deps.session.getAccessToken();
     if (!skipAuth && token && !headers['Authorization']) {
       headers['Authorization'] = `Bearer ${token}`;

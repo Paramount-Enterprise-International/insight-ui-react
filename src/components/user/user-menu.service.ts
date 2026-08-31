@@ -33,18 +33,20 @@ export class UserMenuService {
 
   /** GET `{api.user}/me/menus` — effective navigation tree for one or all active applications. */
   async getEffectiveMenus<T = IInsightMenuNode[]>(applicationId?: string): Promise<T> {
+    const id = applicationId ?? this.config.appId;
     const response = await this.api.get<IInsightUserMenuEnvelope<T>>('/me/menus', {
       apiUrl: this.baseUrl,
-      params: applicationId ? { applicationId } : undefined,
+      params: id ? { applicationId: id } : undefined,
     });
     return response.data;
   }
 
   /** GET `{api.user}/me/menus/favorites` — effective favorite items, sorted by name. */
   async getFavorites<T = IInsightFavoriteMenuItem[]>(applicationId?: string): Promise<T> {
+    const id = applicationId ?? this.config.appId;
     const response = await this.api.get<IInsightUserMenuEnvelope<T>>('/me/menus/favorites', {
       apiUrl: this.baseUrl,
-      params: applicationId ? { applicationId } : undefined,
+      params: id ? { applicationId: id } : undefined,
     });
     return response.data;
   }
