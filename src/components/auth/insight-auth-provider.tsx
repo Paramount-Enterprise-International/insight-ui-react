@@ -9,6 +9,7 @@ import { buildExternalSigninUrl } from './build-signin-redirect-url';
 import { InsightAuthContext, type IInsightAuthContext } from './insight-auth-context';
 import { CsrfService } from '../csrf/csrf.service';
 import { createApiClient } from '../api/api.client';
+import { normalizeApiError } from '../api/api-error';
 import { SessionService } from '../session/session.service';
 import {
   extractProblemDetailsErrorCode,
@@ -71,6 +72,7 @@ export function InsightAuthProvider({
         }
         const errorCode = extractProblemDetailsErrorCode(err);
         const reason = toSessionExpiredReason(errorCode);
+        const apiError = normalizeApiError(err);
         const showDialog = (resolved.unauthorizedHandling ?? 'dialog') === 'dialog';
         if (reason && showDialog) {
           // Session revoked/replaced/expired → show the session-expired
@@ -80,7 +82,9 @@ export function InsightAuthProvider({
             window.location.pathname,
             reason,
             errorCode,
-            (err as { detail?: string })?.detail,
+            apiError.detail,
+            apiError.message,
+            apiError,
           );
         } else {
           // Not a session-expiry error (or unauthorizedHandling='redirect') —
