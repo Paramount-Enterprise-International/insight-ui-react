@@ -37,4 +37,8 @@ export type IEnvironment = {
   mfaChallengeSessionTimeoutSeconds?: number;
   /** Origins iam-web's signin page trusts for post-login redirects (informational). */
   allowedReturnOrigins: string[];
+  /** This app's registered application API key (attached as `Api-Key` header). */
+  apiKey?: string;
+  /** This app's application id (used as the default filter when loading effective menus). */
+  appId?: string;
 };
