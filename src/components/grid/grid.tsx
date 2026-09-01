@@ -2237,10 +2237,7 @@ function IGridInner<T>(
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => {
-                  onRowClick?.(row);
-                  if (treeEnabled && selectionMode) onRowSelectionToggle(row);
-                }}>
+                onClick={() => onRowClick?.(row)}>
                 {/* Expand control (flat mode) */}
                 {!treeEnabled && hasExpandableRow ? (
                   <Cell
