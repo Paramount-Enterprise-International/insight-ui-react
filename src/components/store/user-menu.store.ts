@@ -1,3 +1,4 @@
+import { resolveApiErrorDisplayMessage } from '../api/api-error';
 import { getMenuKey, type IMenu, type IUser } from '../host';
 import type { SessionService } from '../session/session.service';
 import {
@@ -292,8 +293,8 @@ export class UserMenuStore {
   }
 
   private recordError(source: string, err: unknown): void {
-    const detail = (err as { detail?: string })?.detail ?? 'Failed to load';
-    this.loadErrorValue = `${source}: ${detail}`;
+    const message = resolveApiErrorDisplayMessage(err, 'Failed to load');
+    this.loadErrorValue = `${source}: ${message}`;
     console.error(`[@insight/ui][STORE] load "${source}" failed`, err);
     this.notify();
   }

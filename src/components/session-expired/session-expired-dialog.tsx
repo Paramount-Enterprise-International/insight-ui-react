@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react';
 
 import { useInsightAuth, useSessionExpired } from '../auth/insight-auth-context';
 import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
+import { resolveApiErrorDisplayMessage } from '../api/api-error';
 import type { SessionExpiredReason } from './session-expired.service';
 
 const TITLES: Record<SessionExpiredReason | 'default', string> = {
@@ -94,6 +95,15 @@ export function SessionExpiredDialog() {
   }
 
   const reason = sessionExpired.reason;
+  const message = resolveApiErrorDisplayMessage(
+    sessionExpired.apiError ?? {
+      errorCode: sessionExpired.errorCode ?? undefined,
+      message: sessionExpired.message ?? undefined,
+      detail: sessionExpired.detail ?? undefined,
+    },
+    MESSAGES[reason ?? 'default'],
+    config.errorCatalogResolver,
+  );
   const iconClass =
     reason === 'SESSION_REPLACED'
       ? 'fa-solid fa-right-from-bracket'
@@ -112,7 +122,7 @@ export function SessionExpiredDialog() {
           <i className={iconClass}></i>
         </div>
         <h1 style={titleStyle}>{TITLES[reason ?? 'default']}</h1>
-        <p style={messageStyle}>{MESSAGES[reason ?? 'default']}</p>
+        <p style={messageStyle}>{message}</p>
         <button type="button" style={actionStyle} onClick={onConfirm}>
           Log in again
         </button>

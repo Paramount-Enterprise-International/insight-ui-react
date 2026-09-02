@@ -223,7 +223,30 @@ describe('IGrid selection eligibility', () => {
     });
   });
 
-  it('toggles a selectable tree row when its row body is clicked', () => {
+  it('emits onRowClick without toggling selection when a tree row body is clicked', () => {
+    type TreeRow = { id: number; name: string; children?: TreeRow[] };
+    const root: TreeRow = { id: 1, name: 'Root' };
+    const onRowClick = vi.fn();
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <IGrid
+        dataSource={[root]}
+        selectionMode="multiple"
+        showNumberColumn={false}
+        tree
+        onRowClick={onRowClick}
+        onSelectionChange={onSelectionChange}>
+        <IGridColumn fieldName="name" title="Name" />
+      </IGrid>
+    );
+
+    fireEvent.click(container.querySelector('i-grid-row')!);
+
+    expect(onRowClick).toHaveBeenCalledWith(root);
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
+  it('toggles a selectable tree row through its checkbox', () => {
     type TreeRow = { id: number; name: string; children?: TreeRow[] };
     const root: TreeRow = { id: 1, name: 'Root' };
     const onSelectionChange = vi.fn();
@@ -238,7 +261,7 @@ describe('IGrid selection eligibility', () => {
       </IGrid>
     );
 
-    fireEvent.click(container.querySelector('i-grid-row')!);
+    fireEvent.click(container.querySelector('.i-grid-tree-checkbox')!);
 
     expect(onSelectionChange).toHaveBeenCalledWith({
       selected: [root],
