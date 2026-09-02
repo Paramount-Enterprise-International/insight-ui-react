@@ -1,4 +1,8 @@
-import { resolveApiErrorDisplayMessage } from '../api/api-error';
+import {
+  normalizeApiError,
+  resolveApiErrorDisplayMessage,
+  type INormalizedApiError,
+} from '../api/api-error';
 import { getMenuKey, type IMenu, type IUser } from '../host';
 import type { SessionService } from '../session/session.service';
 import {
@@ -29,6 +33,10 @@ import {
  *
  * Observable store: `subscribe` + `getVersion` for `useSyncExternalStore`.
  */
+export type UserMenuLoadSource = 'user' | 'menus' | 'favorites';
+
+export type UserMenuLoadErrors = Record<UserMenuLoadSource, INormalizedApiError | null>;
+
 export class UserMenuStore {
   private readonly currentUserService: CurrentUserService;
   private readonly menuService: UserMenuService;
@@ -41,6 +49,9 @@ export class UserMenuStore {
   private rolesValue: string[] = [];
   private initializingValue = false;
   private loadErrorValue: string | null = null;
+  private loadErrorsValue: UserMenuLoadErrors = { user: null, menus: null, favorites: null };
+  /** Identity (`sub`) whose data is currently cached — invalidated on user switch. */
+  private loadedUserSub: string | null = null;
 
   private version = 0;
   private listeners = new Set<() => void>();
@@ -104,6 +115,11 @@ export class UserMenuStore {
     return this.loadErrorValue;
   }
 
+  /** Normalized per-branch errors from the last `load()` — mirrors the service API error contract. */
+  get loadErrors(): UserMenuLoadErrors {
+    return { ...this.loadErrorsValue };
+  }
+
   /**
    * Post-login default landing (when no return URL is present).
    * Order: (1) first navigable favorite route, (2) first navigable menu route.
@@ -129,8 +145,18 @@ export class UserMenuStore {
       await this.waitUntilSettled();
       return;
     }
+    // Invalidate cross-session cache: if this load is for a different user
+    // (`sub`) than the one whose data is cached, drop the stale data first so
+    // a failed refetch (e.g. USER_APPLICATION_MAPPING_NOT_FOUND) never leaks
+    // the previous user's menus/favorites into the sidebar.
+    const sessionSub = this.session.getUser()?.sub ?? null;
+    if (sessionSub !== this.loadedUserSub) {
+      this.clearData();
+      this.loadedUserSub = sessionSub;
+    }
     this.initializingValue = true;
     this.loadErrorValue = null;
+    this.loadErrorsValue = { user: null, menus: null, favorites: null };
     this.rolesValue = this.session.getRoles();
     this.notify();
 
@@ -142,6 +168,16 @@ export class UserMenuStore {
 
     this.initializingValue = false;
     this.notify();
+  }
+
+  /**
+   * Clears every cached user/menu/favorite value and error state, and forgets
+   * the identity they belonged to. Call on logout / session clear so no stale
+   * data survives into the next login.
+   */
+  reset(): void {
+    this.clearData();
+    this.loadedUserSub = null;
   }
 
   private async waitUntilSettled(): Promise<void> {
@@ -292,8 +328,20 @@ export class UserMenuStore {
     await this.loadFavorites();
   }
 
-  private recordError(source: string, err: unknown): void {
+  private clearData(): void {
+    this.currentUserValue = null;
+    this.rawCurrentUserValue = null;
+    this.menusValue = [];
+    this.favoritesValue = [];
+    this.rolesValue = [];
+    this.loadErrorValue = null;
+    this.loadErrorsValue = { user: null, menus: null, favorites: null };
+    this.notify();
+  }
+
+  private recordError(source: UserMenuLoadSource, err: unknown): void {
     const message = resolveApiErrorDisplayMessage(err, 'Failed to load');
+    this.loadErrorsValue = { ...this.loadErrorsValue, [source]: normalizeApiError(err) };
     this.loadErrorValue = `${source}: ${message}`;
     console.error(`[@insight/ui][STORE] load "${source}" failed`, err);
     this.notify();
