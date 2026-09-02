@@ -1,3 +1,5 @@
+import type { INormalizedApiError } from '../api/api-error';
+
 export type SessionExpiredReason = 'TOKEN_EXPIRED' | 'SESSION_REVOKED' | 'SESSION_REPLACED';
 
 /** Minimal structural shape for error-code extraction (normalized or raw errors). */
@@ -79,6 +81,8 @@ export class SessionExpiredService {
   private reasonValue: SessionExpiredReason | undefined = undefined;
   private errorCodeValue: string | null = null;
   private detailValue: string | null = null;
+  private messageValue: string | null = null;
+  private apiErrorValue: INormalizedApiError | null = null;
 
   private version = 0;
   private listeners = new Set<() => void>();
@@ -117,16 +121,28 @@ export class SessionExpiredService {
     return this.detailValue;
   }
 
+  get message(): string | null {
+    return this.messageValue;
+  }
+
+  get apiError(): INormalizedApiError | null {
+    return this.apiErrorValue;
+  }
+
   show(
     returnUrl: string,
     reason?: SessionExpiredReason,
     errorCode?: string | null,
     detail?: string | null,
+    message?: string | null,
+    apiError?: INormalizedApiError | null,
   ): void {
     this.returnUrlValue = returnUrl || '/';
     this.reasonValue = reason;
     this.errorCodeValue = errorCode ?? null;
     this.detailValue = detail ?? null;
+    this.messageValue = message ?? null;
+    this.apiErrorValue = apiError ?? null;
     this.visibleValue = true;
     this.notify();
   }

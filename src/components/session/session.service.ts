@@ -8,6 +8,7 @@ import {
   SessionExpiredService,
   toSessionExpiredReason,
 } from '../session-expired/session-expired.service';
+import { normalizeApiError } from '../api/api-error';
 
 /** User derived from Keycloak JWT claims. */
 export type ISessionUser = {
@@ -422,11 +423,14 @@ export class SessionService {
         const wasActive = sessionStorage.getItem('iam.session.active') === 'true';
         const isAuthPage = /^\/auth(\/|$)|^\/signin$|^\/logout$/i.test(pathname);
         if (wasActive && !isAuthPage && isSessionExpiredError(err)) {
+          const apiError = normalizeApiError(err);
           this.sessionExpiredService.show(
             pathname,
             code ?? 'TOKEN_EXPIRED',
             rawErrorCode,
-            (err as { detail?: string })?.detail,
+            apiError.detail,
+            apiError.message,
+            apiError,
           );
         }
         if (isSessionExpiredError(err)) {

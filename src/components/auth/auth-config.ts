@@ -1,4 +1,5 @@
 import { environment as defaultEnvironment } from '../environments/environment';
+import type { ApiErrorCatalogResolver } from '../api/api-error';
 
 /**
  * Token lifespan configuration (seconds). Mirrors the platform-wide AC used by
@@ -73,6 +74,8 @@ export type IInsightAuthConfig = {
    * runs when this is provided.
    */
   onUnauthorized?: (error: unknown) => void;
+  /** Optional synchronous catalog lookup used only when the backend message is absent. */
+  errorCatalogResolver?: ApiErrorCatalogResolver;
 };
 
 /**

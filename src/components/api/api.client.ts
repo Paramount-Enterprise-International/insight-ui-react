@@ -1,18 +1,12 @@
 import type { IInsightAuthConfig } from '../auth/auth-config';
 import type { CsrfService } from '../csrf/csrf.service';
+import { normalizeApiError, type INormalizedApiError } from './api-error';
 
 /* =========================================================
  * Error normalization (RFC 9457 Problem Details)
  * ========================================================= */
 
-export type IApiError = {
-  status?: number;
-  message?: string;
-  detail?: string;
-  retryAfter?: number;
-  errorCode?: string;
-  [key: string]: unknown;
-};
+export type IApiError = INormalizedApiError;
 
 /**
  * Normalize a failed fetch response into a consistent shape:
@@ -29,27 +23,24 @@ export async function normalizeFetchError(
 
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     const b = body as Record<string, unknown>;
-    return {
+    return normalizeApiError({
+      error: {
       ...b,
-      status: typeof b.status === 'number' ? b.status : res.status,
-      message: typeof b.message === 'string' ? b.message : res.statusText,
-      detail:
-        (typeof b.detail === 'string' ? b.detail : undefined) ??
-        (typeof b.title === 'string' ? b.title : undefined) ??
-        res.statusText ??
-        'An error occurred',
       retryAfter:
         (typeof b.retryAfter === 'number' ? b.retryAfter : undefined) ??
         (Number.isFinite(parsedHeader) ? parsedHeader : undefined),
-    };
+      },
+      status: res.status,
+      message: res.statusText,
+    });
   }
 
-  return {
+  return normalizeApiError({
     status: res.status,
     message: res.statusText,
     detail: res.statusText || 'An error occurred',
     retryAfter: Number.isFinite(parsedHeader) ? parsedHeader : undefined,
-  };
+  });
 }
 
 export type IRequestOptions = {
@@ -102,7 +93,7 @@ export async function rawRequest<T = unknown>(
       body: options.body !== undefined && method !== 'GET' ? JSON.stringify(options.body) : undefined,
     });
   } catch (err) {
-    throw { status: 0, detail: 'Network error', ...(err as object) };
+    throw normalizeApiError({ status: 0, message: 'Network error', detail: 'Network error', ...(err as object) });
   }
 
   const text = await res.text().catch(() => '');
