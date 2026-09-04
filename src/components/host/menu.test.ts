@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildFavoritePathMap,
+  collectMenuChain,
   getMenuChildren,
   getMenuKey,
   getMenuLabel,
@@ -61,5 +63,111 @@ describe('host/menu helpers', () => {
     expect(group.child?.[0]?.menuName).toBe('Sales Report');
     expect(group.child?.[0]?.id).toBe('m1'); // modern extras preserved
     expect(group.child?.[0]?.level).toBe(1);
+  });
+});
+
+const DEEP_TREE: IMenu[] = [
+  {
+    id: 'group-atlas',
+    name: 'Atlas React',
+    type: 'group',
+    children: [
+      {
+        id: 'group-guide',
+        name: 'React Guide',
+        type: 'group',
+        children: [
+          {
+            id: 'leaf-button',
+            name: 'Button',
+            type: 'item',
+            route: '/docs/react',
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: 'group-docs',
+    name: 'docs',
+    type: 'group',
+    children: [
+      {
+        id: 'group-sso',
+        name: 'sso',
+        type: 'group',
+        children: [
+          {
+            id: 'leaf-index',
+            name: 'index',
+            type: 'item',
+            route: '/docs/sso/index',
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
+  { id: 'root-leaf', name: 'Root Favorite', type: 'item', route: '/root', children: [] },
+];
+
+describe('collectMenuChain', () => {
+  it('returns the root-to-leaf chain for a nested node', () => {
+    const tree = normalizeMenuTree(DEEP_TREE);
+
+    const chain = collectMenuChain(tree, 'leaf-index');
+
+    expect(chain?.map((node) => node.name ?? node.menuName)).toEqual(['docs', 'sso', 'index']);
+  });
+
+  it('returns null when the node is not in the tree', () => {
+    const tree = normalizeMenuTree(DEEP_TREE);
+
+    expect(collectMenuChain(tree, 'missing')).toBeNull();
+  });
+});
+
+describe('buildFavoritePathMap', () => {
+  it('joins ancestor group names (excluding the leaf) with "> "', () => {
+    const tree = normalizeMenuTree(DEEP_TREE);
+
+    const map = buildFavoritePathMap(tree, [
+      { id: 'leaf-index', name: 'index', type: 'item' } as IMenu,
+    ]);
+
+    expect(map['leaf-index']).toBe('docs > sso');
+  });
+
+  it('resolves the chain from the tree, not from the item route', () => {
+    const tree = normalizeMenuTree(DEEP_TREE);
+
+    const map = buildFavoritePathMap(tree, [
+      {
+        id: 'leaf-button',
+        name: 'Button',
+        type: 'item',
+        route: '/docs/react',
+        application: { id: 'app', code: 'ATLAS', name: 'Atlas' },
+      } as IMenu,
+    ]);
+
+    expect(map['leaf-button']).toBe('Atlas React > React Guide');
+  });
+
+  it('maps a missing favorite to undefined', () => {
+    const tree = normalizeMenuTree(DEEP_TREE);
+
+    const map = buildFavoritePathMap(tree, [{ id: 'missing', name: 'Ghost', type: 'item' } as IMenu]);
+
+    expect(map['missing']).toBeUndefined();
+  });
+
+  it('maps a root-level favorite to an empty string', () => {
+    const tree = normalizeMenuTree(DEEP_TREE);
+
+    const map = buildFavoritePathMap(tree, [{ id: 'root-leaf', name: 'Root Favorite', type: 'item' } as IMenu]);
+
+    expect(map['root-leaf']).toBe('');
   });
 });
