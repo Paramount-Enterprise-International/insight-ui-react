@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { IAvatar } from '../avatar';
+import { useOptionalIConfirm } from '../dialog/dialog';
 import { useSession, useUserMenuStore } from '../auth/insight-auth-context';
 import { IHostApiProvider, useHostApiOptional } from './host-api.context';
 import type {
@@ -23,6 +24,7 @@ import type {
 } from './host-api.types';
 import { IHostUiProvider, useHostUi } from './host-ui.context';
 import {
+  buildFavoritePathMap,
   getMenuChildren,
   getMenuKey,
   getMenuLabel,
@@ -399,6 +401,8 @@ type IHMenuProps = {
   depth?: number;
   /** Render the owning application name next to leaf labels (used by the Favorites section). */
   showApplication?: boolean;
+  /** Per-menu-key ancestor path labels (sidebar Favorites section) - rendered instead of the application name when present. */
+  pathByKey?: Record<string, string | undefined>;
   onFavoriteToggle?: (event: IMenuFavoriteToggleEvent) => void;
 };
 
@@ -413,6 +417,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     dragEnabled,
     depth = 0,
     showApplication = false,
+    pathByKey,
     onFavoriteToggle,
   } = props;
   const navigate = useNavigate();
@@ -432,6 +437,17 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   const isReload = isReloadMenu(menu);
   const isSpa = isSpaMenu(menu);
   const menuIsFavorite = !!menu?.isFavorite;
+  const confirm = useOptionalIConfirm();
+
+  // Favorite subtitle: the ancestor path from the sidebar menu tree when one is
+  // known, otherwise the owning application name (fallback).
+  const favoriteSubtitle = useMemo(() => {
+    if (!showApplication) return null;
+    const keyString = menuKey != null ? String(menuKey) : null;
+    const stored = keyString && pathByKey ? pathByKey[keyString] : undefined;
+    return stored !== undefined ? stored : menu?.application?.name ?? null;
+  }, [showApplication, menuKey, pathByKey, menu]);
+
   const iconClass = useMemo(() => resolveMenuIcon(menu?.icon), [menu]);
 
   // Expanded unless collapsible + explicitly collapsed (flat menus never collapse).
@@ -501,13 +517,26 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   );
 
   const onToggleFavorite = useCallback(
-    (e: React.MouseEvent) => {
+    async (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       if (menuKey === null) return;
-      onFavoriteToggle?.({ id: menuKey, isFavorite: !menuIsFavorite });
+
+      const toFavorite = !menuIsFavorite;
+
+      // Unfavorite is destructive - confirm before removing the pin.
+      if (!toFavorite && confirm) {
+        const menuName = getMenuLabel(menu) || 'this menu';
+        const ok = await confirm.warning(
+          'Remove from Favorites',
+          `Remove <strong>${menuName}</strong> from your favorites?`
+        );
+        if (!ok) return;
+      }
+
+      onFavoriteToggle?.({ id: menuKey, isFavorite: toFavorite });
     },
-    [menuKey, menuIsFavorite, onFavoriteToggle]
+    [menuKey, menuIsFavorite, onFavoriteToggle, confirm, menu]
   );
 
   if (!menu) return null;
@@ -532,8 +561,8 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
         <h6>
           <Highlighted text={menuLabel} term={filter} />
         </h6>
-        {showApplication && menu.application?.name ? (
-          <small className="ih-menu-application">{menu.application.name}</small>
+        {favoriteSubtitle ? (
+          <small className="ih-menu-application">{favoriteSubtitle}</small>
         ) : null}
       </span>
 
@@ -664,6 +693,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
                 collapsible={collapsible}
                 favoriteMode={favoriteMode}
                 dragEnabled={dragEnabled}
+                pathByKey={pathByKey}
                 showApplication={showApplication}
                 depth={depth + 1}
                 onFavoriteToggle={onFavoriteToggle}
@@ -682,11 +712,14 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
 function FavoritesSection({
   favorites,
+  menus,
   collapsible,
   onFavoriteToggle,
   onFavoriteReorder,
 }: {
   favorites: IMenu[];
+  /** Full (unfiltered) normalized menu tree - source for favorite ancestor paths. */
+  menus: IMenu[];
   collapsible?: boolean;
   onFavoriteToggle?: (event: IMenuFavoriteToggleEvent) => void;
   onFavoriteReorder?: (event: IMenuFavoriteReorderEvent) => void;
@@ -715,6 +748,12 @@ function FavoritesSection({
     itemsRef.current = favorites;
     setFavoriteItems(favorites);
   }, [favorites]);
+
+  // Ancestor path labels per favorite key, resolved from the full menu tree.
+  const pathByKey = useMemo(
+    () => buildFavoritePathMap(menus, favoriteItems),
+    [menus, favoriteItems]
+  );
 
   // Synthetic "Favorites" group rendered through the standard IHMenu so it gets
   // the exact same styling as the Angular sidebar (ih-menu classes + star).
@@ -864,6 +903,7 @@ function FavoritesSection({
         onToggleGroup={() => setFavoritesCollapsed((c) => !c)}
         collapsible={collapsible}
         favoriteMode
+        pathByKey={pathByKey}
         onFavoriteToggle={onFavoriteToggle}
         dragEnabled
         showApplication
@@ -1126,6 +1166,7 @@ export function IHSidebar(props: IHSidebarProps) {
         {favoriteMode ? (
           <FavoritesSection
             favorites={favorites}
+            menus={menuTree}
             collapsible={collapsible}
             onFavoriteToggle={onFavoriteToggle}
             onFavoriteReorder={onFavoriteReorder}

@@ -700,6 +700,50 @@ export function useIConfirm() {
   );
 }
 
+/**
+ * Optional variant of `useIConfirm`: returns null when no dialog host is
+ * mounted, so a component can render and fall back to its non-confirm path
+ * when used outside an `<IDialogProvider>`.
+ */
+export function useOptionalIConfirm() {
+  const dialog = useContext(IDialogContext);
+
+  const show = useCallback(
+    async (data: IConfirmData): Promise<unknown> => {
+      if (!dialog) return false;
+      const ref = dialog.open<IConfirmData, any>(IConfirm, {
+        width: '',
+        data,
+      });
+      return ref.afterClosed();
+    },
+    [dialog]
+  );
+
+  const api = useMemo(
+    () => ({
+      show,
+      information: async (title: string, description: string) => {
+        const r = await show({ title, description, type: 'information' });
+        return !!r;
+      },
+      success: async (title: string, description: string) => {
+        const r = await show({ title, description, type: 'success' });
+        return !!r;
+      },
+      warning: (title: string, description: string, reason?: boolean) =>
+        show({ title, description, type: 'warning', reason }),
+      danger: (title: string, description: string, reason?: boolean) =>
+        show({ title, description, type: 'danger', reason }),
+    }),
+    [show]
+  );
+
+  if (!dialog) return null;
+
+  return api;
+}
+
 /** DONT REMOVE THIS, ITS FOR REMINDER
   <IDialogProvider>
     <App />

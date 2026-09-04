@@ -38,6 +38,68 @@ export function hasMenuChildren(menu: IMenu | null | undefined): boolean {
   return getMenuChildren(menu).length > 0;
 }
 
+/**
+ * Walks a menu tree (roots -> children) looking for the node whose key matches
+ * `targetKey`, returning the chain from the matching root down to that node.
+ * Used to resolve a favorite leaf's ancestor path from the sidebar menu tree.
+ */
+export function collectMenuChain(
+  menus: IMenu[] | null | undefined,
+  targetKey: string
+): IMenu[] | null {
+  for (const menu of menus ?? []) {
+    if (String(getMenuKey(menu)) === targetKey) {
+      return [menu];
+    }
+
+    const childChain = collectMenuChain(getMenuChildren(menu), targetKey);
+
+    if (childChain) {
+      return [menu, ...childChain];
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Builds a per-menu-key ancestor path label map for the sidebar Favorites
+ * section. The label is the chain of ancestor NAMES (excluding the leaf itself)
+ * joined by "> ", resolved from the full menu tree - never from the item's
+ * route, since route and tree position can differ. A favorite that is not
+ * found in the tree maps to `undefined` (callers fall back to the app label);
+ * a root-level favorite (no ancestors) maps to an empty string.
+ */
+export function buildFavoritePathMap(
+  menus: IMenu[] | null | undefined,
+  favorites: IMenu[] | null | undefined
+): Record<string, string | undefined> {
+  const pathByKey: Record<string, string | undefined> = {};
+
+  for (const favorite of favorites ?? []) {
+    const key = getMenuKey(favorite);
+
+    if (key === null) continue;
+
+    const keyString = String(key);
+    const chain = collectMenuChain(menus, keyString);
+
+    if (!chain) {
+      pathByKey[keyString] = undefined;
+      continue;
+    }
+
+    const ancestorLabels = chain
+      .slice(0, -1)
+      .map((node) => getMenuLabel(node))
+      .filter((label) => label.length > 0);
+
+    pathByKey[keyString] = ancestorLabels.join(' > ');
+  }
+
+  return pathByKey;
+}
+
 /** True for a legacy top-level module header (menuTypeId === 2). */
 export function isModuleMenu(menu: IMenu | null | undefined): boolean {
   if (!menu) return false;
