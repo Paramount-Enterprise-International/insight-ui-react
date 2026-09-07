@@ -53,12 +53,17 @@ export function toIMenuFavorite(item: IInsightFavoriteMenuItem): IMenu {
   };
 }
 
-/** Recursively collects every non-null `menuCode` across a menu tree (deduplicated, order preserved). */
+/**
+ * Recursively collects the `menuCode` of every navigable leaf item across a
+ * menu tree (deduplicated, order preserved). Structural group/module nodes are
+ * excluded so a container code never counts as a grant - matching the flat
+ * granted-code list the legacy menu token carried (`HasMn` menu mode).
+ */
 export function collectMenuCodes(menus: IMenu[]): string[] {
   const codes = new Set<string>();
   const walk = (nodes: IMenu[]): void => {
     for (const node of nodes) {
-      if (node.menuCode) {
+      if (isLeafItem(node) && node.menuCode) {
         codes.add(node.menuCode);
       }
       walk(getMenuChildren(node));

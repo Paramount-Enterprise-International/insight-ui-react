@@ -1,10 +1,10 @@
-import type { IInsightAuthConfig } from '../auth/auth-config';
+import { getAuthEndpointUrl, type IInsightAuthConfig } from '../auth/auth-config';
 
 /**
  * CSRF token management — cookie-to-header pattern for @insight/ui consumer apps.
  * Mirrors `@insight/ui`'s Angular `ICsrfService`:
  *
- *   1. FE calls GET {api.identity}/auth/csrf.
+ *   1. FE calls GET {api.identity}{csrf endpoint} (default `/auth/csrf`).
  *   2. Backend returns `{ csrfToken }` in the JSON body AND sets a `csrf_token` cookie.
  *   3. FE stores the token in memory (JS cannot read cross-origin cookies).
  *   4. FE sends the token back as `X-CSRF-Token` header on mutating requests.
@@ -46,12 +46,12 @@ export class CsrfService {
   }
 
   /**
-   * Fetch a fresh CSRF token from `iam-identity-api` and store it in memory.
-   * On failure the error is propagated — a failed fetch must not be silently
-   * swallowed.
+   * Fetch a fresh CSRF token from the configured identity host and store it in
+   * memory. On failure the error is propagated - a failed fetch must not be
+   * silently swallowed.
    */
   async ensureToken(): Promise<void> {
-    const res = await fetch(`${this.config.api.identity}/auth/csrf`, {
+    const res = await fetch(getAuthEndpointUrl(this.config, 'csrf'), {
       method: 'GET',
       credentials: 'include',
       headers: { Accept: 'application/json' },

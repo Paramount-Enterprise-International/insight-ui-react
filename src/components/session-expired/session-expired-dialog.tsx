@@ -83,7 +83,7 @@ const actionStyle: CSSProperties = {
  * It reads its state from the shared `SessionExpiredService` (shown by the api
  * client's `onSessionExpired` when a refresh fails and `unauthorizedHandling`
  * is `'dialog'`) and, on "Log in again", performs a full-page redirect to
- * iam-web's signin via `buildExternalSigninUrl`, then hides itself. It cannot
+ * the configured signinUrl via `buildExternalSigninUrl`, then hides itself. It cannot
  * be dismissed by clicking the backdrop.
  */
 export function SessionExpiredDialog() {

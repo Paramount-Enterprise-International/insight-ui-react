@@ -1,4 +1,4 @@
-import type { IInsightAuthConfig } from '../auth/auth-config';
+import { getAuthEndpointPath, requireIdentityHost, type IInsightAuthConfig } from '../auth/auth-config';
 import type { CsrfService } from '../csrf/csrf.service';
 import { normalizeApiError, type INormalizedApiError } from './api-error';
 
@@ -172,14 +172,6 @@ export type IApiClientDeps = {
   onSessionExpired?: (error: IApiError) => void;
 };
 
-// Endpoints that must never receive a Bearer header (would be circular / not
-// yet authenticated) — CSRF + silent refresh are called before a token exists.
-// Per-request opt-out is available via `IApiOptions.skipBearer`.
-const AUTH_SKIP_URLS = ['/auth/csrf', '/auth/refresh'];
-
-const isAuthSkipUrl = (url: string): boolean =>
-  AUTH_SKIP_URLS.some((skip) => url.includes(skip));
-
 export type IApiClient = {
   get<T = unknown>(path: string, options?: IApiOptions): Promise<T>;
   post<T = unknown>(path: string, body?: unknown, options?: IApiOptions): Promise<T>;
@@ -192,13 +184,22 @@ export type IApiClient = {
  * Consumer-facing HTTP client for @insight/ui apps — the React analog of the
  * Angular `IApiService` + `authInterceptor` combo:
  * - CSRF header + `credentials: 'include'`
- * - `Authorization: Bearer <accessToken>` attached (except /auth/csrf + /auth/refresh)
+ * - `Authorization: Bearer <accessToken>` attached (except the configured csrf/refresh endpoints)
  * - on 401: single silent refresh (single-flight) + one retry
  * - on refresh failure: `clearSession()` + `onSessionExpired()` + redirect to signin
  * - RFC 9457 Problem Details error enrichment
  */
 export function createApiClient(deps: IApiClientDeps): IApiClient {
-  const base = deps.config.api.identity;
+  const base = requireIdentityHost(deps.config);
+
+  // Identity endpoints that must never receive a Bearer header (would be
+  // circular / not yet authenticated) - CSRF bootstrap + silent refresh run
+  // before a token exists. Paths come from the resolved config so a consumer
+  // backend exposing different routes still works.
+  const isAuthSkipPath = (path: string): boolean => {
+    const skipPaths = [getAuthEndpointPath(deps.config, 'csrf'), getAuthEndpointPath(deps.config, 'refresh')];
+    return skipPaths.some((p) => p && path.includes(p));
+  };
 
   async function doRequest<T>(
     path: string,
@@ -207,7 +208,7 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
     options: IApiOptions = {},
   ): Promise<T> {
     const baseUrl = options.apiUrl ?? base;
-    const skipAuth = isAuthSkipUrl(path) || options.skipBearer === true;
+    const skipAuth = isAuthSkipPath(path) || options.skipBearer === true;
 
     // Attach the application API key (when configured) + Authorization unless
     // explicitly skipped via `skipBearer` or an auth-skip URL.

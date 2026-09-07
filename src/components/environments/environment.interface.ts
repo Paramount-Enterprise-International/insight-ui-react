@@ -10,7 +10,7 @@ export type IEnvironment = {
   releaseStage: string;
   appName: string;
   version: string;
-  /** API base URLs grouped by backend service. `identity` + `user` are read by the library data layer. */
+  /** API base URLs grouped by backend service. `identity` is intentionally empty in the default env - the consumer app supplies its own BFF/identity host. */
   api: {
     identity: string;
     user: string;
@@ -18,12 +18,10 @@ export type IEnvironment = {
     application: string;
     [key: string]: string;
   };
-  /** Full URL of iam-web's signin page. */
+  /** Full URL of this app's sign-in page. Left empty by default - set by the consumer app. */
   signinUrl: string;
-  /** Full URL of iam-web's own auth callback (informational for consumers). */
+  /** Full URL of this app's own auth callback (informational, unused by the library). */
   authCallbackUrl: string;
-  /** Cookie domain used for the HttpOnly refresh token cookie (informational). */
-  cookieDomain: string;
   securityMode: boolean;
   tokenLifespan: {
     accessTokenSeconds: number;
@@ -35,7 +33,7 @@ export type IEnvironment = {
   csrfTokenMaxAgeSeconds: number;
   /** MFA challenge session timeout (seconds). */
   mfaChallengeSessionTimeoutSeconds?: number;
-  /** Origins iam-web's signin page trusts for post-login redirects (informational). */
+  /** Origins this app's sign-in page trusts for post-login redirects (informational). */
   allowedReturnOrigins: string[];
   /** This app's registered application API key (attached as `Api-Key` header). */
   apiKey?: string;
