@@ -14,17 +14,64 @@ export type IInsightTokenLifespan = {
 };
 
 /**
+ * Relative endpoint paths served by the configured identity host (`api.identity`).
+ *
+ * The library never assumes a specific identity provider's route layout. These
+ * default to the platform contract (`/auth/csrf`, `/auth/login`, ...) shared by
+ * iam-identity-api and the reference BFF (atlas-api); a consumer app can point
+ * them at whatever routes its own backend exposes. Paths are relative to
+ * `api.identity` - the host (including any mount prefix) comes from there.
+ *
+ * Only the auth-facade endpoints are configurable. MFA/password routes are used
+ * by identity-owner apps only (e.g. iam-web) and stay fixed.
+ */
+export type IInsightAuthEndpoints = {
+  /** CSRF bootstrap: `GET {identity}{csrf}` returns `{ csrfToken }` and sets the CSRF cookie. */
+  csrf?: string;
+  /** Mode-2 username/password login: `POST {identity}{login}` (identity-owner apps only). */
+  login?: string;
+  /** Silent session refresh via the HttpOnly session cookie: `POST {identity}{refresh}`. */
+  refresh?: string;
+  /** Server-side session clear (CSRF-protected): `POST {identity}{logout}`. */
+  logout?: string;
+  /** Cross-app handoff: `POST {identity}{exchange}` carrying the `at=` token in `Authorization`. */
+  exchange?: string;
+};
+
+/** Default relative endpoint paths for the configured identity host. */
+export function getDefaultInsightAuthEndpoints(): IInsightAuthEndpoints {
+  return {
+    csrf: '/auth/csrf',
+    login: '/auth/login',
+    refresh: '/auth/refresh',
+    logout: '/auth/logout',
+    exchange: '/auth/exchange',
+  };
+}
+
+/**
  * Configuration required by @insight/ui's shared SSO stack
  * (`InsightAuthProvider`, session/api/csrf services, `RequireAuth`,
  * `AuthCallback`). Mirrors the Angular `IInsightAuthConfig`.
  */
 export type IInsightAuthConfig = {
-  /** API base URLs grouped by backend service. `identity` (iam-identity-api) is required — all auth calls (csrf, refresh) go through it. */
+  /**
+   * API base URLs grouped by backend service. `identity` is REQUIRED and must
+   * point at this app's OWN auth backend (typically a same-origin BFF that
+   * proxies iam-identity and owns the session cookie, e.g. an atlas-api
+   * instance) - never at the shared identity provider. All session calls
+   * (csrf, refresh, logout) go through it. No default is baked in.
+   */
   api: {
     identity: string;
     [key: string]: string;
   };
-  /** Full URL of iam-web's signin page — consumer apps redirect here when unauthenticated. */
+  /**
+   * REQUIRED. Full URL of this app's sign-in page - the app redirects here
+   * when unauthenticated. For BFF-mode apps this is the app's own login route
+   * (e.g. `{identity}/auth/login`); for identity-owner apps (iam-web) it is
+   * their signin page. No default is baked in.
+   */
   signinUrl: string;
   /**
    * This app's own SSO callback route, e.g. `/auth/callback` (default).
@@ -41,14 +88,15 @@ export type IInsightAuthConfig = {
    * (starting with `/`) are always allowed regardless of this list.
    */
   allowedReturnOrigins: string[];
-  /**
-   * Cookie domain used by iam-identity-api for the HttpOnly refresh token
-   * cookie. Informational only — the frontend never reads or sets this cookie.
-   */
-  cookieDomain: string;
   tokenLifespan: IInsightTokenLifespan;
   /** CSRF token max age in seconds (backend cookie maxAge minus a safety buffer). */
   csrfTokenMaxAgeSeconds: number;
+  /**
+   * Optional relative endpoint paths served by the configured identity host
+   * (`api.identity`). Defaults match the platform / reference-BFF contract -
+   * override when this app's backend exposes different routes.
+   */
+  endpoints?: IInsightAuthEndpoints;
   /**
    * This app's registered application API key (iam-user-api `application.api_key`).
    * Attached as an `Api-Key` header on every request. Empty/undefined disables it.
@@ -81,8 +129,9 @@ export type IInsightAuthConfig = {
 /**
  * Overrides accepted by `resolveInsightAuthConfig()`. Every field is optional
  * and merged on top of `getDefaultInsightAuthConfig()` — including individual
- * `api.*` and `tokenLifespan.*` entries, so a consumer app can override just
- * `api.identity` (e.g. for staging/production) without restating the rest.
+ * `api.*`, `tokenLifespan.*` and `endpoints.*` entries, so a consumer app can
+ * override just `api.identity` (e.g. for staging/production) without restating
+ * the rest of the config.
  */
 export type IInsightAuthConfigOverrides = Partial<
   Omit<IInsightAuthConfig, 'api' | 'tokenLifespan'>
@@ -92,27 +141,27 @@ export type IInsightAuthConfigOverrides = Partial<
 };
 
 /**
- * Default `IInsightAuthConfig`, sourced from the library's default environment.
- * Consumer apps override any field via `resolveInsightAuthConfig({ ... })`.
- *
- * `allowedReturnOrigins` defaults to this app's own origin and `cookieDomain`
- * defaults to the current hostname — both computed at call time since they
- * depend on `window.location`.
+ * Default `IInsightAuthConfig`. `api.identity` and `signinUrl` are left EMPTY
+ * (no shared identity host is baked in) - a consumer app MUST supply its own
+ * values via `resolveInsightAuthConfig({ ... })` and is validated fail-fast
+ * when it forgets. All other fields default sensibly: `allowedReturnOrigins`
+ * to this app's own origin, `endpoints` to the platform/BFF path contract, and
+ * lifespan / csrf / api-key values from the library's default environment.
  */
 export function getDefaultInsightAuthConfig(): IInsightAuthConfig {
   return {
     api: {
-      identity: defaultEnvironment.api.identity,
+      identity: '', // no default identity host - the consumer app supplies its own
       user: defaultEnvironment.api.user,
       configuration: defaultEnvironment.api.configuration,
       application: defaultEnvironment.api.application,
     },
-    signinUrl: defaultEnvironment.signinUrl,
+    signinUrl: '', // no default sign-in page - the consumer app supplies its own
     callbackPath: '/auth/callback',
     allowedReturnOrigins: [window.location.origin],
-    cookieDomain: window.location.hostname,
     tokenLifespan: { ...defaultEnvironment.tokenLifespan },
     csrfTokenMaxAgeSeconds: defaultEnvironment.csrfTokenMaxAgeSeconds,
+    endpoints: { ...getDefaultInsightAuthEndpoints() },
     apiKey: defaultEnvironment.apiKey,
     appId: defaultEnvironment.appId,
     unauthorizedHandling: 'dialog',
@@ -120,8 +169,9 @@ export function getDefaultInsightAuthConfig(): IInsightAuthConfig {
 }
 
 /**
- * Merge overrides on top of defaults (deep for `api` + `tokenLifespan`) — the
- * React analog of Angular's `provideInsightAuth(config)` config resolution.
+ * Merge overrides on top of defaults (deep for `api`, `tokenLifespan` and
+ * `endpoints`) - the React analog of Angular's `provideInsightAuth(config)`
+ * config resolution.
  */
 export function resolveInsightAuthConfig(
   overrides?: IInsightAuthConfigOverrides,
@@ -132,5 +182,64 @@ export function resolveInsightAuthConfig(
     ...overrides,
     api: { ...defaults.api, ...overrides?.api } as IInsightAuthConfig['api'],
     tokenLifespan: { ...defaults.tokenLifespan, ...overrides?.tokenLifespan },
+    endpoints: { ...defaults.endpoints, ...overrides?.endpoints },
   };
+}
+
+/**
+ * The configured identity host (`api.identity`) or a descriptive error. Used by
+ * auth services before building a request URL so a missing per-app host fails
+ * loudly instead of producing a relative/undefined URL.
+ */
+export function requireIdentityHost(config: IInsightAuthConfig): string {
+  if (!config.api.identity) {
+    throw new Error(
+      '[@insight/ui-react] api.identity is not configured. Point it at this app\'s own auth host/BFF ' +
+        '(e.g. <InsightAuthProvider config={{ api: { identity: "https://<your-app>/api" }, signinUrl: "..." }} />).',
+    );
+  }
+  return config.api.identity;
+}
+
+/**
+ * Relative path of an identity endpoint for the current config. Falls back to
+ * `getDefaultInsightAuthEndpoints()` when the consumer did not override it.
+ */
+export function getAuthEndpointPath(
+  config: IInsightAuthConfig,
+  key: keyof IInsightAuthEndpoints,
+): string {
+  return config.endpoints?.[key] ?? getDefaultInsightAuthEndpoints()[key] ?? '';
+}
+
+/**
+ * Absolute URL of an identity endpoint: `{api.identity}{path}`. Throws a
+ * descriptive error when the identity host is not configured.
+ */
+export function getAuthEndpointUrl(
+  config: IInsightAuthConfig,
+  key: keyof IInsightAuthEndpoints,
+): string {
+  return `${requireIdentityHost(config)}${getAuthEndpointPath(config, key)}`;
+}
+
+/**
+ * Validate a resolved auth config at bootstrap. Throws a descriptive error when
+ * the mandatory per-app values (`api.identity`, `signinUrl`) are missing so a
+ * misconfigured consumer fails fast instead of silently calling an undefined
+ * host.
+ */
+export function validateInsightAuthConfig(config: IInsightAuthConfig): void {
+  if (!config.api.identity) {
+    throw new Error(
+      '[@insight/ui-react] InsightAuthProvider requires api.identity - the base URL of this app\'s own ' +
+        'auth host/BFF. The library no longer defaults to a shared identity provider.',
+    );
+  }
+  if (!config.signinUrl) {
+    throw new Error(
+      '[@insight/ui-react] InsightAuthProvider requires signinUrl - the full URL of this app\'s ' +
+        'sign-in page / BFF login route.',
+    );
+  }
 }

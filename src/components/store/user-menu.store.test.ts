@@ -143,3 +143,30 @@ describe('UserMenuStore — load error capture', () => {
     expect(store.loadErrors).toEqual({ user: null, menus: null, favorites: null });
   });
 });
+
+describe('UserMenuStore — permissions', () => {
+  it('hasPermission matches ANY granted code; empty list is denied', () => {
+    const { store } = createStore();
+
+    expect(store.permissions).toEqual([]);
+    expect(store.hasPermission('report.export')).toBe(false);
+    expect(store.hasPermission(['report.export', 'nope'])).toBe(false);
+
+    store.setPermissions(['report.export', 'audit.read']);
+    expect(store.permissions).toEqual(['report.export', 'audit.read']);
+    expect(store.hasPermission('report.export')).toBe(true);
+    expect(store.hasPermission(['nope', 'audit.read'])).toBe(true);
+    expect(store.hasPermission(['nope', 'other'])).toBe(false);
+  });
+
+  it('reset() clears granted permissions', () => {
+    const { store } = createStore();
+    store.setPermissions(['report.export']);
+    expect(store.hasPermission('report.export')).toBe(true);
+
+    store.reset();
+
+    expect(store.permissions).toEqual([]);
+    expect(store.hasPermission('report.export')).toBe(false);
+  });
+});

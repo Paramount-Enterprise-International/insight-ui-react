@@ -6,10 +6,10 @@ import { sanitizeReturnUrl } from './sanitize-return-url';
 import { useInsightAuth } from './insight-auth-context';
 
 /**
- * Extract the access token appended by iam-web after a successful external SSO
- * redirect. Reads the URL HASH FRAGMENT (`#at=<token>`) — deliberately NOT a
- * query parameter — so the token is never sent to the server and never appears
- * in access/gateway logs (fragments are browser-only).
+ * Extract the access token appended by the sign-in host after a successful
+ * external SSO redirect. Reads the URL HASH FRAGMENT (`#at=<token>`) —
+ * deliberately NOT a query parameter — so the token is never sent to the
+ * server and never appears in access/gateway logs (fragments are browser-only).
  */
 export function extractAccessTokenFromHash(hash?: string): string | null {
   const current = hash ?? window.location.hash;
@@ -23,7 +23,7 @@ export function extractAccessTokenFromHash(hash?: string): string | null {
 /**
  * Reusable SSO callback route component for @insight/ui consumer apps — the
  * React analog of Angular's `IAuthCallback`. Register it at whatever route
- * path is used as the `returnUrl` when redirecting to iam-web's signin page:
+ * path is used as the `returnUrl` when redirecting to the configured signinUrl:
  * ```tsx
  * { path: 'auth/callback', element: <AuthCallback /> }
  * ```
@@ -35,7 +35,7 @@ export function extractAccessTokenFromHash(hash?: string): string | null {
  *     sitting in browser history).
  *  4. Validate & redirect to the original in-app `returnUrl` (query param
  *     `returnUrl`, defaulting to `/`), using the same `sanitizeReturnUrl`
- *     rules as iam-web.
+ *     rules as the sign-in page.
  */
 export function AuthCallback(): ReactNode {
   const { config, session } = useInsightAuth();

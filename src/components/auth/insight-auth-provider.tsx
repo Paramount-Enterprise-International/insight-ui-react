@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   type IInsightAuthConfigOverrides,
   resolveInsightAuthConfig,
+  validateInsightAuthConfig,
 } from './auth-config';
 import { AuthService } from './auth.service';
 import { buildExternalSigninUrl } from './build-signin-redirect-url';
@@ -28,17 +29,21 @@ import { UserMenuStore } from '../store/user-menu.store';
  * consumer api client, session-expired overlay, and the user-menu store
  * (user/menus/favorites + permission checks).
  *
- * Usage (zero-config — local dev):
- * ```tsx
- * <InsightAuthProvider>
- *   <App />
- * </InsightAuthProvider>
- * ```
+ * `api.identity` and `signinUrl` are MANDATORY and app-specific: they must point
+ * at THIS app's own auth backend. In the BFF-per-app model the app's session
+ * cookie stays first-party on its own origin (SameSite-safe), so the library no
+ * longer ships a default pointing at any shared identity provider. A config
+ * that omits them throws at bootstrap (fail-fast).
  *
- * Usage (override for staging/production):
+ * Usage - point at your own auth host/BFF:
  * ```tsx
  * <InsightAuthProvider
- *   config={{ api: { identity: 'https://account.paramountenterprise.co.id/api' }, signinUrl: 'https://account.paramountenterprise.co.id/signin' }}
+ *   config={{
+ *     // this app's own backend: a same-origin BFF (e.g. atlas-api) or identity-api
+ *     api: { identity: 'https://<your-app>.example.com/api' },
+ *     // this app's own login entry (BFF login route or the app's signin page)
+ *     signinUrl: 'https://<your-app>.example.com/api/auth/login',
+ *   }}
  * >
  *   <App />
  * </InsightAuthProvider>
@@ -52,6 +57,9 @@ export function InsightAuthProvider({
   children: ReactNode;
 }) {
   const resolved = useMemo(() => resolveInsightAuthConfig(config), [config]);
+  // Fail fast at render when the mandatory per-app identity host/signinUrl are
+  // missing - the library no longer defaults to a shared identity provider.
+  validateInsightAuthConfig(resolved);
 
   // Services are created ONCE per provider mount. Config changes after mount
   // are intentionally ignored (mirrors Angular's root-scoped providers).

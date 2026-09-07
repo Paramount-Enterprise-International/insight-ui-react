@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useUserMenuStore } from '../auth/insight-auth-context';
 
 /** Permission source selector used by `usePermission` / `<HasMn>` / `<NotHasMn>`. */
-export type IInsightPermissionSource = 'menu' | 'role';
+export type IInsightPermissionSource = 'menu' | 'role' | 'permission';
 
 /** Object form: inline source + value. */
 export type IInsightPermission = {
@@ -40,6 +40,7 @@ export function resolvePermission(
  * ```tsx
  * const canView = usePermission('sales:report');
  * const canAdmin = usePermission({ source: 'role', value: 'iam-admin' });
+ * const canExport = usePermission({ source: 'permission', value: 'report.export' });
  * ```
  */
 export function usePermission(value: IInsightPermissionInput | null | undefined): boolean {
@@ -51,12 +52,16 @@ export function usePermission(value: IInsightPermissionInput | null | undefined)
   if (resolved.source === 'role') {
     return store.hasRole(resolved.codes);
   }
+  if (resolved.source === 'permission') {
+    return store.hasPermission(resolved.codes);
+  }
   return store.hasMenu(resolved.codes);
 }
 
 /**
  * Renders `children` only when the current user has the given permission
- * (menu code by default, or `{ source: 'role', value }`).
+ * (menu code by default, or `{ source: 'role', value }`). Renders nothing
+ * while the user-menu store is initializing (permission not yet known).
  */
 export function HasMn({
   value,
@@ -65,11 +70,20 @@ export function HasMn({
   value: IInsightPermissionInput;
   children: ReactNode;
 }): ReactNode {
+  const store = useUserMenuStore();
   const allowed = usePermission(value);
+  if (store.initializing) {
+    return null;
+  }
   return allowed ? <>{children}</> : null;
 }
 
-/** Renders `children` only when the current user does NOT have the given permission. */
+/**
+ * Renders `children` only when the current user does NOT have the given
+ * permission. Renders nothing while the user-menu store is initializing
+ * (permission not yet known) so a not-yet-loaded grant never flashes a denied
+ * element.
+ */
 export function NotHasMn({
   value,
   children,
@@ -77,6 +91,10 @@ export function NotHasMn({
   value: IInsightPermissionInput;
   children: ReactNode;
 }): ReactNode {
+  const store = useUserMenuStore();
   const allowed = usePermission(value);
+  if (store.initializing) {
+    return null;
+  }
   return allowed ? null : <>{children}</>;
 }

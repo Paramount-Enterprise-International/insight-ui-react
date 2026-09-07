@@ -1,4 +1,4 @@
-import type { IInsightAuthConfig } from './auth-config';
+import { getAuthEndpointPath, requireIdentityHost, type IInsightAuthConfig } from './auth-config';
 import { rawRequest, type IApiError } from '../api/api.client';
 import type { CsrfService } from '../csrf/csrf.service';
 
@@ -75,8 +75,11 @@ export type IResetPasswordResponse = {
 };
 
 /**
- * iam-identity-api auth facade (Mode 2 proxy — Keycloak is never exposed to the
- * frontend). Base URL = `{api.identity}` from the resolved auth config.
+ * Auth facade against the configured identity host (`api.identity`) - typically
+ * a Mode-2 proxy (Keycloak is never exposed to the frontend) or an app's own
+ * BFF. Endpoint paths are relative and come from `config.endpoints` (defaults
+ * match the platform/BFF contract). MFA/password methods are identity-owner
+ * routes and stay fixed.
  * React analog of the Angular `IAuthService`.
  */
 export class AuthService {
@@ -89,7 +92,7 @@ export class AuthService {
   }
 
   private get identityUrl(): string {
-    return this.config.api.identity;
+    return requireIdentityHost(this.config);
   }
 
   async login(
@@ -112,7 +115,7 @@ export class AuthService {
     }
 
     try {
-      const res = await rawRequest<ILoginResponse>(this.identityUrl, '/auth/login', this.csrf, {
+      const res = await rawRequest<ILoginResponse>(this.identityUrl, getAuthEndpointPath(this.config, 'login'), this.csrf, {
         method: 'POST',
         body: {
           username,
@@ -134,17 +137,17 @@ export class AuthService {
     }
   }
 
-  /** Silently refresh the access token via the HttpOnly refresh-token cookie. */
+  /** Silently refresh the access token via the HttpOnly session cookie. */
   refresh(): Promise<IRefreshResponse> {
-    return rawRequest<IRefreshResponse>(this.identityUrl, '/auth/refresh', this.csrf, {
+    return rawRequest<IRefreshResponse>(this.identityUrl, getAuthEndpointPath(this.config, 'refresh'), this.csrf, {
       method: 'POST',
       body: {},
     });
   }
 
-  /** Clear the server-side session and expire the HttpOnly refresh cookie. */
+  /** Clear the server-side session and expire the HttpOnly session cookie. */
   async logout(refreshToken?: string): Promise<void> {
-    await rawRequest<{ ok: boolean }>(this.identityUrl, '/auth/logout', this.csrf, {
+    await rawRequest<{ ok: boolean }>(this.identityUrl, getAuthEndpointPath(this.config, 'logout'), this.csrf, {
       method: 'POST',
       body: { refreshToken },
     });
@@ -152,7 +155,7 @@ export class AuthService {
 
   /** Exchange a short-lived `at=` auth token for a full session (cross-app handoff). */
   exchangeAuthToken(authToken: string): Promise<ILoginResponse> {
-    return rawRequest<ILoginResponse>(this.identityUrl, '/auth/exchange', this.csrf, {
+    return rawRequest<ILoginResponse>(this.identityUrl, getAuthEndpointPath(this.config, 'exchange'), this.csrf, {
       method: 'POST',
       body: {},
       headers: { Authorization: authToken },
