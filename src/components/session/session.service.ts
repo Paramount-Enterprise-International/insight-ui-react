@@ -63,23 +63,11 @@ export function decodeUser(accessToken: string): IAuthUser {
  * Angular `ISessionService`).
  *
  * Access token: stored IN MEMORY only (never Web Storage). Refresh token:
- * HttpOnly cookie managed exclusively by iam-identity-api; this service never
- * reads or stores it directly (an in-memory `refreshToken` is kept only for
- * server-side logout).
+ * HttpOnly cookie managed by the app's own identity host/BFF; this service
+ * never reads or stores it directly (an in-memory `refreshToken` is kept only
+ * for server-side logout).
  *
- * This is a tiny observable store — `subscribe` + `getVersion` so
- * `useSyncExternalStore` re-renders consumers when the session state changes.
- */
-/**
- * Session management for @insight/ui consumer apps (React analog of the
- * Angular `ISessionService`).
- *
- * Access token: stored IN MEMORY only (never Web Storage). Refresh token:
- * HttpOnly cookie managed exclusively by iam-identity-api; this service never
- * reads or stores it directly (an in-memory `refreshToken` is kept only for
- * server-side logout).
- *
- * This is a tiny observable store — `subscribe` + `getVersion` so
+ * This is a tiny observable store - `subscribe` + `getVersion` so
  * `useSyncExternalStore` re-renders consumers when the session state changes.
  */
 export class SessionService {

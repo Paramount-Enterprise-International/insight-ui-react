@@ -12,8 +12,9 @@ import { useInsightAuth, useSession, useSessionExpired } from '../auth/insight-a
  * <Route path="settings" element={<RequireAuth><Settings /></RequireAuth>} />
  * ```
  *
- * Performs a FULL PAGE redirect to iam-web's signin page when unauthenticated,
- * since the consumer app and iam-web are separate applications/domains. The
+ * Performs a FULL PAGE redirect to the configured signinUrl when
+ * unauthenticated, since the consumer app and its auth/BFF host are separate
+ * applications/domains. The
  * redirect is routed through this app's OWN callback route (not the page the
  * user was trying to visit) — see `buildExternalSigninUrl()` for why that's
  * required to avoid a redirect loop.

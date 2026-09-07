@@ -8,7 +8,6 @@ const CONFIG: IInsightAuthConfig = {
   signinUrl: 'https://account-dev.paramountenterprise.co.id/signin',
   callbackPath: '/auth/callback',
   allowedReturnOrigins: ['https://app.paramountenterprise.co.id'],
-  cookieDomain: '.paramountenterprise.co.id',
   tokenLifespan: { accessTokenSeconds: 3600, refreshTokenSeconds: 7200, ssoSessionMaxSeconds: 54000 },
   csrfTokenMaxAgeSeconds: 7170,
 };

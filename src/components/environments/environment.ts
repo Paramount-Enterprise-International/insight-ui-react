@@ -3,9 +3,12 @@ import type { IEnvironment } from './environment.interface';
 /**
  * Default environment for `@insight/ui`'s shared data layer.
  *
- * These are the library-wide defaults for the SSO / sidebar / user data
- * layer. Consumer apps override any field at bootstrap via
- * `InsightAuthProvider` / `resolveInsightAuthConfig`.
+ * `api.identity`, `signinUrl` and `authCallbackUrl` are intentionally EMPTY -
+ * the library does not default to any shared identity provider. Each consumer
+ * app supplies its own values (its own BFF/identity host) via
+ * `InsightAuthProvider` / `resolveInsightAuthConfig`. The
+ * `user`/`configuration`/`application` keys keep defaulting to the platform
+ * services and can still be overridden.
  */
 export const environment: IEnvironment = {
   production: false,
@@ -13,14 +16,13 @@ export const environment: IEnvironment = {
   appName: 'Insight UI',
   version: '1.0.2',
   api: {
-    identity: 'https://account-dev.paramountenterprise.co.id/api',
+    identity: '',
     user: 'https://account-dev.paramountenterprise.co.id/api/v1/users',
     configuration: 'https://account-dev.paramountenterprise.co.id/api/v1',
     application: 'https://account-dev.paramountenterprise.co.id/api/v1/applications',
   },
-  signinUrl: 'https://account-dev.paramountenterprise.co.id/signin',
-  authCallbackUrl: 'https://account-dev.paramountenterprise.co.id/auth',
-  cookieDomain: '.paramountenterprise.co.id',
+  signinUrl: '',
+  authCallbackUrl: '',
   securityMode: true,
   tokenLifespan: {
     accessTokenSeconds: 3600,
