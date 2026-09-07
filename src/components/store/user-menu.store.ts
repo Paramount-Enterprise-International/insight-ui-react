@@ -47,6 +47,7 @@ export class UserMenuStore {
   private menusValue: IMenu[] = [];
   private favoritesValue: IMenu[] = [];
   private rolesValue: string[] = [];
+  private permissionsValue: string[] = [];
   private initializingValue = false;
   private loadErrorValue: string | null = null;
   private loadErrorsValue: UserMenuLoadErrors = { user: null, menus: null, favorites: null };
@@ -103,6 +104,15 @@ export class UserMenuStore {
   /** Roles decoded from the access token (for `source: 'role'` permission checks). */
   get roles(): string[] {
     return this.rolesValue;
+  }
+
+  /**
+   * Feature permissions granted by the backend (for `source: 'permission'`
+   * checks). NOT hydrated by `load()` yet - a loader calls `setPermissions()`
+   * once the endpoint is available.
+   */
+  get permissions(): string[] {
+    return this.permissionsValue;
   }
 
   /** True while the cold-start `load()` is in flight. */
@@ -204,6 +214,29 @@ export class UserMenuStore {
       return code.some((role) => roles.includes(role));
     }
     return roles.includes(code);
+  }
+
+  /**
+   * Replaces the granted permission list (feature/action codes). Called by a
+   * loader once the backend endpoint is available - `load()` does not fetch
+   * permissions.
+   */
+  setPermissions(permissions: string[]): void {
+    this.permissionsValue = permissions;
+    this.notify();
+  }
+
+  /**
+   * Permission-mode check against the granted permissions (ANY match). Returns
+   * `false` while the list is empty/not loaded - gated UI renders only after
+   * the store has data.
+   */
+  hasPermission(code: string | string[]): boolean {
+    const granted = this.permissionsValue;
+    if (Array.isArray(code)) {
+      return code.some((permission) => granted.includes(permission));
+    }
+    return granted.includes(code);
   }
 
   /**
@@ -334,6 +367,7 @@ export class UserMenuStore {
     this.menusValue = [];
     this.favoritesValue = [];
     this.rolesValue = [];
+    this.permissionsValue = [];
     this.loadErrorValue = null;
     this.loadErrorsValue = { user: null, menus: null, favorites: null };
     this.notify();
