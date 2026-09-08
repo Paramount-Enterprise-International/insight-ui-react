@@ -57,10 +57,19 @@ export function IRequireAccess({
   const session = useISession();
   const store = useIUserMenuStore();
   const sessionExpired = useISessionExpired();
-  const [menusLoading, setMenusLoading] = useState(false);
 
   const isInitializing = session.initializing;
   const isAuth = session.isAuth();
+  const menusSettled = store.menus.length > 0 || store.loadErrors.menus !== null;
+
+  // Start in the loading state when mounting on a cold start — menus not yet
+  // fetched and no store load in flight. The effect below triggers that load,
+  // but the first render happens BEFORE the effect runs, so without this the
+  // guard would flash a redirect to the unauthorized page before the menus
+  // arrive (a cold-start deep link must never be denied early).
+  const [menusLoading, setMenusLoading] = useState(
+    () => source === 'menu' && !store.initializing && !menusSettled,
+  );
 
   // Menu checks need menus loaded. When they have not been fetched yet
   // (cold-start deep link before the shell's boot load), trigger the load once.
@@ -71,13 +80,12 @@ export function IRequireAccess({
     if (store.initializing) {
       return; // a load is already in flight (e.g. the shell's boot load)
     }
-    const menusSettled = store.menus.length > 0 || store.loadErrors.menus !== null;
     if (menusSettled) {
       return;
     }
     setMenusLoading(true);
     void store.load().finally(() => setMenusLoading(false));
-  }, [source, isAuth, isInitializing, store]);
+  }, [source, isAuth, isInitializing, store, menusSettled]);
 
   // The session-expired overlay owns the UX while visible — render the content
   // behind it (mirrors IRequireAuth).
@@ -94,7 +102,10 @@ export function IRequireAccess({
     return null;
   }
 
-  if (source === 'menu' && (store.initializing || menusLoading)) {
+  // While the menus have not settled (loaded or failed) we must not judge:
+  // keep showing the loading placeholder whether the store load is in flight
+  // (`store.initializing`) or our own cold-start load is running/queued.
+  if (source === 'menu' && !menusSettled && (store.initializing || menusLoading)) {
     return (loading as ReactNode) ?? <div className="ih-route-loading">Loading access...</div>;
   }
 

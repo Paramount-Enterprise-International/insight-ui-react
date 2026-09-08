@@ -60,11 +60,20 @@ export function IRequireRouteAccess({
   const store = useIUserMenuStore();
   const sessionExpired = useISessionExpired();
   const location = useLocation();
-  const [menusLoading, setMenusLoading] = useState(false);
 
   const isInitializing = session.initializing;
   const isAuth = session.isAuth();
+  const menusSettled = store.menus.length > 0 || store.loadErrors.menus !== null;
   const canOpenPath: IRouteCanOpen = canOpen ?? ((path, currentStore) => currentStore.hasRoute(path));
+
+  // Start in the loading state when mounting on a cold start — menus not yet
+  // fetched and no store load in flight. The effect below triggers that load,
+  // but the first render happens BEFORE the effect runs, so without this the
+  // guard would flash a redirect to the unauthorized page before the menus
+  // arrive (a cold-start deep link must never be denied early).
+  const [menusLoading, setMenusLoading] = useState(
+    () => !store.initializing && !menusSettled,
+  );
 
   // Route membership needs menus loaded. When they have not been fetched yet
   // (cold-start deep link before the shell's boot load), trigger the load once.
@@ -75,13 +84,12 @@ export function IRequireRouteAccess({
     if (store.initializing) {
       return; // a load is already in flight (e.g. the shell's boot load)
     }
-    const menusSettled = store.menus.length > 0 || store.loadErrors.menus !== null;
     if (menusSettled) {
       return;
     }
     setMenusLoading(true);
     void store.load().finally(() => setMenusLoading(false));
-  }, [isAuth, isInitializing, store]);
+  }, [isAuth, isInitializing, store, menusSettled]);
 
   // The session-expired overlay owns the UX while visible — render the content
   // behind it (mirrors IRequireAuth).
@@ -98,7 +106,10 @@ export function IRequireRouteAccess({
     return null;
   }
 
-  if (store.initializing || menusLoading) {
+  // While the menus have not settled (loaded or failed) we must not judge:
+  // keep showing the loading placeholder whether the store load is in flight
+  // (`store.initializing`) or our own cold-start load is running/queued.
+  if (!menusSettled && (store.initializing || menusLoading)) {
     return (loading as ReactNode) ?? <div className="ih-route-loading">Loading access...</div>;
   }
 
