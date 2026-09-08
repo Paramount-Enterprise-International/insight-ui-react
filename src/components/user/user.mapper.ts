@@ -73,6 +73,39 @@ export function collectMenuCodes(menus: IMenu[]): string[] {
   return [...codes];
 }
 
+/** Normalizes a route path for comparison (strips surrounding slashes). */
+export function normalizeRoutePath(route: string): string {
+  return route.trim().replace(/^\/+/g, '').replace(/\/+$/g, '');
+}
+
+/**
+ * Recursively collects the `route` of every navigable leaf item across a menu
+ * tree (deduplicated, order preserved). The union of these routes is the set
+ * of pages the current user is granted to open.
+ */
+export function collectLeafRoutes(menus: IMenu[]): string[] {
+  const routes = new Set<string>();
+  const walk = (nodes: IMenu[]): void => {
+    for (const node of nodes) {
+      if (isLeafItem(node)) {
+        const route = getMenuRoute(node);
+        if (route) {
+          routes.add(route);
+        }
+      }
+      walk(getMenuChildren(node));
+    }
+  };
+  walk(menus);
+  return [...routes];
+}
+
+/** True when any granted leaf menu route equals `path` (slash-normalized). */
+export function hasAnyRoute(menus: IMenu[], path: string): boolean {
+  const normalized = normalizeRoutePath(path);
+  return collectLeafRoutes(menus).some((route) => normalizeRoutePath(route) === normalized);
+}
+
 /**
  * Menu-mode permission check: returns true if the user's loaded menus contain
  * ANY of the given menu codes. An empty set of menus (not yet loaded) always

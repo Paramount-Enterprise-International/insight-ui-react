@@ -16,6 +16,7 @@ import {
   findFirstLeafRoute,
   findMenuNameById,
   hasAnyMenuCode,
+  hasAnyRoute,
   mapToSidebarUser,
   toIMenuFavorite,
   toIMenus,
@@ -205,6 +206,15 @@ export class IUserMenuStore {
   /** Menu-mode permission check against the in-memory menu codes (ANY match). */
   hasMenu(code: string | string[]): boolean {
     return hasAnyMenuCode(this.menusValue, code);
+  }
+
+  /**
+   * Route-membership check: can the user open `path`? True when any granted
+   * leaf menu route equals it (slash-normalized). Used by route-level access
+   * guards (e.g. `IRequireRouteAccess`).
+   */
+  hasRoute(path: string): boolean {
+    return hasAnyRoute(this.menusValue, path);
   }
 
   /** Role-mode permission check against the in-memory roles. ANY match. */
