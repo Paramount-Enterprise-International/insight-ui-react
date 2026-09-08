@@ -1,4 +1,4 @@
-import type { IInsightAuthConfig } from './auth-config';
+import type { IAuthConfig } from './auth-config';
 
 /**
  * Build the full external URL to the app's configured sign-in page
@@ -17,11 +17,11 @@ import type { IInsightAuthConfig } from './auth-config';
  * size limits (HTTP 431).
  *
  * Routing through a dedicated callback route breaks the loop: the callback
- * page (`AuthCallback`) consumes and strips the token BEFORE navigating (via
+ * page (`IAuthCallback`) consumes and strips the token BEFORE navigating (via
  * the in-app router, not a full reload) to `targetPath` — so the guard only
  * ever sees a clean, token-free URL on its next check.
  */
-export function buildExternalSigninUrl(config: IInsightAuthConfig, targetPath: string): string {
+export function buildExternalSigninUrl(config: IAuthConfig, targetPath: string): string {
   const callbackPath = config.callbackPath ?? '/auth/callback';
   const callbackUrl = `${window.location.origin}${callbackPath}?returnUrl=${encodeURIComponent(targetPath)}`;
   return `${config.signinUrl}?returnUrl=${encodeURIComponent(callbackUrl)}`;

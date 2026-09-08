@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildExternalSigninUrl } from './build-signin-redirect-url';
-import type { IInsightAuthConfig } from './auth-config';
+import type { IAuthConfig } from './auth-config';
 
-const CONFIG: IInsightAuthConfig = {
+const CONFIG: IAuthConfig = {
   api: { identity: 'https://identity/api' },
   signinUrl: 'https://account-dev.paramountenterprise.co.id/signin',
   callbackPath: '/auth/callback',

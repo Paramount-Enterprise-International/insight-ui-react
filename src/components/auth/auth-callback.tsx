@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { sanitizeReturnUrl } from './sanitize-return-url';
-import { useInsightAuth } from './insight-auth-context';
+import { useIAuthContext } from './insight-auth-context';
 
 /**
  * Extract the access token appended by the sign-in host after a successful
@@ -25,7 +25,7 @@ export function extractAccessTokenFromHash(hash?: string): string | null {
  * React analog of Angular's `IAuthCallback`. Register it at whatever route
  * path is used as the `returnUrl` when redirecting to the configured signinUrl:
  * ```tsx
- * { path: 'auth/callback', element: <AuthCallback /> }
+ * { path: 'auth/callback', element: <IAuthCallback /> }
  * ```
  *
  * Flow:
@@ -37,8 +37,8 @@ export function extractAccessTokenFromHash(hash?: string): string | null {
  *     `returnUrl`, defaulting to `/`), using the same `sanitizeReturnUrl`
  *     rules as the sign-in page.
  */
-export function AuthCallback(): ReactNode {
-  const { config, session } = useInsightAuth();
+export function IAuthCallback(): ReactNode {
+  const { config, session } = useIAuthContext();
   const location = useLocation();
   const navigate = useNavigate();
   const [handled, setHandled] = useState(false);

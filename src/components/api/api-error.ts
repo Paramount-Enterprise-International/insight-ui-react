@@ -12,7 +12,7 @@ export type INormalizedApiError = {
 };
 
 /** Optional synchronous catalog lookup supplied by the consumer application. */
-export type ApiErrorCatalogResolver = (
+export type IApiErrorCatalogResolver = (
   errorCode: string,
   revision: number | undefined,
   error: INormalizedApiError,
@@ -58,7 +58,7 @@ export function normalizeApiError(error: unknown): INormalizedApiError {
 export function resolveApiErrorDisplayMessage(
   error: unknown,
   localFallback: string,
-  catalogResolver?: ApiErrorCatalogResolver,
+  catalogResolver?: IApiErrorCatalogResolver,
 ): string {
   const normalized = normalizeApiError(error);
   if (normalized.message) return normalized.message;

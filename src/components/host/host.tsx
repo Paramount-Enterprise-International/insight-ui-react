@@ -12,7 +12,7 @@ import React, {
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { IAvatar } from '../avatar';
 import { useOptionalIConfirm } from '../dialog/dialog';
-import { useSession, useUserMenuStore } from '../auth/insight-auth-context';
+import { useISession, useIUserMenuStore } from '../auth/insight-auth-context';
 import { IHostApiProvider, useHostApiOptional } from './host-api.context';
 import type {
   IBreadcrumbItem,
@@ -307,8 +307,8 @@ export function IHContentLayout(props: {
 }) {
   const ui = useHostUi();
   const hostApi = useHostApiOptional();
-  const session = useSession();
-  const store = useUserMenuStore();
+  const session = useISession();
+  const store = useIUserMenuStore();
 
   return (
     <IHContent

@@ -1,14 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
 import type { ReactNode } from 'react';
 
-import { useUserMenuStore } from '../auth/insight-auth-context';
+import { useIUserMenuStore } from '../auth/insight-auth-context';
 
-/** Permission source selector used by `usePermission` / `<HasMn>` / `<NotHasMn>`. */
-export type IInsightPermissionSource = 'menu' | 'role' | 'permission';
+/** Permission source selector used by `usePermission` / `<IHasMn>` / `<INotHasMn>`. */
+export type IPermissionSource = 'menu' | 'role' | 'permission';
 
 /** Object form: inline source + value. */
-export type IInsightPermission = {
-  source: IInsightPermissionSource;
+export type IPermission = {
+  source: IPermissionSource;
   value: string | string[];
 };
 
@@ -17,12 +17,12 @@ export type IInsightPermission = {
  * - a plain `string | string[]` → menu-mode check (default), or
  * - an object `{ source, value }` to select the source explicitly.
  */
-export type IInsightPermissionInput = string | string[] | IInsightPermission;
+export type IPermissionInput = string | string[] | IPermission;
 
 /** Resolves an input into a concrete `{ source, codes }` pair (or `null`). */
 export function resolvePermission(
-  value: IInsightPermissionInput | null,
-): { source: IInsightPermissionSource; codes: string | string[] } | null {
+  value: IPermissionInput | null,
+): { source: IPermissionSource; codes: string | string[] } | null {
   if (!value) {
     return null;
   }
@@ -34,7 +34,7 @@ export function resolvePermission(
 
 /**
  * ASYNC-AWARE permission check hook — the React analog of the Angular
- * `ihHasMn` / `ihNotHasMn` directives. Reads the `UserMenuStore` reactively,
+ * `ihHasMn` / `ihNotHasMn` directives. Reads the `IUserMenuStore` reactively,
  * so gated UI renders only once the store has data (menus or roles).
  *
  * ```tsx
@@ -43,8 +43,8 @@ export function resolvePermission(
  * const canExport = usePermission({ source: 'permission', value: 'report.export' });
  * ```
  */
-export function usePermission(value: IInsightPermissionInput | null | undefined): boolean {
-  const store = useUserMenuStore();
+export function usePermission(value: IPermissionInput | null | undefined): boolean {
+  const store = useIUserMenuStore();
   const resolved = resolvePermission(value ?? null);
   if (!resolved) {
     return false;
@@ -63,14 +63,14 @@ export function usePermission(value: IInsightPermissionInput | null | undefined)
  * (menu code by default, or `{ source: 'role', value }`). Renders nothing
  * while the user-menu store is initializing (permission not yet known).
  */
-export function HasMn({
+export function IHasMn({
   value,
   children,
 }: {
-  value: IInsightPermissionInput;
+  value: IPermissionInput;
   children: ReactNode;
 }): ReactNode {
-  const store = useUserMenuStore();
+  const store = useIUserMenuStore();
   const allowed = usePermission(value);
   if (store.initializing) {
     return null;
@@ -84,14 +84,14 @@ export function HasMn({
  * (permission not yet known) so a not-yet-loaded grant never flashes a denied
  * element.
  */
-export function NotHasMn({
+export function INotHasMn({
   value,
   children,
 }: {
-  value: IInsightPermissionInput;
+  value: IPermissionInput;
   children: ReactNode;
 }): ReactNode {
-  const store = useUserMenuStore();
+  const store = useIUserMenuStore();
   const allowed = usePermission(value);
   if (store.initializing) {
     return null;

@@ -1,4 +1,4 @@
-import { getAuthEndpointUrl, type IInsightAuthConfig } from '../auth/auth-config';
+import { getAuthEndpointUrl, type IAuthConfig } from '../auth/auth-config';
 
 /**
  * CSRF token management — cookie-to-header pattern for @insight/ui consumer apps.
@@ -14,14 +14,14 @@ import { getAuthEndpointUrl, type IInsightAuthConfig } from '../auth/auth-config
  * configured via `csrfTokenMaxAgeSeconds`) so the FE transparently re-fetches
  * before the server-side cookie actually expires.
  */
-export class CsrfService {
-  private readonly config: IInsightAuthConfig;
+export class ICsrfService {
+  private readonly config: IAuthConfig;
 
   /** In-memory CSRF token — retrieved from the backend response body, never from document.cookie directly. */
   private token: string | null = null;
   private tokenFetchedAt: number | null = null;
 
-  constructor(config: IInsightAuthConfig) {
+  constructor(config: IAuthConfig) {
     this.config = config;
   }
 

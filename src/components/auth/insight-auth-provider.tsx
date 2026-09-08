@@ -1,28 +1,28 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
-  type IInsightAuthConfigOverrides,
-  resolveInsightAuthConfig,
-  validateInsightAuthConfig,
+  type IAuthConfigOverrides,
+  resolveIAuthConfig,
+  validateIAuthConfig,
 } from './auth-config';
-import { AuthService } from './auth.service';
+import { IAuthService } from './auth.service';
 import { buildExternalSigninUrl } from './build-signin-redirect-url';
-import { InsightAuthContext, type IInsightAuthContext } from './insight-auth-context';
-import { CsrfService } from '../csrf/csrf.service';
+import { IAuthContext } from './insight-auth-context';
+import { ICsrfService } from '../csrf/csrf.service';
 import { createApiClient } from '../api/api.client';
 import { normalizeApiError } from '../api/api-error';
-import { SessionService } from '../session/session.service';
+import { ISessionService } from '../session/session.service';
 import {
   extractProblemDetailsErrorCode,
-  SessionExpiredService,
+  ISessionExpiredService,
   toSessionExpiredReason,
 } from '../session-expired/session-expired.service';
-import { CurrentUserService, UserMenuService } from '../user';
-import { UserMenuStore } from '../store/user-menu.store';
+import { ICurrentUserService, IUserMenuService } from '../user';
+import { IUserMenuStore } from '../store/user-menu.store';
 
 /**
  * Root provider for `@insight/ui`'s shared SSO stack — the React analog of
- * Angular's `provideInsightAuth()`.
+ * Angular's `provideIAuth()`.
  *
  * Creates and wires: auth config, CSRF service, session service (runs
  * `tryRestoreSession()` once on mount — the APP_INITIALIZER equivalent),
@@ -37,7 +37,7 @@ import { UserMenuStore } from '../store/user-menu.store';
  *
  * Usage - point at your own auth host/BFF:
  * ```tsx
- * <InsightAuthProvider
+ * <IAuthProvider
  *   config={{
  *     // this app's own backend: a same-origin BFF (e.g. atlas-api) or identity-api
  *     api: { identity: 'https://<your-app>.example.com/api' },
@@ -46,28 +46,28 @@ import { UserMenuStore } from '../store/user-menu.store';
  *   }}
  * >
  *   <App />
- * </InsightAuthProvider>
+ * </IAuthProvider>
  * ```
  */
-export function InsightAuthProvider({
+export function IAuthProvider({
   config,
   children,
 }: {
-  config?: IInsightAuthConfigOverrides;
+  config?: IAuthConfigOverrides;
   children: ReactNode;
 }) {
-  const resolved = useMemo(() => resolveInsightAuthConfig(config), [config]);
+  const resolved = useMemo(() => resolveIAuthConfig(config), [config]);
   // Fail fast at render when the mandatory per-app identity host/signinUrl are
   // missing - the library no longer defaults to a shared identity provider.
-  validateInsightAuthConfig(resolved);
+  validateIAuthConfig(resolved);
 
   // Services are created ONCE per provider mount. Config changes after mount
   // are intentionally ignored (mirrors Angular's root-scoped providers).
   const [services] = useState(() => {
-    const csrf = new CsrfService(resolved);
-    const auth = new AuthService(resolved, csrf);
-    const sessionExpired = new SessionExpiredService();
-    const session = new SessionService(resolved, auth, csrf, sessionExpired);
+    const csrf = new ICsrfService(resolved);
+    const auth = new IAuthService(resolved, csrf);
+    const sessionExpired = new ISessionExpiredService();
+    const session = new ISessionService(resolved, auth, csrf, sessionExpired);
     const api = createApiClient({
       config: resolved,
       csrf,
@@ -103,11 +103,11 @@ export function InsightAuthProvider({
         }
       },
     });
-    const currentUserService = new CurrentUserService(resolved, api);
-    const userMenuService = new UserMenuService(resolved, api);
-    const userMenuStore = new UserMenuStore(currentUserService, userMenuService, session);
+    const currentUserService = new ICurrentUserService(resolved, api);
+    const userMenuService = new IUserMenuService(resolved, api);
+    const userMenuStore = new IUserMenuStore(currentUserService, userMenuService, session);
 
-    const value: IInsightAuthContext = {
+    const value: IAuthContext = {
       config: resolved,
       session,
       auth,
@@ -128,8 +128,8 @@ export function InsightAuthProvider({
   }, [services.session]);
 
   return (
-    <InsightAuthContext.Provider value={services.value}>
+    <IAuthContext.Provider value={services.value}>
       {children}
-    </InsightAuthContext.Provider>
+    </IAuthContext.Provider>
   );
 }

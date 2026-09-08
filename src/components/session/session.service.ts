@@ -1,11 +1,11 @@
-import type { IInsightAuthConfig } from '../auth/auth-config';
-import { AuthService, type IAuthUser } from '../auth/auth.service';
-import type { CsrfService } from '../csrf/csrf.service';
+import type { IAuthConfig } from '../auth/auth-config';
+import { IAuthService, type IAuthUser } from '../auth/auth.service';
+import type { ICsrfService } from '../csrf/csrf.service';
 import {
   extractProblemDetailsErrorCode,
   isSessionExpiredError,
-  type SessionExpiredReason,
-  SessionExpiredService,
+  type ISessionExpiredReason,
+  ISessionExpiredService,
   toSessionExpiredReason,
 } from '../session-expired/session-expired.service';
 import { normalizeApiError } from '../api/api-error';
@@ -70,11 +70,11 @@ export function decodeUser(accessToken: string): IAuthUser {
  * This is a tiny observable store - `subscribe` + `getVersion` so
  * `useSyncExternalStore` re-renders consumers when the session state changes.
  */
-export class SessionService {
-  private readonly config: IInsightAuthConfig;
-  private readonly authService: AuthService;
-  private readonly csrf: CsrfService;
-  private readonly sessionExpiredService: SessionExpiredService;
+export class ISessionService {
+  private readonly config: IAuthConfig;
+  private readonly authService: IAuthService;
+  private readonly csrf: ICsrfService;
+  private readonly sessionExpiredService: ISessionExpiredService;
 
   // In-memory token storage — intentionally NOT persisted to Web Storage.
   private accessToken: string | null = null;
@@ -89,16 +89,16 @@ export class SessionService {
   private initializingValue = true;
 
   private refreshInFlight: Promise<string> | null = null;
-  private restoreInFlight: Promise<{ reason?: SessionExpiredReason }> | null = null;
+  private restoreInFlight: Promise<{ reason?: ISessionExpiredReason }> | null = null;
 
   private version = 0;
   private listeners = new Set<() => void>();
 
   constructor(
-    config: IInsightAuthConfig,
-    authService: AuthService,
-    csrf: CsrfService,
-    sessionExpiredService: SessionExpiredService,
+    config: IAuthConfig,
+    authService: IAuthService,
+    csrf: ICsrfService,
+    sessionExpiredService: ISessionExpiredService,
   ) {
     this.config = config;
     this.authService = authService;
@@ -381,7 +381,7 @@ export class SessionService {
    * Returns the reason (if any) extracted from the error so the guard can
    * decide overlay vs. signin.
    */
-  tryRestoreSession(): Promise<{ reason?: SessionExpiredReason }> {
+  tryRestoreSession(): Promise<{ reason?: ISessionExpiredReason }> {
     if (this.restoreInFlight) {
       return this.restoreInFlight;
     }
@@ -400,9 +400,9 @@ export class SessionService {
       .refresh()
       .then((res) => {
         this.setSession(res.accessToken, res.expiresIn, decodeUser(res.accessToken), res.refreshToken);
-        return {} as { reason?: SessionExpiredReason };
+        return {} as { reason?: ISessionExpiredReason };
       })
-      .catch((err): { reason?: SessionExpiredReason } => {
+      .catch((err): { reason?: ISessionExpiredReason } => {
         console.debug('[@insight/ui][SESSION] tryRestoreSession: FAILED', {
           status: (err as { status?: number })?.status,
         });
@@ -427,7 +427,7 @@ export class SessionService {
         return { reason: code };
       });
 
-    const safetyTimer = new Promise<{ reason?: SessionExpiredReason }>((resolve) =>
+    const safetyTimer = new Promise<{ reason?: ISessionExpiredReason }>((resolve) =>
       setTimeout(() => resolve({}), 10_000),
     );
 
