@@ -1,6 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { decodeJwtPayload, decodeUser } from './session.service';
+import { decodeJwtPayload, decodeUser, ISessionService } from './session.service';
+import type { IAuthConfig } from '../auth/auth-config';
+import type { IAuthService } from '../auth/auth.service';
+import type { ICsrfService } from '../csrf/csrf.service';
+import type { IUserMenuStore } from '../store/user-menu.store';
 
 // Minimal valid JWT: header.payload.signature (payload = {"sub":"u1","email":"a@b.c","name":"A","realm_access":{"roles":["role-a"]},"user_type":"external","exp":9999999999})
 const TOKEN =
@@ -32,5 +36,19 @@ describe('decodeUser', () => {
     expect(user.sub).toBe('u1');
     expect(user.roles).toEqual(['role-a']);
     expect(user.userType).toBe('external');
+  });
+});
+
+describe('ISessionService.logout', () => {
+  it('resets the attached user menu store', async () => {
+    const csrf = { ensureToken: async (): Promise<void> => undefined } as unknown as ICsrfService;
+    const auth = { logout: async (): Promise<void> => undefined } as unknown as IAuthService;
+    const session = new ISessionService({} as IAuthConfig, auth, csrf, {} as never);
+
+    const store = { reset: vi.fn() } as unknown as IUserMenuStore;
+    session.setUserMenuStore(store);
+
+    await session.logout();
+    expect(store.reset).toHaveBeenCalledTimes(1);
   });
 });

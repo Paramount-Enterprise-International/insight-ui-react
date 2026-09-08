@@ -9,6 +9,7 @@ import {
   toSessionExpiredReason,
 } from '../session-expired/session-expired.service';
 import { normalizeApiError } from '../api/api-error';
+import type { IUserMenuStore } from '../store/user-menu.store';
 
 /** User derived from Keycloak JWT claims. */
 export type ISessionUser = {
@@ -75,6 +76,10 @@ export class ISessionService {
   private readonly authService: IAuthService;
   private readonly csrf: ICsrfService;
   private readonly sessionExpiredService: ISessionExpiredService;
+  // Attached by IAuthProvider after the store is constructed (the store needs
+  // the session, so a back-reference is set once both exist). Optional because
+  // standalone session usage (e.g. tests) has no store.
+  private userMenuStore: IUserMenuStore | null = null;
 
   // In-memory token storage — intentionally NOT persisted to Web Storage.
   private accessToken: string | null = null;
@@ -104,6 +109,11 @@ export class ISessionService {
     this.authService = authService;
     this.csrf = csrf;
     this.sessionExpiredService = sessionExpiredService;
+  }
+
+  /** Attach the user-menu store so logout() also drops its cached data. */
+  setUserMenuStore(store: IUserMenuStore): void {
+    this.userMenuStore = store;
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -303,6 +313,9 @@ export class ISessionService {
     // Explicit logout also clears the "active session" flag so a later
     // tryRestoreSession() treats the next load as a cold start.
     sessionStorage.removeItem('iam.session.active');
+    // Drop cached sidebar data (user/menus/favorites/permissions) so no stale
+    // data from this session leaks into the next login.
+    this.userMenuStore?.reset();
     try {
       // Ensure a valid CSRF token first: the backend CsrfGuard requires
       // X-CSRF-Token on POST /auth/logout.

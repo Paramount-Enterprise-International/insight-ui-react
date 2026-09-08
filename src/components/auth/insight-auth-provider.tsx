@@ -106,6 +106,8 @@ export function IAuthProvider({
     const currentUserService = new ICurrentUserService(resolved, api);
     const userMenuService = new IUserMenuService(resolved, api);
     const userMenuStore = new IUserMenuStore(currentUserService, userMenuService, session);
+    // Back-link the store into the session so logout() can reset it centrally.
+    session.setUserMenuStore(userMenuStore);
 
     const value: IAuthContext = {
       config: resolved,
