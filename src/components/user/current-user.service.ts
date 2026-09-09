@@ -1,8 +1,8 @@
-import type { IInsightAuthConfig } from '../auth/auth-config';
+import type { IAuthConfig } from '../auth/auth-config';
 import { environment as defaultEnvironment } from '../environments/environment';
 import type { IApiClient } from '../api/api.client';
 
-import type { IInsightCurrentUser } from './user.types';
+import type { ICurrentUserDto } from './user.types';
 
 /**
  * Current-user profile service — calls iam-user-api's `GET {api.user}/users/user`
@@ -12,11 +12,11 @@ import type { IInsightCurrentUser } from './user.types';
  * Base URL: `{api.user}` from the resolved auth config (defaults to the
  * library environment file). React analog of the Angular `ICurrentUserService`.
  */
-export class CurrentUserService {
-  private readonly config: IInsightAuthConfig;
+export class ICurrentUserService {
+  private readonly config: IAuthConfig;
   private readonly api: IApiClient;
 
-  constructor(config: IInsightAuthConfig, api: IApiClient) {
+  constructor(config: IAuthConfig, api: IApiClient) {
     this.config = config;
     this.api = api;
   }
@@ -26,7 +26,7 @@ export class CurrentUserService {
   }
 
   /** GET `{api.user}/users/user` — raw current-user DTO. Override `T` to use your own response type. */
-  getCurrentUser<T = IInsightCurrentUser>(): Promise<T> {
+  getCurrentUser<T = ICurrentUserDto>(): Promise<T> {
     return this.api.get<T>('/users/user', { apiUrl: this.baseUrl });
   }
 }

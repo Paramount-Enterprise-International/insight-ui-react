@@ -1,10 +1,10 @@
 /**
  * Session-storage wrapper for non-sensitive UI state (returnUrl, nonce/state).
  * Tokens are NEVER stored here — the access token lives in-memory
- * (SessionService) and the refresh token lives in an HttpOnly cookie set by
+ * (ISessionService) and the refresh token lives in an HttpOnly cookie set by
  * iam-identity-api.
  */
-export class StorageService {
+export class IStorageService {
   private readonly storageKey = '@insight/ui';
 
   get(key: string): string {
@@ -41,4 +41,4 @@ export class StorageService {
   }
 }
 
-export const storageService = new StorageService();
+export const storageService = new IStorageService();

@@ -39,4 +39,6 @@ export type IEnvironment = {
   apiKey?: string;
   /** This app's application id (used as the default filter when loading effective menus). */
   appId?: string;
+  /** Personal Profile page URL opened from the sidebar user dropdown. Defaults to the shared account URL when empty. */
+  personalProfileUrl?: string;
 };

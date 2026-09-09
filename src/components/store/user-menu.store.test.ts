@@ -1,28 +1,28 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { SessionService } from '../session/session.service';
-import type { CurrentUserService } from '../user/current-user.service';
-import type { UserMenuService } from '../user/user-menu.service';
-import { UserMenuStore } from './user-menu.store';
+import type { ISessionService } from '../session/session.service';
+import type { ICurrentUserService } from '../user/current-user.service';
+import type { IUserMenuService } from '../user/user-menu.service';
+import { IUserMenuStore } from './user-menu.store';
 
 /** Minimal object-mother for the store's constructor dependencies. */
 function createStore() {
   const userSvc = {
     getCurrentUser: vi.fn(async () => ({ userId: 'u1', username: 'jdoe' })),
-  } as unknown as CurrentUserService;
+  } as unknown as ICurrentUserService;
   const menuSvc = {
     getEffectiveMenus: vi.fn(async () => []),
     getFavorites: vi.fn(async () => []),
-  } as unknown as UserMenuService;
+  } as unknown as IUserMenuService;
   const session = {
     getRoles: vi.fn(() => []),
     getUser: vi.fn(() => ({ sub: 'sub-a' })),
-  } as unknown as SessionService;
-  const store = new UserMenuStore(userSvc, menuSvc, session);
+  } as unknown as ISessionService;
+  const store = new IUserMenuStore(userSvc, menuSvc, session);
   return { store, userSvc, menuSvc, session };
 }
 
-describe('UserMenuStore — load error capture', () => {
+describe('IUserMenuStore — load error capture', () => {
   it('keeps loadErrors null on a successful load', async () => {
     const { store } = createStore();
     await store.load();
@@ -144,7 +144,7 @@ describe('UserMenuStore — load error capture', () => {
   });
 });
 
-describe('UserMenuStore — permissions', () => {
+describe('IUserMenuStore — permissions', () => {
   it('hasPermission matches ANY granted code; empty list is denied', () => {
     const { store } = createStore();
 

@@ -1,6 +1,6 @@
-import { getAuthEndpointPath, requireIdentityHost, type IInsightAuthConfig } from './auth-config';
+import { getAuthEndpointPath, requireIdentityHost, type IAuthConfig } from './auth-config';
 import { rawRequest, type IApiError } from '../api/api.client';
-import type { CsrfService } from '../csrf/csrf.service';
+import type { ICsrfService } from '../csrf/csrf.service';
 
 /**
  * Login lockout constants (local, client-side supplement to Keycloak
@@ -82,11 +82,11 @@ export type IResetPasswordResponse = {
  * routes and stay fixed.
  * React analog of the Angular `IAuthService`.
  */
-export class AuthService {
-  private readonly config: IInsightAuthConfig;
-  private readonly csrf: CsrfService;
+export class IAuthService {
+  private readonly config: IAuthConfig;
+  private readonly csrf: ICsrfService;
 
-  constructor(config: IInsightAuthConfig, csrf: CsrfService) {
+  constructor(config: IAuthConfig, csrf: ICsrfService) {
     this.config = config;
     this.csrf = csrf;
   }

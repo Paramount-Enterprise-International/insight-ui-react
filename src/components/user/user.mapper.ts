@@ -1,6 +1,6 @@
 import { getMenuChildren, getMenuKey, getMenuLabel, getMenuRoute, isLeafItem, type IMenu, type IUser } from '../host';
 
-import type { IInsightCurrentUser, IInsightFavoriteMenuItem, IInsightMenuNode } from './user.types';
+import type { ICurrentUserDto, IFavoriteMenuItemDto, IMenuNodeDto } from './user.types';
 
 /**
  * Maps the backend current-user DTO to `@insight/ui`'s sidebar `IUser` shape
@@ -8,7 +8,7 @@ import type { IInsightCurrentUser, IInsightFavoriteMenuItem, IInsightMenuNode } 
  * `userImagePath` is `''` when no photo exists — the sidebar renders it with
  * `IAvatar`, which falls back to a user icon when the image is empty/errors.
  */
-export function mapToSidebarUser(user: IInsightCurrentUser): IUser {
+export function mapToSidebarUser(user: ICurrentUserDto): IUser {
   return {
     employeeCode: user.employeeCode ?? user.username ?? '',
     fullName: user.fullName ?? user.username ?? '',
@@ -17,7 +17,7 @@ export function mapToSidebarUser(user: IInsightCurrentUser): IUser {
 }
 
 /** Maps a backend effective-menu node onto the UI-facing `IMenu` (modern shape). */
-export function toIMenu(node: IInsightMenuNode): IMenu {
+export function toIMenu(node: IMenuNodeDto): IMenu {
   return {
     id: node.id,
     name: node.name,
@@ -34,12 +34,12 @@ export function toIMenu(node: IInsightMenuNode): IMenu {
 }
 
 /** Maps an array of backend effective-menu nodes onto `IMenu[]`. */
-export function toIMenus(nodes: IInsightMenuNode[]): IMenu[] {
+export function toIMenus(nodes: IMenuNodeDto[]): IMenu[] {
   return (nodes ?? []).map(toIMenu);
 }
 
 /** Maps a backend favorite item onto the UI-facing `IMenu` (modern shape). */
-export function toIMenuFavorite(item: IInsightFavoriteMenuItem): IMenu {
+export function toIMenuFavorite(item: IFavoriteMenuItemDto): IMenu {
   return {
     id: item.id,
     name: item.name,
@@ -57,7 +57,7 @@ export function toIMenuFavorite(item: IInsightFavoriteMenuItem): IMenu {
  * Recursively collects the `menuCode` of every navigable leaf item across a
  * menu tree (deduplicated, order preserved). Structural group/module nodes are
  * excluded so a container code never counts as a grant - matching the flat
- * granted-code list the legacy menu token carried (`HasMn` menu mode).
+ * granted-code list the legacy menu token carried (`IHasMn` menu mode).
  */
 export function collectMenuCodes(menus: IMenu[]): string[] {
   const codes = new Set<string>();
@@ -71,6 +71,39 @@ export function collectMenuCodes(menus: IMenu[]): string[] {
   };
   walk(menus);
   return [...codes];
+}
+
+/** Normalizes a route path for comparison (strips surrounding slashes). */
+export function normalizeRoutePath(route: string): string {
+  return route.trim().replace(/^\/+/g, '').replace(/\/+$/g, '');
+}
+
+/**
+ * Recursively collects the `route` of every navigable leaf item across a menu
+ * tree (deduplicated, order preserved). The union of these routes is the set
+ * of pages the current user is granted to open.
+ */
+export function collectLeafRoutes(menus: IMenu[]): string[] {
+  const routes = new Set<string>();
+  const walk = (nodes: IMenu[]): void => {
+    for (const node of nodes) {
+      if (isLeafItem(node)) {
+        const route = getMenuRoute(node);
+        if (route) {
+          routes.add(route);
+        }
+      }
+      walk(getMenuChildren(node));
+    }
+  };
+  walk(menus);
+  return [...routes];
+}
+
+/** True when any granted leaf menu route equals `path` (slash-normalized). */
+export function hasAnyRoute(menus: IMenu[], path: string): boolean {
+  const normalized = normalizeRoutePath(path);
+  return collectLeafRoutes(menus).some((route) => normalizeRoutePath(route) === normalized);
 }
 
 /**

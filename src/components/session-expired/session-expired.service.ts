@@ -1,6 +1,6 @@
 import type { INormalizedApiError } from '../api/api-error';
 
-export type SessionExpiredReason = 'TOKEN_EXPIRED' | 'SESSION_REVOKED' | 'SESSION_REPLACED';
+export type ISessionExpiredReason = 'TOKEN_EXPIRED' | 'SESSION_REVOKED' | 'SESSION_REPLACED';
 
 /** Minimal structural shape for error-code extraction (normalized or raw errors). */
 type SessionErrorShape = {
@@ -34,7 +34,7 @@ export const extractProblemDetailsErrorCode = (error: unknown): string | undefin
 /** Maps current backend and legacy error codes to the session-expired UI states. */
 export const toSessionExpiredReason = (
   errorCode: string | undefined,
-): SessionExpiredReason | undefined => {
+): ISessionExpiredReason | undefined => {
   switch (errorCode) {
     case 'AUTH_TOKEN_EXPIRED':
     case 'TOKEN_EXPIRED':
@@ -75,10 +75,10 @@ export const isSessionExpiredError = (error: unknown): boolean => {
  * This is a tiny observable store — subscribe + getVersion so `useSyncExternalStore`
  * re-renders consumers when the overlay state changes.
  */
-export class SessionExpiredService {
+export class ISessionExpiredService {
   private visibleValue = false;
   private returnUrlValue = '/';
-  private reasonValue: SessionExpiredReason | undefined = undefined;
+  private reasonValue: ISessionExpiredReason | undefined = undefined;
   private errorCodeValue: string | null = null;
   private detailValue: string | null = null;
   private messageValue: string | null = null;
@@ -109,7 +109,7 @@ export class SessionExpiredService {
     return this.returnUrlValue;
   }
 
-  get reason(): SessionExpiredReason | undefined {
+  get reason(): ISessionExpiredReason | undefined {
     return this.reasonValue;
   }
 
@@ -131,7 +131,7 @@ export class SessionExpiredService {
 
   show(
     returnUrl: string,
-    reason?: SessionExpiredReason,
+    reason?: ISessionExpiredReason,
     errorCode?: string | null,
     detail?: string | null,
     message?: string | null,
@@ -153,4 +153,4 @@ export class SessionExpiredService {
   }
 }
 
-export const sessionExpiredService = new SessionExpiredService();
+export const sessionExpiredService = new ISessionExpiredService();

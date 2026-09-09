@@ -8,4 +8,4 @@
 export const USER_APPLICATION_MAPPING_NOT_FOUND = 'USER_APPLICATION_MAPPING_NOT_FOUND' as const;
 
 /** Union of error codes the @insight/ui consumers may need to branch on. */
-export type KnownErrorCode = typeof USER_APPLICATION_MAPPING_NOT_FOUND;
+export type IKnownErrorCode = typeof USER_APPLICATION_MAPPING_NOT_FOUND;

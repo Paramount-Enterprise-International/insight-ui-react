@@ -2,6 +2,7 @@
 import React, {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -12,7 +13,7 @@ import React, {
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { IAvatar } from '../avatar';
 import { useOptionalIConfirm } from '../dialog/dialog';
-import { useSession, useUserMenuStore } from '../auth/insight-auth-context';
+import { useISession, useIUserMenuStore, IAuthContext } from '../auth/insight-auth-context';
 import { IHostApiProvider, useHostApiOptional } from './host-api.context';
 import type {
   IBreadcrumbItem,
@@ -99,6 +100,13 @@ const Highlighted = memo(function Highlighted(props: {
 
 /** Fallback FontAwesome class used by sidebar rows when a menu icon is missing. */
 const MENU_ICON_FALLBACK = 'fa-brands fa-microsoft';
+
+/**
+ * Default Personal Profile URL opened from the sidebar user dropdown. Consumer
+ * apps override it via the `personalProfileUrl` prop (per environment).
+ */
+export const DEFAULT_PERSONAL_PROFILE_URL =
+  'https://account-dev.paramountenterprise.co.id/personal-profile';
 
 /** Synthetic group id used by the sidebar's Favorites section — keeps its icon. */
 const SIDEBAR_FAVORITES_GROUP_ID = 'favorites';
@@ -307,8 +315,8 @@ export function IHContentLayout(props: {
 }) {
   const ui = useHostUi();
   const hostApi = useHostApiOptional();
-  const session = useSession();
-  const store = useUserMenuStore();
+  const session = useISession();
+  const store = useIUserMenuStore();
 
   return (
     <IHContent
@@ -927,6 +935,8 @@ export type IHSidebarProps = {
   favoriteMode?: boolean;
   /** Favorite menus (modern shape) rendered in the pinned section at the top. */
   favorites?: IMenu[];
+  /** Personal Profile page URL opened in a new tab from the sidebar user dropdown. */
+  personalProfileUrl?: string;
   onFavoriteToggle?: (event: IMenuFavoriteToggleEvent) => void;
   onFavoriteReorder?: (event: IMenuFavoriteReorderEvent) => void;
 };
@@ -940,12 +950,52 @@ export function IHSidebar(props: IHSidebarProps) {
     collapsible = false,
     favoriteMode = false,
     favorites = [],
+    personalProfileUrl,
     onFavoriteToggle,
     onFavoriteReorder,
   } = props;
 
   const location = useLocation();
   const navigate = useNavigate();
+
+  const auth = useContext(IAuthContext);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+
+  const profileUrl =
+    (personalProfileUrl ?? '').trim() || DEFAULT_PERSONAL_PROFILE_URL;
+
+  // Close the account dropdown on outside click and Escape while it is open.
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null;
+      if (target && headerRef.current?.contains(target)) return;
+      setAccountMenuOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAccountMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [accountMenuOpen]);
+
+  const onLogoutClick = useCallback(() => {
+    setAccountMenuOpen(false);
+    if (!auth) return;
+    const signinUrl = auth.config?.signinUrl?.trim();
+    const target = signinUrl && signinUrl.length > 0 ? signinUrl : '/';
+    void auth.session.logout().then(() => {
+      window.location.href = target;
+    });
+  }, [auth]);
 
   const initialFilter = useMemo(() => {
     const sp = new URLSearchParams(location.search);
@@ -1137,17 +1187,52 @@ export function IHSidebar(props: IHSidebarProps) {
 
   return (
     <ih-sidebar class={!visible ? 'hidden' : undefined}>
-      <div className="ih-sidebar-header">
+      <div className="ih-sidebar-header" ref={headerRef}>
         {user ? (
           <>
-            <div className="user-image">
-              <IAvatar alt={user.fullName} size={28} src={user.userImagePath} />
-            </div>
+            <button
+              type="button"
+              className="ih-user-chip"
+              aria-haspopup="menu"
+              aria-expanded={accountMenuOpen}
+              onClick={() => setAccountMenuOpen((open) => !open)}>
+              <span className="user-image">
+                <IAvatar alt={user.fullName} size={28} src={user.userImagePath} />
+              </span>
 
-            <div className="user-info">
-              <small className="text-subtle">{user.employeeCode}</small>
-              <h6>{user.fullName}</h6>
-            </div>
+              <span className="user-info">
+                <small className="text-subtle">{user.employeeCode}</small>
+                <h6>{user.fullName}</h6>
+              </span>
+
+              <i
+                className={`ih-user-caret ${
+                  accountMenuOpen ? 'fas fa-angle-up' : 'fas fa-angle-down'
+                }`}></i>
+            </button>
+
+            {accountMenuOpen ? (
+              <div className="ih-user-dropdown" role="menu">
+                <a
+                  className="ih-user-dropdown-item"
+                  role="menuitem"
+                  href={profileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setAccountMenuOpen(false)}>
+                  <i className="fa-solid fa-user fa-fw"></i>
+                  <span>Personal Profile</span>
+                </a>
+                <button
+                  type="button"
+                  className="ih-user-dropdown-item"
+                  role="menuitem"
+                  onClick={onLogoutClick}>
+                  <i className="fa-solid fa-right-from-bracket fa-fw"></i>
+                  <span>Logout</span>
+                </button>
+              </div>
+            ) : null}
           </>
         ) : null}
       </div>

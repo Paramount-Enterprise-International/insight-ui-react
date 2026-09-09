@@ -1,18 +1,18 @@
 import type { CSSProperties } from 'react';
 
-import { useInsightAuth, useSessionExpired } from '../auth/insight-auth-context';
+import { useIAuthContext, useISessionExpired } from '../auth/insight-auth-context';
 import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
 import { resolveApiErrorDisplayMessage } from '../api/api-error';
-import type { SessionExpiredReason } from './session-expired.service';
+import type { ISessionExpiredReason } from './session-expired.service';
 
-const TITLES: Record<SessionExpiredReason | 'default', string> = {
+const TITLES: Record<ISessionExpiredReason | 'default', string> = {
   SESSION_REPLACED: 'Signed Out Remotely',
   SESSION_REVOKED: 'Session Ended',
   TOKEN_EXPIRED: 'Session Expired',
   default: 'Session Expired',
 };
 
-const MESSAGES: Record<SessionExpiredReason | 'default', string> = {
+const MESSAGES: Record<ISessionExpiredReason | 'default', string> = {
   TOKEN_EXPIRED: 'Your session has expired. Please log in again to continue.',
   SESSION_REVOKED: 'Your session has been ended. Please log in again.',
   SESSION_REPLACED:
@@ -73,22 +73,22 @@ const actionStyle: CSSProperties = {
 
 /**
  * Library-provided session-expired overlay for React consumer apps. Render it
- * once near the app root (inside `<InsightAuthProvider>`, mirroring
+ * once near the app root (inside `<IAuthProvider>`, mirroring
  * `<IDialogOutlet />`):
  *
  * ```tsx
- * <SessionExpiredDialog />
+ * <ISessionExpiredDialog />
  * ```
  *
- * It reads its state from the shared `SessionExpiredService` (shown by the api
+ * It reads its state from the shared `ISessionExpiredService` (shown by the api
  * client's `onSessionExpired` when a refresh fails and `unauthorizedHandling`
  * is `'dialog'`) and, on "Log in again", performs a full-page redirect to
  * the configured signinUrl via `buildExternalSigninUrl`, then hides itself. It cannot
  * be dismissed by clicking the backdrop.
  */
-export function SessionExpiredDialog() {
-  const sessionExpired = useSessionExpired();
-  const { config } = useInsightAuth();
+export function ISessionExpiredDialog() {
+  const sessionExpired = useISessionExpired();
+  const { config } = useIAuthContext();
 
   if (!sessionExpired.visible) {
     return null;

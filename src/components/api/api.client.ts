@@ -1,5 +1,5 @@
-import { getAuthEndpointPath, requireIdentityHost, type IInsightAuthConfig } from '../auth/auth-config';
-import type { CsrfService } from '../csrf/csrf.service';
+import { getAuthEndpointPath, requireIdentityHost, type IAuthConfig } from '../auth/auth-config';
+import type { ICsrfService } from '../csrf/csrf.service';
 import { normalizeApiError, type INormalizedApiError } from './api-error';
 
 /* =========================================================
@@ -64,7 +64,7 @@ export type IRequestOptions = {
 export async function rawRequest<T = unknown>(
   baseUrl: string,
   path: string,
-  csrf: CsrfService | null,
+  csrf: ICsrfService | null,
   options: IRequestOptions = {},
 ): Promise<T> {
   const method = options.method ?? 'GET';
@@ -160,8 +160,8 @@ export type IApiOptions = {
 };
 
 export type IApiClientDeps = {
-  config: IInsightAuthConfig;
-  csrf: CsrfService;
+  config: IAuthConfig;
+  csrf: ICsrfService;
   session: {
     getAccessToken(): string | null;
     isTokenExpired(): boolean;
