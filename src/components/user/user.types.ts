@@ -6,7 +6,7 @@
  */
 
 /** Standard `{ meta, data }` response envelope used by the user-menu endpoints. */
-export type IInsightUserMenuEnvelope<T> = {
+export type IUserMenuEnvelopeDto<T> = {
   meta: {
     timestamp: string;
   };
@@ -14,10 +14,10 @@ export type IInsightUserMenuEnvelope<T> = {
 };
 
 /** Navigation target for a menu node. */
-export type IInsightMenuOpenIn = 'CURRENT_TAB' | 'NEW_TAB' | 'NEW_WINDOW';
+export type IMenuOpenInDto = 'CURRENT_TAB' | 'NEW_TAB' | 'NEW_WINDOW';
 
 /** Owning application reference for a menu node. */
-export type IInsightMenuApplication = {
+export type IMenuApplicationDto = {
   id: string;
   code: string;
   name: string;
@@ -26,14 +26,14 @@ export type IInsightMenuApplication = {
 };
 
 /** Effective company access for a menu node. */
-export type IInsightMenuCompany = {
+export type IMenuCompanyDto = {
   id: string;
   code: string;
   name: string;
 };
 
 /** Effective menu node returned by `GET {api.user}/me/menus` (user-menu contract). */
-export type IInsightMenuNode = {
+export type IMenuNodeDto = {
   id: string;
   name: string;
   type: 'group' | 'item';
@@ -41,16 +41,16 @@ export type IInsightMenuNode = {
   parentId: string | null;
   route: string | null;
   icon: string | null;
-  openIn: IInsightMenuOpenIn | null;
+  openIn: IMenuOpenInDto | null;
   sequence: number;
-  application: IInsightMenuApplication;
-  companies: IInsightMenuCompany[];
+  application: IMenuApplicationDto;
+  companies: IMenuCompanyDto[];
   isFavorite: boolean;
-  children: IInsightMenuNode[];
+  children: IMenuNodeDto[];
 };
 
 /** Favorite item returned by `GET {api.user}/me/menus/favorites`. */
-export type IInsightFavoriteMenuItem = {
+export type IFavoriteMenuItemDto = {
   id: string;
   name: string;
   /** User-controlled display order (1..n). */
@@ -58,19 +58,19 @@ export type IInsightFavoriteMenuItem = {
   menuCode: string | null;
   route: string | null;
   icon: string | null;
-  openIn: IInsightMenuOpenIn | null;
-  application: IInsightMenuApplication;
-  companies: IInsightMenuCompany[];
+  openIn: IMenuOpenInDto | null;
+  application: IMenuApplicationDto;
+  companies: IMenuCompanyDto[];
 };
 
 /** One entry of the reorder payload for `PUT {api.user}/me/menus/favorites`. */
-export type IInsightFavoriteOrderItem = {
+export type IFavoriteOrderItemDto = {
   menuId: string;
   displayOrder: number;
 };
 
 /** Current user returned by `GET {api.user}/users/user` (iam-user-api `CurrentUserDto`). */
-export type IInsightCurrentUser = {
+export type ICurrentUserDto = {
   userId: string;
   username: string;
   fullName: string;

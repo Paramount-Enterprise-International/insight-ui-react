@@ -4,18 +4,19 @@ import {
   type INormalizedApiError,
 } from '../api/api-error';
 import { getMenuKey, type IMenu, type IUser } from '../host';
-import type { SessionService } from '../session/session.service';
+import type { ISessionService } from '../session/session.service';
 import {
-  type IInsightCurrentUser,
-  type IInsightFavoriteMenuItem,
-  type IInsightMenuNode,
-  type CurrentUserService,
-  type UserMenuService,
+  type ICurrentUserDto,
+  type IFavoriteMenuItemDto,
+  type IMenuNodeDto,
+  type ICurrentUserService,
+  type IUserMenuService,
 } from '../user';
 import {
   findFirstLeafRoute,
   findMenuNameById,
   hasAnyMenuCode,
+  hasAnyRoute,
   mapToSidebarUser,
   toIMenuFavorite,
   toIMenus,
@@ -29,28 +30,28 @@ import {
  * Everything lives in memory; NOTHING is persisted to Web Storage. On a cold
  * start (page load) consumers call `load()` to re-fetch user, menus and
  * favorites; the store then re-emits so gated UI (`usePermission` /
- * `<HasMn>`) re-renders reactively once data is available (async-aware).
+ * `<IHasMn>`) re-renders reactively once data is available (async-aware).
  *
  * Observable store: `subscribe` + `getVersion` for `useSyncExternalStore`.
  */
-export type UserMenuLoadSource = 'user' | 'menus' | 'favorites';
+export type IUserMenuLoadSource = 'user' | 'menus' | 'favorites';
 
-export type UserMenuLoadErrors = Record<UserMenuLoadSource, INormalizedApiError | null>;
+export type IUserMenuLoadErrors = Record<IUserMenuLoadSource, INormalizedApiError | null>;
 
-export class UserMenuStore {
-  private readonly currentUserService: CurrentUserService;
-  private readonly menuService: UserMenuService;
-  private readonly session: SessionService;
+export class IUserMenuStore {
+  private readonly currentUserService: ICurrentUserService;
+  private readonly menuService: IUserMenuService;
+  private readonly session: ISessionService;
 
   private currentUserValue: IUser | null = null;
-  private rawCurrentUserValue: IInsightCurrentUser | null = null;
+  private rawCurrentUserValue: ICurrentUserDto | null = null;
   private menusValue: IMenu[] = [];
   private favoritesValue: IMenu[] = [];
   private rolesValue: string[] = [];
   private permissionsValue: string[] = [];
   private initializingValue = false;
   private loadErrorValue: string | null = null;
-  private loadErrorsValue: UserMenuLoadErrors = { user: null, menus: null, favorites: null };
+  private loadErrorsValue: IUserMenuLoadErrors = { user: null, menus: null, favorites: null };
   /** Identity (`sub`) whose data is currently cached — invalidated on user switch. */
   private loadedUserSub: string | null = null;
 
@@ -58,9 +59,9 @@ export class UserMenuStore {
   private listeners = new Set<() => void>();
 
   constructor(
-    currentUserService: CurrentUserService,
-    menuService: UserMenuService,
-    session: SessionService,
+    currentUserService: ICurrentUserService,
+    menuService: IUserMenuService,
+    session: ISessionService,
   ) {
     this.currentUserService = currentUserService;
     this.menuService = menuService;
@@ -87,7 +88,7 @@ export class UserMenuStore {
   }
 
   /** Raw current-user DTO as returned by the backend — `null` until loaded. */
-  get rawCurrentUser(): IInsightCurrentUser | null {
+  get rawCurrentUser(): ICurrentUserDto | null {
     return this.rawCurrentUserValue;
   }
 
@@ -126,7 +127,7 @@ export class UserMenuStore {
   }
 
   /** Normalized per-branch errors from the last `load()` — mirrors the service API error contract. */
-  get loadErrors(): UserMenuLoadErrors {
+  get loadErrors(): IUserMenuLoadErrors {
     return { ...this.loadErrorsValue };
   }
 
@@ -205,6 +206,15 @@ export class UserMenuStore {
   /** Menu-mode permission check against the in-memory menu codes (ANY match). */
   hasMenu(code: string | string[]): boolean {
     return hasAnyMenuCode(this.menusValue, code);
+  }
+
+  /**
+   * Route-membership check: can the user open `path`? True when any granted
+   * leaf menu route equals it (slash-normalized). Used by route-level access
+   * guards (e.g. `IRequireRouteAccess`).
+   */
+  hasRoute(path: string): boolean {
+    return hasAnyRoute(this.menusValue, path);
   }
 
   /** Role-mode permission check against the in-memory roles. ANY match. */
@@ -291,7 +301,7 @@ export class UserMenuStore {
    * mapped `IMenu[]`.
    */
   async loadMenus(applicationId?: string): Promise<IMenu[]> {
-    const nodes = await this.menuService.getEffectiveMenus<IInsightMenuNode[]>(applicationId);
+    const nodes = await this.menuService.getEffectiveMenus<IMenuNodeDto[]>(applicationId);
     const mapped = toIMenus(nodes);
     this.menusValue = mapped;
     this.notify();
@@ -300,7 +310,7 @@ export class UserMenuStore {
 
   /** Loads favorites into `favorites` — optionally for a single application. Returns the mapped `IMenu[]`. */
   async loadFavorites(applicationId?: string): Promise<IMenu[]> {
-    const items = await this.menuService.getFavorites<IInsightFavoriteMenuItem[]>(applicationId);
+    const items = await this.menuService.getFavorites<IFavoriteMenuItemDto[]>(applicationId);
     const mapped = items.map(toIMenuFavorite);
     this.favoritesValue = mapped;
     this.notify();
@@ -347,7 +357,7 @@ export class UserMenuStore {
   }
 
   private async loadUserInternal(): Promise<void> {
-    const raw = await this.currentUserService.getCurrentUser<IInsightCurrentUser>();
+    const raw = await this.currentUserService.getCurrentUser<ICurrentUserDto>();
     this.rawCurrentUserValue = raw;
     this.currentUserValue = mapToSidebarUser(raw);
     this.notify();
@@ -373,7 +383,7 @@ export class UserMenuStore {
     this.notify();
   }
 
-  private recordError(source: UserMenuLoadSource, err: unknown): void {
+  private recordError(source: IUserMenuLoadSource, err: unknown): void {
     const message = resolveApiErrorDisplayMessage(err, 'Failed to load');
     this.loadErrorsValue = { ...this.loadErrorsValue, [source]: normalizeApiError(err) };
     this.loadErrorValue = `${source}: ${message}`;

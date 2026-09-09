@@ -6,7 +6,7 @@ import type { IEnvironment } from './environment.interface';
  * `api.identity`, `signinUrl` and `authCallbackUrl` are intentionally EMPTY -
  * the library does not default to any shared identity provider. Each consumer
  * app supplies its own values (its own BFF/identity host) via
- * `InsightAuthProvider` / `resolveInsightAuthConfig`. The
+ * `IAuthProvider` / `resolveIAuthConfig`. The
  * `user`/`configuration`/`application` keys keep defaulting to the platform
  * services and can still be overridden.
  */

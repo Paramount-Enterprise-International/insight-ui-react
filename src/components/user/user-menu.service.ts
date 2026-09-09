@@ -1,12 +1,12 @@
-import type { IInsightAuthConfig } from '../auth/auth-config';
+import type { IAuthConfig } from '../auth/auth-config';
 import { environment as defaultEnvironment } from '../environments/environment';
 import type { IApiClient } from '../api/api.client';
 
 import type {
-  IInsightFavoriteMenuItem,
-  IInsightFavoriteOrderItem,
-  IInsightMenuNode,
-  IInsightUserMenuEnvelope,
+  IFavoriteMenuItemDto,
+  IFavoriteOrderItemDto,
+  IMenuNodeDto,
+  IUserMenuEnvelopeDto,
 } from './user.types';
 
 /**
@@ -18,11 +18,11 @@ import type {
  * Base URL: `{api.user}` from the resolved auth config (defaults to the
  * library environment file). React analog of the Angular `IUserMenuService`.
  */
-export class UserMenuService {
-  private readonly config: IInsightAuthConfig;
+export class IUserMenuService {
+  private readonly config: IAuthConfig;
   private readonly api: IApiClient;
 
-  constructor(config: IInsightAuthConfig, api: IApiClient) {
+  constructor(config: IAuthConfig, api: IApiClient) {
     this.config = config;
     this.api = api;
   }
@@ -32,9 +32,9 @@ export class UserMenuService {
   }
 
   /** GET `{api.user}/me/menus` — effective navigation tree for one or all active applications. */
-  async getEffectiveMenus<T = IInsightMenuNode[]>(applicationId?: string): Promise<T> {
+  async getEffectiveMenus<T = IMenuNodeDto[]>(applicationId?: string): Promise<T> {
     const id = applicationId ?? this.config.appId;
-    const response = await this.api.get<IInsightUserMenuEnvelope<T>>('/me/menus', {
+    const response = await this.api.get<IUserMenuEnvelopeDto<T>>('/me/menus', {
       apiUrl: this.baseUrl,
       params: id ? { applicationId: id } : undefined,
     });
@@ -42,9 +42,9 @@ export class UserMenuService {
   }
 
   /** GET `{api.user}/me/menus/favorites` — effective favorite items, sorted by name. */
-  async getFavorites<T = IInsightFavoriteMenuItem[]>(applicationId?: string): Promise<T> {
+  async getFavorites<T = IFavoriteMenuItemDto[]>(applicationId?: string): Promise<T> {
     const id = applicationId ?? this.config.appId;
-    const response = await this.api.get<IInsightUserMenuEnvelope<T>>('/me/menus/favorites', {
+    const response = await this.api.get<IUserMenuEnvelopeDto<T>>('/me/menus/favorites', {
       apiUrl: this.baseUrl,
       params: id ? { applicationId: id } : undefined,
     });
@@ -67,7 +67,7 @@ export class UserMenuService {
    * complete sequence 1..n. Returns 204 No Content.
    */
   async reorderFavorites(menuIds: (string | number)[]): Promise<void> {
-    const items: IInsightFavoriteOrderItem[] = menuIds.map((menuId, index) => ({
+    const items: IFavoriteOrderItemDto[] = menuIds.map((menuId, index) => ({
       menuId: String(menuId),
       displayOrder: index + 1,
     }));

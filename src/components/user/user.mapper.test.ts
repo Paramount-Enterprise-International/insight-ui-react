@@ -10,9 +10,9 @@ import {
   toIMenus,
   toIMenuFavorite,
 } from './user.mapper';
-import type { IInsightCurrentUser, IInsightFavoriteMenuItem, IInsightMenuNode } from './user.types';
+import type { ICurrentUserDto, IFavoriteMenuItemDto, IMenuNodeDto } from './user.types';
 
-const NODE: IInsightMenuNode = {
+const NODE: IMenuNodeDto = {
   id: 'm1',
   name: 'Sales Report',
   type: 'item',
@@ -44,7 +44,7 @@ describe('user.mapper', () => {
   });
 
   it('maps favorites with isFavorite = true', () => {
-    const favorite: IInsightFavoriteMenuItem = {
+    const favorite: IFavoriteMenuItemDto = {
       id: 'f1',
       name: 'Report',
       displayOrder: 1,
@@ -94,7 +94,7 @@ describe('user.mapper', () => {
   });
 
   it('maps a current-user DTO to the sidebar IUser shape', () => {
-    const raw: IInsightCurrentUser = {
+    const raw: ICurrentUserDto = {
       userId: 'u1',
       username: 'jdoe',
       fullName: 'Jane Doe',

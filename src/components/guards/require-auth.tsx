@@ -2,14 +2,14 @@ import { useEffect, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 
 import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
-import { useInsightAuth, useSession, useSessionExpired } from '../auth/insight-auth-context';
+import { useIAuthContext, useISession, useISessionExpired } from '../auth/insight-auth-context';
 
 /**
  * Cross-domain auth guard for @insight/ui consumer apps — the React analog of
  * Angular's `authGuard`. Wrap protected routes:
  *
  * ```tsx
- * <Route path="settings" element={<RequireAuth><Settings /></RequireAuth>} />
+ * <Route path="settings" element={<IRequireAuth><Settings /></IRequireAuth>} />
  * ```
  *
  * Performs a FULL PAGE redirect to the configured signinUrl when
@@ -27,7 +27,7 @@ import { useInsightAuth, useSession, useSessionExpired } from '../auth/insight-a
  * new login elsewhere), the guard does NOT redirect — the overlay's
  * "Login again" action owns the redirect to signin.
  */
-export function RequireAuth({
+export function IRequireAuth({
   children,
   loading,
 }: {
@@ -35,9 +35,9 @@ export function RequireAuth({
   /** Custom loading placeholder while the session is restoring. */
   loading?: ReactNode;
 }) {
-  const session = useSession();
-  const { config } = useInsightAuth();
-  const sessionExpired = useSessionExpired();
+  const session = useISession();
+  const { config } = useIAuthContext();
+  const sessionExpired = useISessionExpired();
   const location = useLocation();
 
   const isInitializing = session.initializing;
