@@ -21,6 +21,10 @@ function makeStore({
   granted?: string[];
 } = {}): IUserMenuStore {
   return {
+    // `useIUserMenuStore` subscribes through `useSyncExternalStore`, so the stub
+    // must expose the observable-store API (subscribe + getVersion).
+    subscribe: () => () => undefined,
+    getVersion: () => 0,
     initializing,
     hasPermission: (code: string | string[]): boolean =>
       Array.isArray(code)
