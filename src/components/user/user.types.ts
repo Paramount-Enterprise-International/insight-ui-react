@@ -1,6 +1,7 @@
 /**
- * Types for the current-user navigation & favorites data, matched to the
- * iam-user-api user-menu service contract (`GET {api.user}/me/menus*` and
+ * Types for the current-user navigation, favorites and effective-authorization
+ * data, matched to the iam-user-api user-menu service contract
+ * (`GET {api.user}/me/menus*`, `GET {api.user}/me/authorizations` and
  * `GET {api.user}/users/user`). These are the raw backend shapes; the library
  * maps them onto the UI-facing `IMenu` / `IUser` contracts via `user.mapper.ts`.
  */
@@ -81,4 +82,31 @@ export type ICurrentUserDto = {
   occupationName: string | null;
   departmentName: string | null;
   enabled: boolean;
+};
+
+/**
+ * Kind of effective authorization entry:
+ * - `item` = navigable `MENU_ITEM`
+ * - `function` = feature/action grant (`FUNCTION`)
+ */
+export type IEffectiveAuthorizationType = 'item' | 'function';
+
+/**
+ * One entry returned by `GET {api.user}/me/authorizations` (iam-user-api
+ * `EffectiveAuthorizationDto`). The backend already applied the full effective
+ * authorization pipeline (active application mapping, roles + additional-menu
+ * grants, company scope, denied menu/company) and returns ONLY entries whose
+ * final decision is `allowed`, restricted to `MENU_ITEM` / `FUNCTION` menus,
+ * sorted by `menuCode`.
+ */
+export type IEffectiveAuthorizationDto = {
+  menuCode: string;
+  menuId: string;
+  type: IEffectiveAuthorizationType;
+  /**
+   * Companies the grant is scoped to. Follows the menu's company scope, so a
+   * `function` entry with scope `ALL` carries the full company list; an empty
+   * array means the resolved company pool was empty.
+   */
+  companies: IMenuCompanyDto[];
 };
