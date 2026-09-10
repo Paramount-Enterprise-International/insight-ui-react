@@ -3,6 +3,7 @@ import { environment as defaultEnvironment } from '../environments/environment';
 import type { IApiClient } from '../api/api.client';
 
 import type {
+  IEffectiveAuthorizationDto,
   IFavoriteMenuItemDto,
   IFavoriteOrderItemDto,
   IMenuNodeDto,
@@ -48,6 +49,34 @@ export class IUserMenuService {
       apiUrl: this.baseUrl,
       params: id ? { applicationId: id } : undefined,
     });
+    return response.data;
+  }
+
+  /**
+   * GET `{api.user}/me/authorizations?applicationId=...` — the complete set of
+   * effective authorizations (menu items + functions) for the current user,
+   * already reduced to `allowed` entries by the backend.
+   *
+   * The backend REQUIRES `applicationId`, so it falls back to `config.appId`
+   * and fails loudly when neither is configured (fail-closed: the caller's
+   * permission list simply stays empty).
+   */
+  async getAuthorizations<T = IEffectiveAuthorizationDto[]>(
+    applicationId?: string,
+  ): Promise<T> {
+    const id = applicationId ?? this.config.appId;
+
+    if (!id) {
+      throw new Error(
+        '[@insight/ui] applicationId is required to load current-user authorizations.',
+      );
+    }
+
+    const response = await this.api.get<IUserMenuEnvelopeDto<T>>('/me/authorizations', {
+      apiUrl: this.baseUrl,
+      params: { applicationId: id },
+    });
+
     return response.data;
   }
 
