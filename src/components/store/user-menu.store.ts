@@ -7,6 +7,7 @@ import { getMenuKey, type IMenu, type IUser } from '../host';
 import type { ISessionService } from '../session/session.service';
 import {
   type ICurrentUserDto,
+  type IEffectiveAuthorizationDto,
   type IFavoriteMenuItemDto,
   type IMenuNodeDto,
   type ICurrentUserService,
@@ -28,13 +29,14 @@ import {
  * Angular `IUserMenuStore`).
  *
  * Everything lives in memory; NOTHING is persisted to Web Storage. On a cold
- * start (page load) consumers call `load()` to re-fetch user, menus and
- * favorites; the store then re-emits so gated UI (`usePermission` /
- * `<IHasMn>`) re-renders reactively once data is available (async-aware).
+ * start (page load) consumers call `load()` to re-fetch user, menus, favorites
+ * and effective authorizations; the store then re-emits so gated UI
+ * (`usePermission` / `<IHasMn>`) re-renders reactively once data is available
+ * (async-aware).
  *
  * Observable store: `subscribe` + `getVersion` for `useSyncExternalStore`.
  */
-export type IUserMenuLoadSource = 'user' | 'menus' | 'favorites';
+export type IUserMenuLoadSource = 'user' | 'menus' | 'favorites' | 'permissions';
 
 export type IUserMenuLoadErrors = Record<IUserMenuLoadSource, INormalizedApiError | null>;
 
@@ -51,7 +53,12 @@ export class IUserMenuStore {
   private permissionsValue: string[] = [];
   private initializingValue = false;
   private loadErrorValue: string | null = null;
-  private loadErrorsValue: IUserMenuLoadErrors = { user: null, menus: null, favorites: null };
+  private loadErrorsValue: IUserMenuLoadErrors = {
+    user: null,
+    menus: null,
+    favorites: null,
+    permissions: null,
+  };
   /** Identity (`sub`) whose data is currently cached — invalidated on user switch. */
   private loadedUserSub: string | null = null;
 
@@ -109,8 +116,10 @@ export class IUserMenuStore {
 
   /**
    * Feature permissions granted by the backend (for `source: 'permission'`
-   * checks). NOT hydrated by `load()` yet - a loader calls `setPermissions()`
-   * once the endpoint is available.
+   * checks). Hydrated by `load()` from the effective authorizations endpoint
+   * (`GET {api.user}/me/authorizations`) as the deduplicated set of
+   * `data[].menuCode`; `setPermissions()` remains available for a caller that
+   * wants to supply the list itself.
    */
   get permissions(): string[] {
     return this.permissionsValue;
@@ -145,10 +154,10 @@ export class IUserMenuStore {
   }
 
   /**
-   * Cold-start: fetch user + menus + favorites concurrently. A failure in one
-   * branch does not block the others; `initializing` clears once all settle.
-   * Resolves when the load settles, so callers can await it (e.g. to navigate
-   * to `defaultRoute` after login).
+   * Cold-start: fetch user + menus + favorites + permissions concurrently. A
+   * failure in one branch does not block the others; `initializing` clears once
+   * all settle. Resolves when the load settles, so callers can await it (e.g.
+   * to navigate to `defaultRoute` after login).
    */
   async load(): Promise<void> {
     if (this.initializingValue) {
@@ -167,7 +176,7 @@ export class IUserMenuStore {
     }
     this.initializingValue = true;
     this.loadErrorValue = null;
-    this.loadErrorsValue = { user: null, menus: null, favorites: null };
+    this.loadErrorsValue = { user: null, menus: null, favorites: null, permissions: null };
     this.rolesValue = this.session.getRoles();
     this.notify();
 
@@ -175,6 +184,7 @@ export class IUserMenuStore {
       this.loadUserInternal().catch((err) => this.recordError('user', err)),
       this.loadMenusInternal().catch((err) => this.recordError('menus', err)),
       this.loadFavoritesInternal().catch((err) => this.recordError('favorites', err)),
+      this.loadPermissionsInternal().catch((err) => this.recordError('permissions', err)),
     ]);
 
     this.initializingValue = false;
@@ -227,12 +237,13 @@ export class IUserMenuStore {
   }
 
   /**
-   * Replaces the granted permission list (feature/action codes). Called by a
-   * loader once the backend endpoint is available - `load()` does not fetch
-   * permissions.
+   * Replaces the granted permission list (feature/action codes). `load()`
+   * hydrates this automatically - call this only to override it explicitly.
+   * Codes are deduplicated so an accidental duplicate in the source list can
+   * never make `hasPermission()` behave differently.
    */
   setPermissions(permissions: string[]): void {
-    this.permissionsValue = permissions;
+    this.permissionsValue = [...new Set(permissions)];
     this.notify();
   }
 
@@ -317,6 +328,22 @@ export class IUserMenuStore {
     return mapped;
   }
 
+  /**
+   * Loads the granted feature permissions into `permissions` — the deduplicated
+   * set of `data[].menuCode` from the effective authorizations endpoint.
+   * Returns the resulting permission list.
+   */
+  async loadPermissions(applicationId?: string): Promise<string[]> {
+    const items =
+      await this.menuService.getAuthorizations<IEffectiveAuthorizationDto[]>(applicationId);
+
+    const permissions = [...new Set(items.map((item) => item.menuCode))];
+    this.permissionsValue = permissions;
+    this.notify();
+
+    return permissions;
+  }
+
   /** Returns a new menu tree with the matching node's `isFavorite` flipped (star icon). */
   private applyMenuFavorite(
     menus: IMenu[],
@@ -371,6 +398,10 @@ export class IUserMenuStore {
     await this.loadFavorites();
   }
 
+  private async loadPermissionsInternal(): Promise<void> {
+    await this.loadPermissions();
+  }
+
   private clearData(): void {
     this.currentUserValue = null;
     this.rawCurrentUserValue = null;
@@ -379,7 +410,7 @@ export class IUserMenuStore {
     this.rolesValue = [];
     this.permissionsValue = [];
     this.loadErrorValue = null;
-    this.loadErrorsValue = { user: null, menus: null, favorites: null };
+    this.loadErrorsValue = { user: null, menus: null, favorites: null, permissions: null };
     this.notify();
   }
 

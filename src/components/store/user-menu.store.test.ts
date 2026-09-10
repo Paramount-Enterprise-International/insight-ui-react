@@ -2,8 +2,15 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ISessionService } from '../session/session.service';
 import type { ICurrentUserService } from '../user/current-user.service';
+import type { IEffectiveAuthorizationDto } from '../user/user.types';
 import type { IUserMenuService } from '../user/user-menu.service';
 import { IUserMenuStore } from './user-menu.store';
+
+/** Effective authorizations returned by the `/me/authorizations` branch. */
+const AUTHORIZATIONS: IEffectiveAuthorizationDto[] = [
+  { menuCode: 'dashboard', menuId: 'm1', type: 'item', companies: [] },
+  { menuCode: 'report.export', menuId: 'm2', type: 'function', companies: [] },
+];
 
 /** Minimal object-mother for the store's constructor dependencies. */
 function createStore() {
@@ -13,6 +20,7 @@ function createStore() {
   const menuSvc = {
     getEffectiveMenus: vi.fn(async () => []),
     getFavorites: vi.fn(async () => []),
+    getAuthorizations: vi.fn(async () => AUTHORIZATIONS),
   } as unknown as IUserMenuService;
   const session = {
     getRoles: vi.fn(() => []),
@@ -27,7 +35,12 @@ describe('IUserMenuStore — load error capture', () => {
     const { store } = createStore();
     await store.load();
 
-    expect(store.loadErrors).toEqual({ user: null, menus: null, favorites: null });
+    expect(store.loadErrors).toEqual({
+      user: null,
+      menus: null,
+      favorites: null,
+      permissions: null,
+    });
     expect(store.loadError).toBeNull();
     expect(store.initializing).toBe(false);
   });
@@ -140,7 +153,12 @@ describe('IUserMenuStore — load error capture', () => {
     expect(store.currentUser).toBeNull();
     expect(store.rawCurrentUser).toBeNull();
     expect(store.roles).toEqual([]);
-    expect(store.loadErrors).toEqual({ user: null, menus: null, favorites: null });
+    expect(store.loadErrors).toEqual({
+      user: null,
+      menus: null,
+      favorites: null,
+      permissions: null,
+    });
   });
 });
 
@@ -168,5 +186,114 @@ describe('IUserMenuStore — permissions', () => {
 
     expect(store.permissions).toEqual([]);
     expect(store.hasPermission('report.export')).toBe(false);
+  });
+
+  it('load() hydrates permissions from the effective authorizations menuCode list', async () => {
+    const { store, menuSvc } = createStore();
+    const authSpy = (menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> })
+      .getAuthorizations;
+
+    await store.load();
+
+    expect(authSpy).toHaveBeenCalled();
+    expect(store.permissions).toEqual(['dashboard', 'report.export']);
+    expect(store.hasPermission('report.export')).toBe(true);
+    expect(store.hasPermission(['nope', 'dashboard'])).toBe(true);
+    expect(store.hasPermission('nope')).toBe(false);
+  });
+
+  it('load() deduplicates repeated menu codes', async () => {
+    const { store, menuSvc } = createStore();
+    (
+      menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }
+    ).getAuthorizations.mockResolvedValueOnce([
+      { menuCode: 'report.export', menuId: 'm2', type: 'function', companies: [] },
+      { menuCode: 'report.export', menuId: 'm3', type: 'function', companies: [] },
+    ]);
+
+    await store.load();
+
+    expect(store.permissions).toEqual(['report.export']);
+  });
+
+  it('load() yields an empty permission list for an empty response (fail-closed)', async () => {
+    const { store, menuSvc } = createStore();
+    (
+      menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }
+    ).getAuthorizations.mockResolvedValueOnce([]);
+
+    await store.load();
+
+    expect(store.permissions).toEqual([]);
+    expect(store.hasPermission('report.export')).toBe(false);
+    expect(store.loadErrors.permissions).toBeNull();
+  });
+
+  it('records an authorizations error without losing the other branches', async () => {
+    const { store, menuSvc } = createStore();
+    const menusSpy = (menuSvc as unknown as { getEffectiveMenus: ReturnType<typeof vi.fn> })
+      .getEffectiveMenus;
+    menusSpy.mockResolvedValueOnce([
+      { id: 'm1', name: 'Dashboard', type: 'item', menuCode: 'dashboard', route: '/dashboard' },
+    ]);
+    (
+      menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }
+    ).getAuthorizations.mockRejectedValueOnce({ status: 500, message: 'authorizations exploded' });
+
+    await store.load();
+
+    expect(store.loadErrors.permissions?.status).toBe(500);
+    expect(store.loadErrors.permissions?.message).toBe('authorizations exploded');
+    // The other branches still succeed.
+    expect(store.menus.length).toBe(1);
+    expect(store.currentUser).not.toBeNull();
+    expect(store.loadErrors.menus).toBeNull();
+    // Fail-closed: nothing is granted.
+    expect(store.permissions).toEqual([]);
+    expect(store.hasPermission('report.export')).toBe(false);
+  });
+
+  it("drops the previous user's permissions when load() runs for a different user", async () => {
+    const { store, menuSvc, session } = createStore();
+    const sessionSpy = session as unknown as { getUser: ReturnType<typeof vi.fn> };
+    const authSpy = (menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> })
+      .getAuthorizations;
+
+    await store.load();
+    expect(store.permissions).toEqual(['dashboard', 'report.export']);
+
+    sessionSpy.getUser.mockReturnValue({ sub: 'sub-b' });
+    authSpy.mockResolvedValueOnce([]);
+
+    await store.load();
+
+    expect(store.permissions).toEqual([]);
+    expect(store.hasPermission('report.export')).toBe(false);
+  });
+
+  it('setPermissions deduplicates the supplied codes', () => {
+    const { store } = createStore();
+
+    store.setPermissions(['a', 'b', 'a']);
+
+    expect(store.permissions).toEqual(['a', 'b']);
+    expect(store.hasPermission('a')).toBe(true);
+    expect(store.hasPermission(['nope', 'b'])).toBe(true);
+    expect(store.hasPermission(['nope', 'other'])).toBe(false);
+  });
+
+  it('reset() clears a recorded permissions error too', async () => {
+    const { store, menuSvc } = createStore();
+    (
+      menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }
+    ).getAuthorizations.mockRejectedValueOnce({ status: 500, message: 'boom' });
+
+    await store.load();
+    expect(store.loadErrors.permissions).not.toBeNull();
+
+    store.reset();
+
+    expect(store.loadErrors.permissions).toBeNull();
+    expect(store.permissions).toEqual([]);
   });
 });
