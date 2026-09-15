@@ -43,6 +43,7 @@ describe('IUserMenuStore — load error capture', () => {
     });
     expect(store.loadError).toBeNull();
     expect(store.initializing).toBe(false);
+    expect(store.initialized).toBe(true);
   });
 
   it('records the normalized menus error (errorCode + revision) and real message when /me/menus fails', async () => {
@@ -138,6 +139,28 @@ describe('IUserMenuStore — load error capture', () => {
     expect(store.menus.length).toBe(1);
   });
 
+  it('drops cached authorization data when load() switches application', async () => {
+    const { store, menuSvc } = createStore();
+    const menusSpy = (menuSvc as unknown as {
+      getEffectiveMenus: ReturnType<typeof vi.fn>;
+    }).getEffectiveMenus;
+    const authorizationsSpy = (menuSvc as unknown as {
+      getAuthorizations: ReturnType<typeof vi.fn>;
+    }).getAuthorizations;
+
+    await store.load('app-a');
+    expect(store.permissions).toEqual(['dashboard', 'report.export']);
+
+    menusSpy.mockRejectedValueOnce({ status: 404, message: 'application unavailable' });
+    authorizationsSpy.mockResolvedValueOnce([]);
+    await store.load('app-b');
+
+    expect(menusSpy).toHaveBeenLastCalledWith('app-b');
+    expect(authorizationsSpy).toHaveBeenLastCalledWith('app-b');
+    expect(store.menus).toEqual([]);
+    expect(store.permissions).toEqual([]);
+  });
+
   it('reset() clears all cached data and forgets the identity', async () => {
     const { store, menuSvc } = createStore();
     const menusSpy = (menuSvc as unknown as { getEffectiveMenus: ReturnType<typeof vi.fn> }).getEffectiveMenus;
@@ -153,6 +176,7 @@ describe('IUserMenuStore — load error capture', () => {
     expect(store.currentUser).toBeNull();
     expect(store.rawCurrentUser).toBeNull();
     expect(store.roles).toEqual([]);
+    expect(store.initialized).toBe(false);
     expect(store.loadErrors).toEqual({
       user: null,
       menus: null,
@@ -216,6 +240,43 @@ describe('IUserMenuStore — permissions', () => {
     expect(store.permissions).toEqual(['report.export']);
   });
 
+  it('exposes deduplicated companies and menu-company mappings', async () => {
+    const { store, menuSvc } = createStore();
+    (
+      menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }
+    ).getAuthorizations.mockResolvedValueOnce([
+      {
+        menuCode: 'report.export',
+        menuId: 'm2',
+        type: 'function',
+        companies: [{ id: 'c1', code: 'ecomindo', name: 'Ecomindo' }],
+      },
+      {
+        menuCode: 'report.export',
+        menuId: 'm2',
+        type: 'function',
+        companies: [{ id: 'c1', code: 'ecomindo', name: 'Duplicate' }],
+      },
+      {
+        menuCode: 'report.read',
+        menuId: 'm3',
+        type: 'function',
+        companies: [],
+      },
+    ]);
+
+    await store.load();
+
+    expect(store.authorizations).toHaveLength(3);
+    expect(store.companies).toEqual([{ id: 'c1', code: 'ecomindo', name: 'Ecomindo' }]);
+    expect(store.companyCodes).toEqual(['ecomindo']);
+    expect(store.menuCompanies).toEqual({
+      'report.export': ['ecomindo'],
+      'report.read': [],
+    });
+    expect(store.authorizationSource.permission).toEqual(['report.export', 'report.read']);
+  });
+
   it('load() yields an empty permission list for an empty response (fail-closed)', async () => {
     const { store, menuSvc } = createStore();
     (
@@ -225,6 +286,10 @@ describe('IUserMenuStore — permissions', () => {
     await store.load();
 
     expect(store.permissions).toEqual([]);
+    expect(store.authorizations).toEqual([]);
+    expect(store.companies).toEqual([]);
+    expect(store.companyCodes).toEqual([]);
+    expect(store.menuCompanies).toEqual({});
     expect(store.hasPermission('report.export')).toBe(false);
     expect(store.loadErrors.permissions).toBeNull();
   });

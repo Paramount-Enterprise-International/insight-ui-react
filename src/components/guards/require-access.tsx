@@ -60,7 +60,7 @@ export function IRequireAccess({
 
   const isInitializing = session.initializing;
   const isAuth = session.isAuth();
-  const menusSettled = store.menus.length > 0 || store.loadErrors.menus !== null;
+  const menusSettled = store.initialized;
 
   // Start in the loading state when mounting on a cold start — menus not yet
   // fetched and no store load in flight. The effect below triggers that load,

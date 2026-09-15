@@ -12,7 +12,7 @@ import type {
 
 /**
  * Current-user navigation & favorites service — calls iam-user-api's
- * `/me/menus*` endpoints (user-menu service contract). These endpoints return
+ * application-scoped `/me/applications/:applicationId/*` endpoints. These endpoints return
  * a `{ meta, data }` envelope; this service unwraps `.data` so callers keep
  * the app-wide body-as-data convention.
  *
@@ -32,28 +32,42 @@ export class IUserMenuService {
     return this.config.api['user'] ?? defaultEnvironment.api.user;
   }
 
-  /** GET `{api.user}/me/menus` — effective navigation tree for one or all active applications. */
+  private resolveApplicationId(applicationId?: string): string {
+    const id = (applicationId ?? this.config.appId)?.trim();
+    if (!id) {
+      throw new Error(
+        '[@insight/ui] applicationId is required to load current-user application data.',
+      );
+    }
+    return id;
+  }
+
+  private applicationPath(applicationId: string, suffix: string): string {
+    return `/me/applications/${encodeURIComponent(applicationId)}/${suffix}`;
+  }
+
+  /** GET `{api.user}/me/applications/:applicationId/menus` - effective navigation tree. */
   async getEffectiveMenus<T = IMenuNodeDto[]>(applicationId?: string): Promise<T> {
-    const id = applicationId ?? this.config.appId;
-    const response = await this.api.get<IUserMenuEnvelopeDto<T>>('/me/menus', {
-      apiUrl: this.baseUrl,
-      params: id ? { applicationId: id } : undefined,
-    });
+    const id = this.resolveApplicationId(applicationId);
+    const response = await this.api.get<IUserMenuEnvelopeDto<T>>(
+      this.applicationPath(id, 'menus'),
+      { apiUrl: this.baseUrl },
+    );
     return response.data;
   }
 
-  /** GET `{api.user}/me/menus/favorites` — effective favorite items, sorted by name. */
+  /** GET `{api.user}/me/applications/:applicationId/menus/favorites` - effective favorites. */
   async getFavorites<T = IFavoriteMenuItemDto[]>(applicationId?: string): Promise<T> {
-    const id = applicationId ?? this.config.appId;
-    const response = await this.api.get<IUserMenuEnvelopeDto<T>>('/me/menus/favorites', {
-      apiUrl: this.baseUrl,
-      params: id ? { applicationId: id } : undefined,
-    });
+    const id = this.resolveApplicationId(applicationId);
+    const response = await this.api.get<IUserMenuEnvelopeDto<T>>(
+      this.applicationPath(id, 'menus/favorites'),
+      { apiUrl: this.baseUrl },
+    );
     return response.data;
   }
 
   /**
-   * GET `{api.user}/me/authorizations?applicationId=...` — the complete set of
+   * GET `{api.user}/me/applications/:applicationId/authorizations` - the complete set of
    * effective authorizations (menu items + functions) for the current user,
    * already reduced to `allowed` entries by the backend.
    *
@@ -64,18 +78,11 @@ export class IUserMenuService {
   async getAuthorizations<T = IEffectiveAuthorizationDto[]>(
     applicationId?: string,
   ): Promise<T> {
-    const id = applicationId ?? this.config.appId;
-
-    if (!id) {
-      throw new Error(
-        '[@insight/ui] applicationId is required to load current-user authorizations.',
-      );
-    }
-
-    const response = await this.api.get<IUserMenuEnvelopeDto<T>>('/me/authorizations', {
-      apiUrl: this.baseUrl,
-      params: { applicationId: id },
-    });
+    const id = this.resolveApplicationId(applicationId);
+    const response = await this.api.get<IUserMenuEnvelopeDto<T>>(
+      this.applicationPath(id, 'authorizations'),
+      { apiUrl: this.baseUrl },
+    );
 
     return response.data;
   }

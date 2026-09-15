@@ -15,9 +15,11 @@ import { IHasMn, INotHasMn } from './use-permission';
 /** Code-aware store stub — mirrors the Angular `has-mn` directive spec behaviour. */
 function makeStore({
   initializing = false,
+  initialized = true,
   granted = [],
 }: {
   initializing?: boolean;
+  initialized?: boolean;
   granted?: string[];
 } = {}): IUserMenuStore {
   return {
@@ -26,10 +28,15 @@ function makeStore({
     subscribe: () => () => undefined,
     getVersion: () => 0,
     initializing,
-    hasPermission: (code: string | string[]): boolean =>
-      Array.isArray(code)
-        ? code.some((item) => granted.includes(item))
-        : granted.includes(code),
+    initialized,
+    authorizationSource: {
+      menu: [],
+      permission: granted,
+      roles: [],
+      companyCodes: [],
+      companies: [],
+      menuCompanies: {},
+    },
   } as unknown as IUserMenuStore;
 }
 
@@ -38,10 +45,10 @@ function renderGated(store: IUserMenuStore) {
 
   return render(
     <IAuthContext.Provider value={ctx}>
-      <IHasMn value={{ source: 'permission', value: 'report.export' }}>
+      <IHasMn value={(source) => source.permission.includes('report.export')}>
         <div>perm-export</div>
       </IHasMn>
-      <INotHasMn value={{ source: 'permission', value: 'report.delete' }}>
+      <INotHasMn value={(source) => source.permission.includes('report.delete')}>
         <div>not-delete</div>
       </INotHasMn>
     </IAuthContext.Provider>,
@@ -59,6 +66,13 @@ describe('IHasMn / INotHasMn — permission source', () => {
 
   it('hides both branches while the store is initializing (init gate)', () => {
     renderGated(makeStore({ initializing: true, granted: ['report.export'] }));
+
+    expect(screen.queryByText('perm-export')).toBeNull();
+    expect(screen.queryByText('not-delete')).toBeNull();
+  });
+
+  it('hides both branches before the first store load starts', () => {
+    renderGated(makeStore({ initialized: false, granted: ['report.export'] }));
 
     expect(screen.queryByText('perm-export')).toBeNull();
     expect(screen.queryByText('not-delete')).toBeNull();
@@ -92,7 +106,7 @@ describe('IHasMn / INotHasMn — permission source', () => {
     const ctx = { userMenuStore: store } as unknown as IAuthContextValue;
     render(
       <IAuthContext.Provider value={ctx}>
-        <IHasMn value={{ source: 'permission', value: 'report.export' }}>
+        <IHasMn value={(source) => source.permission.includes('report.export')}>
           <div>perm-export</div>
         </IHasMn>
       </IAuthContext.Provider>,
