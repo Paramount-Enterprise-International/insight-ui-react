@@ -1212,24 +1212,24 @@ export function IHSidebar(props: IHSidebarProps) {
             </button>
 
             {accountMenuOpen ? (
-              <div className="ih-user-dropdown" role="menu">
+              <div className="ih-user-dropdown i-options" role="menu">
                 <a
-                  className="ih-user-dropdown-item"
+                  className="ih-user-dropdown-item i-option"
                   role="menuitem"
                   href={profileUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => setAccountMenuOpen(false)}>
                   <i className="fa-solid fa-user fa-fw"></i>
-                  <span>Personal Profile</span>
+                  <span className="i-option-label">Personal Profile</span>
                 </a>
                 <button
                   type="button"
-                  className="ih-user-dropdown-item"
+                  className="ih-user-dropdown-item i-option"
                   role="menuitem"
                   onClick={onLogoutClick}>
                   <i className="fa-solid fa-right-from-bracket fa-fw"></i>
-                  <span>Logout</span>
+                  <span className="i-option-label">Logout</span>
                 </button>
               </div>
             ) : null}
