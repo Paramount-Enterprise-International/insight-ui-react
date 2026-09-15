@@ -17,6 +17,7 @@ const BASE_CONFIG: IAuthConfig = {
     ssoSessionMaxSeconds: 54000,
   },
   csrfTokenMaxAgeSeconds: 7170,
+  appId: 'cfg-app',
 };
 
 const envelope = (data: unknown) => ({ meta: { timestamp: '2026-09-10T00:00:00Z' }, data });
@@ -33,7 +34,7 @@ const getCalls = (api: IApiClient) =>
   ][];
 
 describe('IUserMenuService — getAuthorizations', () => {
-  it('calls GET {api.user}/me/authorizations and unwraps .data', async () => {
+  it('calls the canonical application authorization endpoint and unwraps .data', async () => {
     const { service, api } = createService();
     const data = [{ menuCode: 'report.export', menuId: 'm2', type: 'function', companies: [] }];
     (api.get as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(envelope(data));
@@ -41,17 +42,18 @@ describe('IUserMenuService — getAuthorizations', () => {
     const result = await service.getAuthorizations('app-1');
 
     const [path, options] = getCalls(api)[0];
-    expect(path).toBe('/me/authorizations');
+    expect(path).toBe('/me/applications/app-1/authorizations');
     expect(options.apiUrl).toBe('http://localhost:3002/api/users');
     expect(result).toEqual(data);
   });
 
-  it('passes the given applicationId as a query param', async () => {
+  it('puts the given applicationId in the path', async () => {
     const { service, api } = createService();
 
     await service.getAuthorizations('app-1');
 
-    expect(getCalls(api)[0][1].params).toEqual({ applicationId: 'app-1' });
+    expect(getCalls(api)[0][0]).toBe('/me/applications/app-1/authorizations');
+    expect(getCalls(api)[0][1].params).toBeUndefined();
   });
 
   it('falls back to config.appId when no applicationId is given', async () => {
@@ -59,13 +61,31 @@ describe('IUserMenuService — getAuthorizations', () => {
 
     await service.getAuthorizations();
 
-    expect(getCalls(api)[0][1].params).toEqual({ applicationId: 'cfg-app' });
+    expect(getCalls(api)[0][0]).toBe('/me/applications/cfg-app/authorizations');
   });
 
   it('errors without issuing a request when neither applicationId nor config.appId is set', async () => {
-    const { service, api } = createService();
+    const { service, api } = createService({ ...BASE_CONFIG, appId: undefined });
 
     await expect(service.getAuthorizations()).rejects.toThrow(/applicationId is required/);
+    expect(getCalls(api).length).toBe(0);
+  });
+
+  it('uses canonical application-scoped menu and favorite paths', async () => {
+    const { service, api } = createService();
+
+    await service.getEffectiveMenus('app/one');
+    await service.getFavorites('app/one');
+
+    expect(getCalls(api)[0][0]).toBe('/me/applications/app%2Fone/menus');
+    expect(getCalls(api)[1][0]).toBe('/me/applications/app%2Fone/menus/favorites');
+  });
+
+  it('requires applicationId for menus and favorites too', async () => {
+    const { service, api } = createService({ ...BASE_CONFIG, appId: undefined });
+
+    await expect(service.getEffectiveMenus()).rejects.toThrow(/applicationId is required/);
+    await expect(service.getFavorites()).rejects.toThrow(/applicationId is required/);
     expect(getCalls(api).length).toBe(0);
   });
 

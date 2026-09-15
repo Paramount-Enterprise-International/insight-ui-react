@@ -7,6 +7,7 @@ import { getMenuKey, type IMenu, type IUser } from '../host';
 import type { ISessionService } from '../session/session.service';
 import {
   type ICurrentUserDto,
+  type IAuthorizationSource,
   type IEffectiveAuthorizationDto,
   type IFavoriteMenuItemDto,
   type IMenuNodeDto,
@@ -16,6 +17,7 @@ import {
 import {
   findFirstLeafRoute,
   findMenuNameById,
+  collectMenuCodes,
   hasAnyMenuCode,
   hasAnyRoute,
   mapToSidebarUser,
@@ -51,7 +53,12 @@ export class IUserMenuStore {
   private favoritesValue: IMenu[] = [];
   private rolesValue: string[] = [];
   private permissionsValue: string[] = [];
+  private authorizationsValue: IEffectiveAuthorizationDto[] = [];
+  private companiesValue: IEffectiveAuthorizationDto['companies'] = [];
+  private companyCodesValue: string[] = [];
+  private menuCompaniesValue: Record<string, string[]> = {};
   private initializingValue = false;
+  private initializedValue = false;
   private loadErrorValue: string | null = null;
   private loadErrorsValue: IUserMenuLoadErrors = {
     user: null,
@@ -61,6 +68,7 @@ export class IUserMenuStore {
   };
   /** Identity (`sub`) whose data is currently cached — invalidated on user switch. */
   private loadedUserSub: string | null = null;
+  private loadedApplicationId: string | null = null;
 
   private version = 0;
   private listeners = new Set<() => void>();
@@ -117,7 +125,7 @@ export class IUserMenuStore {
   /**
    * Feature permissions granted by the backend (for `source: 'permission'`
    * checks). Hydrated by `load()` from the effective authorizations endpoint
-   * (`GET {api.user}/me/authorizations`) as the deduplicated set of
+   * (application-scoped authorizations endpoint) as the deduplicated set of
    * `data[].menuCode`; `setPermissions()` remains available for a caller that
    * wants to supply the list itself.
    */
@@ -125,9 +133,51 @@ export class IUserMenuStore {
     return this.permissionsValue;
   }
 
+  /** Raw effective authorization entries returned by iam-user-api. */
+  get authorizations(): readonly IEffectiveAuthorizationDto[] {
+    return this.authorizationsValue;
+  }
+
+  /** Deduplicated navigable menu codes from the effective menu tree. */
+  get menuCodes(): readonly string[] {
+    return collectMenuCodes(this.menusValue);
+  }
+
+  /** Deduplicated companies from the effective authorization entries. */
+  get companies(): ReadonlyArray<IEffectiveAuthorizationDto['companies'][number]> {
+    return this.companiesValue;
+  }
+
+  /** Deduplicated company codes from the effective authorization entries. */
+  get companyCodes(): readonly string[] {
+    return this.companyCodesValue;
+  }
+
+  /** Company codes grouped by menu code. */
+  get menuCompanies(): Readonly<Record<string, readonly string[]>> {
+    return this.menuCompaniesValue;
+  }
+
+  /** Immutable authorization snapshot used by permission predicates. */
+  get authorizationSource(): IAuthorizationSource {
+    return {
+      menu: this.menuCodes,
+      permission: this.permissionsValue,
+      roles: this.rolesValue,
+      companyCodes: this.companyCodesValue,
+      companies: this.companiesValue,
+      menuCompanies: this.menuCompaniesValue,
+    };
+  }
+
   /** True while the cold-start `load()` is in flight. */
   get initializing(): boolean {
     return this.initializingValue;
+  }
+
+  /** True after the most recent load has settled, including partial failures. */
+  get initialized(): boolean {
+    return this.initializedValue;
   }
 
   /** First error encountered during `load()`, if any (e.g. `menus: ...`). */
@@ -159,7 +209,7 @@ export class IUserMenuStore {
    * all settle. Resolves when the load settles, so callers can await it (e.g.
    * to navigate to `defaultRoute` after login).
    */
-  async load(): Promise<void> {
+  async load(applicationId?: string): Promise<void> {
     if (this.initializingValue) {
       // already in-flight — wait until it settles
       await this.waitUntilSettled();
@@ -170,24 +220,34 @@ export class IUserMenuStore {
     // a failed refetch (e.g. USER_APPLICATION_MAPPING_NOT_FOUND) never leaks
     // the previous user's menus/favorites into the sidebar.
     const sessionSub = this.session.getUser()?.sub ?? null;
-    if (sessionSub !== this.loadedUserSub) {
+    const applicationKey = applicationId?.trim() || null;
+    if (
+      sessionSub !== this.loadedUserSub ||
+      (this.initializedValue && applicationKey !== this.loadedApplicationId)
+    ) {
       this.clearData();
-      this.loadedUserSub = sessionSub;
     }
+    this.loadedUserSub = sessionSub;
+    this.loadedApplicationId = applicationKey;
     this.initializingValue = true;
+    this.initializedValue = false;
     this.loadErrorValue = null;
     this.loadErrorsValue = { user: null, menus: null, favorites: null, permissions: null };
     this.rolesValue = this.session.getRoles();
+    this.clearAuthorizationData();
     this.notify();
 
     await Promise.all([
       this.loadUserInternal().catch((err) => this.recordError('user', err)),
-      this.loadMenusInternal().catch((err) => this.recordError('menus', err)),
-      this.loadFavoritesInternal().catch((err) => this.recordError('favorites', err)),
-      this.loadPermissionsInternal().catch((err) => this.recordError('permissions', err)),
+      this.loadMenusInternal(applicationId).catch((err) => this.recordError('menus', err)),
+      this.loadFavoritesInternal(applicationId).catch((err) => this.recordError('favorites', err)),
+      this.loadPermissionsInternal(applicationId).catch((err) =>
+        this.recordError('permissions', err),
+      ),
     ]);
 
     this.initializingValue = false;
+    this.initializedValue = true;
     this.notify();
   }
 
@@ -199,6 +259,7 @@ export class IUserMenuStore {
   reset(): void {
     this.clearData();
     this.loadedUserSub = null;
+    this.loadedApplicationId = null;
   }
 
   private async waitUntilSettled(): Promise<void> {
@@ -334,14 +395,55 @@ export class IUserMenuStore {
    * Returns the resulting permission list.
    */
   async loadPermissions(applicationId?: string): Promise<string[]> {
-    const items =
-      await this.menuService.getAuthorizations<IEffectiveAuthorizationDto[]>(applicationId);
+    try {
+      const items =
+        await this.menuService.getAuthorizations<IEffectiveAuthorizationDto[]>(applicationId);
+      this.applyAuthorizations(items);
+      this.notify();
+      return this.permissionsValue;
+    } catch (error) {
+      this.clearAuthorizationData();
+      this.notify();
+      throw error;
+    }
+  }
 
-    const permissions = [...new Set(items.map((item) => item.menuCode))];
-    this.permissionsValue = permissions;
-    this.notify();
+  private applyAuthorizations(items: IEffectiveAuthorizationDto[]): void {
+    const authorizations = items.map((item) => ({
+      ...item,
+      companies: item.companies.map((company) => ({ ...company })),
+    }));
+    const permissionCodes = new Set<string>();
+    const seenCompanyIds = new Set<string>();
+    const companyCodes = new Set<string>();
+    const companies: IEffectiveAuthorizationDto['companies'] = [];
+    const menuCompanySets = new Map<string, Set<string>>();
 
-    return permissions;
+    for (const authorization of authorizations) {
+      permissionCodes.add(authorization.menuCode);
+      const scopedCodes = menuCompanySets.get(authorization.menuCode) ?? new Set<string>();
+      menuCompanySets.set(authorization.menuCode, scopedCodes);
+
+      for (const company of authorization.companies) {
+        scopedCodes.add(company.code);
+        companyCodes.add(company.code);
+        if (!seenCompanyIds.has(company.id)) {
+          seenCompanyIds.add(company.id);
+          companies.push(company);
+        }
+      }
+    }
+
+    const menuCompanies: Record<string, string[]> = {};
+    for (const [menuCode, codes] of menuCompanySets) {
+      menuCompanies[menuCode] = [...codes];
+    }
+
+    this.authorizationsValue = authorizations;
+    this.permissionsValue = [...permissionCodes];
+    this.companiesValue = companies;
+    this.companyCodesValue = [...companyCodes];
+    this.menuCompaniesValue = menuCompanies;
   }
 
   /** Returns a new menu tree with the matching node's `isFavorite` flipped (star icon). */
@@ -390,16 +492,16 @@ export class IUserMenuStore {
     this.notify();
   }
 
-  private async loadMenusInternal(): Promise<void> {
-    await this.loadMenus();
+  private async loadMenusInternal(applicationId?: string): Promise<void> {
+    await this.loadMenus(applicationId);
   }
 
-  private async loadFavoritesInternal(): Promise<void> {
-    await this.loadFavorites();
+  private async loadFavoritesInternal(applicationId?: string): Promise<void> {
+    await this.loadFavorites(applicationId);
   }
 
-  private async loadPermissionsInternal(): Promise<void> {
-    await this.loadPermissions();
+  private async loadPermissionsInternal(applicationId?: string): Promise<void> {
+    await this.loadPermissions(applicationId);
   }
 
   private clearData(): void {
@@ -408,10 +510,19 @@ export class IUserMenuStore {
     this.menusValue = [];
     this.favoritesValue = [];
     this.rolesValue = [];
-    this.permissionsValue = [];
+    this.clearAuthorizationData();
+    this.initializedValue = false;
     this.loadErrorValue = null;
     this.loadErrorsValue = { user: null, menus: null, favorites: null, permissions: null };
     this.notify();
+  }
+
+  private clearAuthorizationData(): void {
+    this.permissionsValue = [];
+    this.authorizationsValue = [];
+    this.companiesValue = [];
+    this.companyCodesValue = [];
+    this.menuCompaniesValue = {};
   }
 
   private recordError(source: IUserMenuLoadSource, err: unknown): void {
