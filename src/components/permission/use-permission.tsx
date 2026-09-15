@@ -2,67 +2,44 @@
 import type { ReactNode } from 'react';
 
 import { useIUserMenuStore } from '../auth/insight-auth-context';
+import type { IAuthorizationSource } from '../user/user.types';
 
-/** Permission source selector used by `usePermission` / `<IHasMn>` / `<INotHasMn>`. */
+/** Source selector retained for the separate IRequireAccess API. */
 export type IPermissionSource = 'menu' | 'role' | 'permission';
 
-/** Object form: inline source + value. */
-export type IPermission = {
-  source: IPermissionSource;
-  value: string | string[];
-};
+/** Flexible permission check against the current authorization snapshot. */
+export type IPermissionPredicate = (source: IAuthorizationSource) => boolean;
 
-/**
- * Accepted input for the permission checks:
- * - a plain `string | string[]` → menu-mode check (default), or
- * - an object `{ source, value }` to select the source explicitly.
- */
-export type IPermissionInput = string | string[] | IPermission;
+/** Menu-code shorthand or a compound authorization predicate. */
+export type IPermissionInput = string | readonly string[] | IPermissionPredicate;
 
-/** Resolves an input into a concrete `{ source, codes }` pair (or `null`). */
-export function resolvePermission(
-  value: IPermissionInput | null,
-): { source: IPermissionSource; codes: string | string[] } | null {
-  if (!value) {
-    return null;
+/** Evaluates permission input without exposing mutable store state. */
+export function evaluatePermission(
+  value: IPermissionInput | null | undefined,
+  source: IAuthorizationSource,
+): boolean {
+  if (!value) return false;
+
+  if (typeof value === 'function') {
+    try {
+      return value(source);
+    } catch {
+      console.error('[@insight/ui] Permission predicate failed.');
+      return false;
+    }
   }
-  if (typeof value === 'object' && !Array.isArray(value)) {
-    return { source: value.source, codes: value.value };
-  }
-  return { source: 'menu', codes: value };
+
+  const codes = Array.isArray(value) ? value : [value];
+  return codes.some((code) => source.menu.includes(code));
 }
 
-/**
- * ASYNC-AWARE permission check hook — the React analog of the Angular
- * `ihHasMn` / `ihNotHasMn` directives. Reads the `IUserMenuStore` reactively,
- * so gated UI renders only once the store has data (menus or roles).
- *
- * ```tsx
- * const canView = usePermission('sales:report');
- * const canAdmin = usePermission({ source: 'role', value: 'iam-admin' });
- * const canExport = usePermission({ source: 'permission', value: 'report.export' });
- * ```
- */
+/** Reactively checks a menu shorthand or compound authorization predicate. */
 export function usePermission(value: IPermissionInput | null | undefined): boolean {
   const store = useIUserMenuStore();
-  const resolved = resolvePermission(value ?? null);
-  if (!resolved) {
-    return false;
-  }
-  if (resolved.source === 'role') {
-    return store.hasRole(resolved.codes);
-  }
-  if (resolved.source === 'permission') {
-    return store.hasPermission(resolved.codes);
-  }
-  return store.hasMenu(resolved.codes);
+  return evaluatePermission(value, store.authorizationSource);
 }
 
-/**
- * Renders `children` only when the current user has the given permission
- * (menu code by default, or `{ source: 'role', value }`). Renders nothing
- * while the user-menu store is initializing (permission not yet known).
- */
+/** Renders children only when the supplied permission input allows access. */
 export function IHasMn({
   value,
   children,
@@ -72,18 +49,11 @@ export function IHasMn({
 }): ReactNode {
   const store = useIUserMenuStore();
   const allowed = usePermission(value);
-  if (store.initializing) {
-    return null;
-  }
+  if (store.initializing || !store.initialized) return null;
   return allowed ? <>{children}</> : null;
 }
 
-/**
- * Renders `children` only when the current user does NOT have the given
- * permission. Renders nothing while the user-menu store is initializing
- * (permission not yet known) so a not-yet-loaded grant never flashes a denied
- * element.
- */
+/** Renders children only when the supplied permission input denies access. */
 export function INotHasMn({
   value,
   children,
@@ -93,8 +63,6 @@ export function INotHasMn({
 }): ReactNode {
   const store = useIUserMenuStore();
   const allowed = usePermission(value);
-  if (store.initializing) {
-    return null;
-  }
+  if (store.initializing || !store.initialized) return null;
   return allowed ? null : <>{children}</>;
 }

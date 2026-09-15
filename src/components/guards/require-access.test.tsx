@@ -26,6 +26,7 @@ function makeSession(opts: { initializing?: boolean; isAuth?: boolean; hasRole?:
 function makeStore(
   opts: {
     initializing?: boolean;
+    initialized?: boolean;
     menusLoaded?: boolean;
     menusError?: unknown;
     hasMenu?: boolean | (() => boolean);
@@ -38,6 +39,7 @@ function makeStore(
   return {
     ...noopObservable,
     initializing: opts.initializing ?? false,
+    initialized: opts.initialized ?? opts.menusLoaded ?? opts.menusError !== undefined,
     menus: opts.menusLoaded ? [{ id: 1, name: 'Admin' }] : [],
     loadErrors: { menus: opts.menusError ?? null },
     hasMenu: resolveMenu,

@@ -9,17 +9,16 @@ import {
 import type { IUserMenuStore } from '../store/user-menu.store';
 import { UNAUTHORIZED_ACCESS_PATH } from './require-access';
 
-/** Decides whether the current path may be opened for the given store state. */
-export type IRouteCanOpen = (path: string, store: IUserMenuStore) => boolean;
+/** Resolves the menu code that protects the current path. */
+export type IRouteMenuCodeResolver = (path: string, store: IUserMenuStore) => string | null | undefined;
 
 export type IRequireRouteAccessProps = {
-  /**
-   * Override the open-decision. Default: the path is one of the user's granted
-   * leaf menu routes (`store.hasRoute`). Apps whose menus carry host-formatted
-   * routes (remotes mounted under a host prefix) supply a matcher that maps
-   * the local path into the menu-route space.
-   */
-  canOpen?: IRouteCanOpen;
+  /** Static menu code protecting the wrapped route. */
+  menuCode?: string;
+  /** Resolves a menu code when it depends on the current path. */
+  resolveMenuCode?: IRouteMenuCodeResolver;
+  /** Temporary behavior for routes that do not have a menu-code mapping. */
+  missingMenuCode?: 'allow' | 'deny';
   /** Where to redirect users without access to the current route. */
   unauthorizedPath?: string;
   /** Custom loading placeholder while the session/menus are still loading. */
@@ -51,7 +50,9 @@ export type IRequireRouteAccessProps = {
  * is never denied just because the menus have not been fetched yet.
  */
 export function IRequireRouteAccess({
-  canOpen,
+  menuCode,
+  resolveMenuCode,
+  missingMenuCode = 'allow',
   unauthorizedPath = UNAUTHORIZED_ACCESS_PATH,
   loading,
   children,
@@ -63,8 +64,7 @@ export function IRequireRouteAccess({
 
   const isInitializing = session.initializing;
   const isAuth = session.isAuth();
-  const menusSettled = store.menus.length > 0 || store.loadErrors.menus !== null;
-  const canOpenPath: IRouteCanOpen = canOpen ?? ((path, currentStore) => currentStore.hasRoute(path));
+  const menusSettled = store.initialized;
 
   // Start in the loading state when mounting on a cold start — menus not yet
   // fetched and no store load in flight. The effect below triggers that load,
@@ -114,7 +114,13 @@ export function IRequireRouteAccess({
   }
 
   const path = location.pathname.replace(/\/+$/, '') || '/';
-  if (!canOpenPath(path, store)) {
+  const resolvedMenuCode = (menuCode ?? resolveMenuCode?.(path, store))?.trim();
+  if (!resolvedMenuCode) {
+    console.warn(`[@insight/ui] No menu code mapping found for route "${path}".`);
+    return missingMenuCode === 'allow' ? <>{children}</> : <Navigate to={unauthorizedPath} replace />;
+  }
+
+  if (!store.hasMenu(resolvedMenuCode)) {
     return <Navigate to={unauthorizedPath} replace />;
   }
 

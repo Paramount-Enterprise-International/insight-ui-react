@@ -1,24 +1,39 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolvePermission } from './use-permission';
+import type { IAuthorizationSource } from '../user/user.types';
+import { evaluatePermission } from './use-permission';
 
-describe('resolvePermission', () => {
-  it('resolves a plain string to menu source', () => {
-    expect(resolvePermission('sales:report')).toEqual({ source: 'menu', codes: 'sales:report' });
+const source: IAuthorizationSource = {
+  menu: ['sales:report'],
+  permission: ['report.export'],
+  roles: ['iam-admin'],
+  companyCodes: ['ecomindo'],
+  companies: [{ id: 'c1', code: 'ecomindo', name: 'Ecomindo' }],
+  menuCompanies: { 'report.export': ['ecomindo'] },
+};
+
+describe('evaluatePermission', () => {
+  it('checks a plain string against menu codes', () => {
+    expect(evaluatePermission('sales:report', source)).toBe(true);
   });
 
-  it('resolves an array to menu source', () => {
-    expect(resolvePermission(['a', 'b'])).toEqual({ source: 'menu', codes: ['a', 'b'] });
+  it('checks an array against menu codes using any-match semantics', () => {
+    expect(evaluatePermission(['missing', 'sales:report'], source)).toBe(true);
   });
 
-  it('resolves an object form with explicit source', () => {
-    expect(resolvePermission({ source: 'role', value: 'iam-admin' })).toEqual({
-      source: 'role',
-      codes: 'iam-admin',
-    });
+  it('supports compound predicates', () => {
+    expect(
+      evaluatePermission(
+        (value) =>
+          value.roles.includes('iam-admin') &&
+          value.permission.includes('report.export') &&
+          value.companyCodes.includes('ecomindo'),
+        source,
+      ),
+    ).toBe(true);
   });
 
-  it('returns null for nullish input', () => {
-    expect(resolvePermission(null)).toBeNull();
+  it('fails closed when a predicate throws', () => {
+    expect(evaluatePermission(() => { throw new Error('boom'); }, source)).toBe(false);
   });
 });

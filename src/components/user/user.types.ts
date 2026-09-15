@@ -1,7 +1,8 @@
 /**
  * Types for the current-user navigation, favorites and effective-authorization
  * data, matched to the iam-user-api user-menu service contract
- * (`GET {api.user}/me/menus*`, `GET {api.user}/me/authorizations` and
+ * (`GET {api.user}/me/applications/:applicationId/menus*`,
+ * `GET {api.user}/me/applications/:applicationId/authorizations` and
  * `GET {api.user}/users/user`). These are the raw backend shapes; the library
  * maps them onto the UI-facing `IMenu` / `IUser` contracts via `user.mapper.ts`.
  */
@@ -33,7 +34,7 @@ export type IMenuCompanyDto = {
   name: string;
 };
 
-/** Effective menu node returned by `GET {api.user}/me/menus` (user-menu contract). */
+/** Effective menu node returned by the application-scoped menus endpoint. */
 export type IMenuNodeDto = {
   id: string;
   name: string;
@@ -50,7 +51,7 @@ export type IMenuNodeDto = {
   children: IMenuNodeDto[];
 };
 
-/** Favorite item returned by `GET {api.user}/me/menus/favorites`. */
+/** Favorite item returned by the application-scoped menu favorites endpoint. */
 export type IFavoriteMenuItemDto = {
   id: string;
   name: string;
@@ -92,7 +93,7 @@ export type ICurrentUserDto = {
 export type IEffectiveAuthorizationType = 'item' | 'function';
 
 /**
- * One entry returned by `GET {api.user}/me/authorizations` (iam-user-api
+ * One entry returned by the application-scoped authorizations endpoint (iam-user-api
  * `EffectiveAuthorizationDto`). The backend already applied the full effective
  * authorization pipeline (active application mapping, roles + additional-menu
  * grants, company scope, denied menu/company) and returns ONLY entries whose
@@ -109,4 +110,14 @@ export type IEffectiveAuthorizationDto = {
    * array means the resolved company pool was empty.
    */
   companies: IMenuCompanyDto[];
+};
+
+/** Authorization data exposed to permission predicates. */
+export type IAuthorizationSource = {
+  readonly menu: readonly string[];
+  readonly permission: readonly string[];
+  readonly roles: readonly string[];
+  readonly companyCodes: readonly string[];
+  readonly companies: readonly IMenuCompanyDto[];
+  readonly menuCompanies: Readonly<Record<string, readonly string[]>>;
 };
