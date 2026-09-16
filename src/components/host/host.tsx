@@ -560,6 +560,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
       <i className={iconClass}></i>
 
       <span
+        title={menuLabel}
         className={[
           'ih-menu-label',
           showApplication ? 'ih-menu-label--compact' : '',
