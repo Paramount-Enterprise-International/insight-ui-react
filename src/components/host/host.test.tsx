@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { IHSidebar, IHContent } from './host';
 import type { IMenu, IMenuFavoriteToggleEvent } from './host-api.types';
@@ -19,6 +19,66 @@ describe('IHContent', () => {
     expect(container.querySelector('ih-content h1')?.textContent).toContain(
       'Dashboard'
     );
+  });
+});
+
+describe('IHSidebar account menu', () => {
+  function renderSidebar() {
+    return render(
+      <MemoryRouter>
+        <IHSidebar
+          menus={[]}
+          user={{ employeeCode: 'PL1378', fullName: 'Dylan', userImagePath: '' }}
+        />
+      </MemoryRouter>
+    );
+  }
+
+  for (const key of ['ArrowDown', 'ArrowUp']) {
+    it(`moves account menu focus and wraps with ${key}`, () => {
+      const { container } = renderSidebar();
+      const chip = container.querySelector<HTMLButtonElement>('.ih-user-chip')!;
+      fireEvent.click(chip);
+      chip.focus();
+      const items = container.querySelectorAll<HTMLElement>('.ih-user-dropdown-item');
+      const first = key === 'ArrowDown' ? 0 : 1;
+
+      for (const index of [first, 1 - first, first]) {
+        expect(fireEvent.keyDown(document.activeElement!, { key })).toBe(false);
+        expect(document.activeElement).toBe(items[index]);
+      }
+
+      fireEvent.keyDown(items[first], { key: 'Escape' });
+      expect(container.querySelector('.ih-user-dropdown')).toBeNull();
+      expect(document.activeElement).toBe(chip);
+      expect(chip.getAttribute('aria-expanded')).toBe('false');
+    });
+  }
+
+  it('preserves Tab and ignores account navigation outside the header', () => {
+    const { container } = renderSidebar();
+    const chip = container.querySelector<HTMLButtonElement>('.ih-user-chip')!;
+    fireEvent.click(chip);
+    chip.focus();
+    expect(fireEvent.keyDown(chip, { key: 'Tab' })).toBe(true);
+
+    const search = container.querySelector<HTMLInputElement>('.ih-sidebar-search input')!;
+    search.focus();
+    expect(fireEvent.keyDown(search, { key: 'ArrowDown' })).toBe(true);
+    expect(document.activeElement).toBe(search);
+
+    fireEvent.pointerDown(document.body);
+    expect(container.querySelector('.ih-user-dropdown')).toBeNull();
+  });
+
+  it('closes the account menu when Personal Profile is activated', () => {
+    const { container } = renderSidebar();
+    fireEvent.click(container.querySelector('.ih-user-chip')!);
+    const profile = container.querySelector<HTMLAnchorElement>('.ih-user-dropdown a')!;
+    expect(profile.target).toBe('_blank');
+    profile.addEventListener('click', (event) => event.preventDefault());
+    fireEvent.click(profile);
+    expect(container.querySelector('.ih-user-dropdown')).toBeNull();
   });
 });
 
