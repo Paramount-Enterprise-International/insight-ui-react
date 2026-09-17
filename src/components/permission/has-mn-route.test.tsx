@@ -16,7 +16,7 @@ function fixture(routes: IRoutes, path = '/reports', cold = false, sessionInitia
   const store = {
     initialized: !cold,
     initializing: false,
-    authorizationSource: { menu: [] as string[], permission: [], roles: [], companyCodes: [], companies: [], menuCompanies: {} },
+    authorizationSource: { menuCodes: [] as string[], roles: [], companyCodes: [], companies: [], menuCompanies: {} },
     load: vi.fn(async () => undefined),
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     getVersion: () => version,
@@ -39,7 +39,7 @@ function fixture(routes: IRoutes, path = '/reports', cold = false, sessionInitia
     </IAuthContext.Provider>,
   );
   const grant = async (...codes: string[]) => act(async () => {
-    store.authorizationSource.menu = codes;
+    store.authorizationSource.menuCodes = codes;
     store.initialized = true;
     store.initializing = false;
     version++;

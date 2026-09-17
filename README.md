@@ -1,6 +1,6 @@
 # React + TypeScript + Vite
 
-## Menu-protected routes
+## Routes protected by authorization codes
 
 Import `hasMn` from the package root and declare a check alongside the route:
 
@@ -10,9 +10,9 @@ Import `hasMn` from the package root and declare a check alongside the route:
   import('./Report').then((m) => m.Report)) }
 ```
 
-The helper uses the same menu shorthand, ANY array input, and authorization
-predicate evaluator as `IHasMn`. It waits for session/menu readiness, loads cold
-menus, and renders Unauthorized Access in place when access is denied. Lazy page
+The helper uses the same code shorthand, ANY array input, and authorization
+predicate evaluator as `IHasMn`. It waits for session/authorization readiness, loads cold
+authorizations, and renders Unauthorized Access in place when access is denied. Lazy page
 imports run only after access is granted. `IRouter` updates denial metadata and
 restores route title/breadcrumbs on grant or navigation. Declare child checks
 separately; implicit index checks do not protect sibling child pages.
@@ -90,4 +90,64 @@ export default defineConfig([
     },
   },
 ])
+```
+
+## Authorization codes and navigation
+
+`GET {api.user}/me/applications/:applicationId/authorizations` is the only source
+of access codes for `hasMn`, UI gates, hooks, and code-based guards. The service
+unwraps `data`; the store retains `authorizations` and derives the unique
+`menuCodes` from both `item` and `function` entries. `/menus` remains the source
+of the navigation tree, sidebar, routes, icons, and favorite flags.
+
+The predicate source contains `menuCodes`, `roles`, `companies`, `companyCodes`,
+and `menuCompanies`. Companies are unique by id; company codes are unique;
+`menuCompanies[code]` contains the companies granted specifically for that code.
+For company-scoped access, check that mapping instead of the global company union.
+
+`store.hasMenuCode(code)` checks authorizations with ANY-match for arrays.
+`store.hasNavigableMenu(code)` checks navigation leaf codes from `/menus`.
+`store.hasRoute(path)` checks routes from the same navigation tree.
+`store.loadAuthorizations(applicationId?)` clears stale authorization data,
+fetches new entries, and returns the authorization DTO array. The application id
+falls back to the configured `appId`; absent ids fail before sending the request.
+
+During a full store load, both positive and inverse UI gates stay hidden and
+the React hook returns false. Once loading settles, inverse gates render when
+the check is false. An authorization failure empties access codes and company
+scope, records `loadErrors.authorizations`, and leaves other load branches
+independent. Role predicates still read token roles. There is no fallback to
+navigation codes. Route helpers retain their existing loading and in-place 403
+behavior, and only activate guarded content after access is granted.
+
+Code-based `requireAccess` / `IRequireAccess` use `source: 'menuCode'` or `'role'`;
+React defaults to `'menuCode'`. Code guards wait for the cold-start store load.
+Backend endpoints and enforcement remain unchanged.
+
+### Breaking migration
+
+| Previous API | Replacement |
+| --- | --- |
+| `source.menu`, `source.permission` | `source.menuCodes` from authorizations |
+| `store.permissions`, Angular `permissions$` | `store.menuCodes`, Angular `menuCodes$` |
+| `hasPermission()` | `hasMenuCode()` |
+| `hasMenu()` | `hasMenuCode()` for access; `hasNavigableMenu()` for navigation |
+| `loadPermissions()` | `loadAuthorizations()` returning authorization DTOs |
+| `loadErrors.permissions`, load branch `permissions` | `loadErrors.authorizations`, branch `authorizations` |
+| Guard source `'menu'` / `'permission'` | `'menuCode'` |
+| `setPermissions()` | Removed; refresh backend authorizations |
+
+No compatibility aliases or manual code override are provided.
+
+```tsx
+<IHasMn value="atlas.sales-administration.menu.451.hasmn-button-example">
+  <button>Example</button>
+</IHasMn>
+
+<IHasMn value={(source) =>
+  source.menuCodes.includes('atlas.sales-administration.menu.451.hasmn-button-example') &&
+  source.menuCompanies['atlas.sales-administration.menu.451.hasmn-button-example']?.includes('JKT') === true
+}>
+  <button>Example for Jakarta</button>
+</IHasMn>
 ```

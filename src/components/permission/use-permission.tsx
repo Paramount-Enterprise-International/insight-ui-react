@@ -5,7 +5,7 @@ import { useIUserMenuStore } from '../auth/insight-auth-context';
 import type { IAuthorizationSource } from '../user/user.types';
 
 /** Source selector retained for the separate IRequireAccess API. */
-export type IPermissionSource = 'menu' | 'role' | 'permission';
+export type IPermissionSource = 'menuCode' | 'role';
 
 /** Flexible permission check against the current authorization snapshot. */
 export type IPermissionPredicate = (source: IAuthorizationSource) => boolean;
@@ -30,12 +30,13 @@ export function evaluatePermission(
   }
 
   const codes = Array.isArray(value) ? value : [value];
-  return codes.some((code) => source.menu.includes(code));
+  return codes.some((code) => source.menuCodes.includes(code));
 }
 
 /** Reactively checks a menu shorthand or compound authorization predicate. */
 export function usePermission(value: IPermissionInput | null | undefined): boolean {
   const store = useIUserMenuStore();
+  if (store.initializing || !store.initialized) return false;
   return evaluatePermission(value, store.authorizationSource);
 }
 

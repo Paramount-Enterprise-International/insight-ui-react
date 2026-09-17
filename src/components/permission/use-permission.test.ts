@@ -4,8 +4,7 @@ import type { IAuthorizationSource } from '../user/user.types';
 import { evaluatePermission } from './use-permission';
 
 const source: IAuthorizationSource = {
-  menu: ['sales:report'],
-  permission: ['report.export'],
+  menuCodes: ['sales:report', 'report.export'],
   roles: ['iam-admin'],
   companyCodes: ['ecomindo'],
   companies: [{ id: 'c1', code: 'ecomindo', name: 'Ecomindo' }],
@@ -26,7 +25,7 @@ describe('evaluatePermission', () => {
       evaluatePermission(
         (value) =>
           value.roles.includes('iam-admin') &&
-          value.permission.includes('report.export') &&
+          value.menuCodes.includes('report.export') &&
           value.companyCodes.includes('ecomindo'),
         source,
       ),

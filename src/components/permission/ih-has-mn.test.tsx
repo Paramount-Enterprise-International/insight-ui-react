@@ -10,7 +10,7 @@ import type { IUserMenuStore } from '../store/user-menu.store';
 import { IUserMenuStore as UserMenuStore } from '../store/user-menu.store';
 import type { ICurrentUserService } from '../user/current-user.service';
 import type { IUserMenuService } from '../user/user-menu.service';
-import { IHasMn, INotHasMn } from './use-permission';
+import { IHasMn, INotHasMn, usePermission } from './use-permission';
 
 /** Code-aware store stub — mirrors the Angular `has-mn` directive spec behaviour. */
 function makeStore({
@@ -30,8 +30,7 @@ function makeStore({
     initializing,
     initialized,
     authorizationSource: {
-      menu: [],
-      permission: granted,
+      menuCodes: granted,
       roles: [],
       companyCodes: [],
       companies: [],
@@ -45,10 +44,10 @@ function renderGated(store: IUserMenuStore) {
 
   return render(
     <IAuthContext.Provider value={ctx}>
-      <IHasMn value={(source) => source.permission.includes('report.export')}>
+      <IHasMn value={(source) => source.menuCodes.includes('report.export')}>
         <div>perm-export</div>
       </IHasMn>
-      <INotHasMn value={(source) => source.permission.includes('report.delete')}>
+      <INotHasMn value={(source) => source.menuCodes.includes('report.delete')}>
         <div>not-delete</div>
       </INotHasMn>
     </IAuthContext.Provider>,
@@ -56,6 +55,15 @@ function renderGated(store: IUserMenuStore) {
 }
 
 describe('IHasMn / INotHasMn — permission source', () => {
+  it('keeps the hook false while loading even when a code is already hydrated', () => {
+    function Probe() {
+      return <output>{String(usePermission('report.export'))}</output>;
+    }
+    const ctx = { userMenuStore: makeStore({ initializing: true, granted: ['report.export'] }) } as unknown as IAuthContextValue;
+    render(<IAuthContext.Provider value={ctx}><Probe /></IAuthContext.Provider>);
+    expect(screen.getByText('false')).toBeTruthy();
+  });
+
   it('renders the has-branch and the inverse branch for a granted code', () => {
     renderGated(makeStore({ granted: ['report.export'] }));
 
@@ -95,6 +103,7 @@ describe('IHasMn / INotHasMn — permission source', () => {
         getFavorites: async () => [],
         getAuthorizations: async () => [
           { menuCode: 'report.export', menuId: 'm2', type: 'function', companies: [] },
+          { menuCode: 'atlas.sales-administration.menu.451.hasmn-button-example', menuId: 'example', type: 'function', companies: [] },
         ],
       } as unknown as IUserMenuService,
       {
@@ -106,8 +115,11 @@ describe('IHasMn / INotHasMn — permission source', () => {
     const ctx = { userMenuStore: store } as unknown as IAuthContextValue;
     render(
       <IAuthContext.Provider value={ctx}>
-        <IHasMn value={(source) => source.permission.includes('report.export')}>
+        <IHasMn value={(source) => source.menuCodes.includes('report.export')}>
           <div>perm-export</div>
+        </IHasMn>
+        <IHasMn value="atlas.sales-administration.menu.451.hasmn-button-example">
+          <button>Function example</button>
         </IHasMn>
       </IAuthContext.Provider>,
     );
@@ -119,7 +131,8 @@ describe('IHasMn / INotHasMn — permission source', () => {
       await store.load();
     });
 
-    expect(store.permissions).toEqual(['report.export']);
+    expect(store.menuCodes).toEqual(['report.export', 'atlas.sales-administration.menu.451.hasmn-button-example']);
     expect(screen.queryByText('perm-export')).toBeTruthy();
+    expect(screen.queryByText('Function example')).toBeTruthy();
   });
 });

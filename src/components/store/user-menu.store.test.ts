@@ -39,7 +39,7 @@ describe('IUserMenuStore — load error capture', () => {
       user: null,
       menus: null,
       favorites: null,
-      permissions: null,
+      authorizations: null,
     });
     expect(store.loadError).toBeNull();
     expect(store.initializing).toBe(false);
@@ -149,7 +149,7 @@ describe('IUserMenuStore — load error capture', () => {
     }).getAuthorizations;
 
     await store.load('app-a');
-    expect(store.permissions).toEqual(['dashboard', 'report.export']);
+    expect(store.menuCodes).toEqual(['dashboard', 'report.export']);
 
     menusSpy.mockRejectedValueOnce({ status: 404, message: 'application unavailable' });
     authorizationsSpy.mockResolvedValueOnce([]);
@@ -158,7 +158,7 @@ describe('IUserMenuStore — load error capture', () => {
     expect(menusSpy).toHaveBeenLastCalledWith('app-b');
     expect(authorizationsSpy).toHaveBeenLastCalledWith('app-b');
     expect(store.menus).toEqual([]);
-    expect(store.permissions).toEqual([]);
+    expect(store.menuCodes).toEqual([]);
   });
 
   it('reset() clears all cached data and forgets the identity', async () => {
@@ -181,35 +181,37 @@ describe('IUserMenuStore — load error capture', () => {
       user: null,
       menus: null,
       favorites: null,
-      permissions: null,
+      authorizations: null,
     });
   });
 });
 
 describe('IUserMenuStore — permissions', () => {
-  it('hasPermission matches ANY granted code; empty list is denied', () => {
-    const { store } = createStore();
+  it('hasMenuCode matches ANY granted code; empty list is denied', async () => {
+    const { store, menuSvc } = createStore();
 
-    expect(store.permissions).toEqual([]);
-    expect(store.hasPermission('report.export')).toBe(false);
-    expect(store.hasPermission(['report.export', 'nope'])).toBe(false);
+    expect(store.menuCodes).toEqual([]);
+    expect(store.hasMenuCode('report.export')).toBe(false);
+    expect(store.hasMenuCode(['report.export', 'nope'])).toBe(false);
 
-    store.setPermissions(['report.export', 'audit.read']);
-    expect(store.permissions).toEqual(['report.export', 'audit.read']);
-    expect(store.hasPermission('report.export')).toBe(true);
-    expect(store.hasPermission(['nope', 'audit.read'])).toBe(true);
-    expect(store.hasPermission(['nope', 'other'])).toBe(false);
+    (menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }).getAuthorizations.mockResolvedValueOnce(['report.export', 'audit.read'].map((menuCode) => ({ menuCode, menuId: menuCode, type: 'function', companies: [] })));
+    await store.load();
+    expect(store.menuCodes).toEqual(['report.export', 'audit.read']);
+    expect(store.hasMenuCode('report.export')).toBe(true);
+    expect(store.hasMenuCode(['nope', 'audit.read'])).toBe(true);
+    expect(store.hasMenuCode(['nope', 'other'])).toBe(false);
   });
 
-  it('reset() clears granted permissions', () => {
-    const { store } = createStore();
-    store.setPermissions(['report.export']);
-    expect(store.hasPermission('report.export')).toBe(true);
+  it('reset() clears granted codes', async () => {
+    const { store, menuSvc } = createStore();
+    (menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }).getAuthorizations.mockResolvedValueOnce(['report.export'].map((menuCode) => ({ menuCode, menuId: menuCode, type: 'function', companies: [] })));
+    await store.load();
+    expect(store.hasMenuCode('report.export')).toBe(true);
 
     store.reset();
 
-    expect(store.permissions).toEqual([]);
-    expect(store.hasPermission('report.export')).toBe(false);
+    expect(store.menuCodes).toEqual([]);
+    expect(store.hasMenuCode('report.export')).toBe(false);
   });
 
   it('load() hydrates permissions from the effective authorizations menuCode list', async () => {
@@ -220,10 +222,10 @@ describe('IUserMenuStore — permissions', () => {
     await store.load();
 
     expect(authSpy).toHaveBeenCalled();
-    expect(store.permissions).toEqual(['dashboard', 'report.export']);
-    expect(store.hasPermission('report.export')).toBe(true);
-    expect(store.hasPermission(['nope', 'dashboard'])).toBe(true);
-    expect(store.hasPermission('nope')).toBe(false);
+    expect(store.menuCodes).toEqual(['dashboard', 'report.export']);
+    expect(store.hasMenuCode('report.export')).toBe(true);
+    expect(store.hasMenuCode(['nope', 'dashboard'])).toBe(true);
+    expect(store.hasMenuCode('nope')).toBe(false);
   });
 
   it('load() deduplicates repeated menu codes', async () => {
@@ -237,7 +239,40 @@ describe('IUserMenuStore — permissions', () => {
 
     await store.load();
 
-    expect(store.permissions).toEqual(['report.export']);
+    expect(store.menuCodes).toEqual(['report.export']);
+  });
+
+  it('clears access before refetch and preserves navigation when authorization fails', async () => {
+    const { store, menuSvc } = createStore();
+    const service = menuSvc as unknown as { getEffectiveMenus: ReturnType<typeof vi.fn>; getAuthorizations: ReturnType<typeof vi.fn> };
+    service.getEffectiveMenus.mockResolvedValue([{ id: 'dashboard', name: 'Dashboard', type: 'item', menuCode: 'dashboard', route: '/dashboard' }]);
+    service.getAuthorizations.mockResolvedValueOnce([{ menuCode: 'report.export', menuId: 'export', type: 'function', companies: [{ id: 'c1', code: 'JKT', name: 'Jakarta' }] }]);
+    await store.load();
+    expect(store.hasMenuCode('report.export')).toBe(true);
+    expect(store.companyCodes).toEqual(['JKT']);
+    let reject!: (reason: unknown) => void;
+    service.getAuthorizations.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+    const pending = store.load();
+    expect(store.menuCodes).toEqual([]);
+    expect(store.companies).toEqual([]);
+    expect(store.menuCompanies).toEqual({});
+    reject({ status: 500, message: 'refetch failed' });
+    await pending;
+    expect(store.hasMenuCode('dashboard')).toBe(false);
+    expect(store.hasNavigableMenu('dashboard')).toBe(true);
+    expect(store.loadErrors.authorizations?.status).toBe(500);
+  });
+
+  it('loadAuthorizations returns DTOs and never grants navigation-only codes', async () => {
+    const { store, menuSvc } = createStore();
+    const service = menuSvc as unknown as { getEffectiveMenus: ReturnType<typeof vi.fn>; getAuthorizations: ReturnType<typeof vi.fn> };
+    service.getEffectiveMenus.mockResolvedValue([{ id: 'dashboard', name: 'Dashboard', type: 'item', menuCode: 'dashboard', route: '/dashboard' }]);
+    service.getAuthorizations.mockResolvedValue([{ menuCode: 'example', menuId: 'example', type: 'function', companies: [] }]);
+    await store.load();
+    expect(store.hasMenuCode('dashboard')).toBe(false);
+    expect(store.hasNavigableMenu('dashboard')).toBe(true);
+    expect(store.hasMenuCode('example')).toBe(true);
+    expect((await store.loadAuthorizations())[0].type).toBe('function');
   });
 
   it('exposes deduplicated companies and menu-company mappings', async () => {
@@ -274,7 +309,7 @@ describe('IUserMenuStore — permissions', () => {
       'report.export': ['ecomindo'],
       'report.read': [],
     });
-    expect(store.authorizationSource.permission).toEqual(['report.export', 'report.read']);
+    expect(store.authorizationSource.menuCodes).toEqual(['report.export', 'report.read']);
   });
 
   it('load() yields an empty permission list for an empty response (fail-closed)', async () => {
@@ -285,13 +320,13 @@ describe('IUserMenuStore — permissions', () => {
 
     await store.load();
 
-    expect(store.permissions).toEqual([]);
+    expect(store.menuCodes).toEqual([]);
     expect(store.authorizations).toEqual([]);
     expect(store.companies).toEqual([]);
     expect(store.companyCodes).toEqual([]);
     expect(store.menuCompanies).toEqual({});
-    expect(store.hasPermission('report.export')).toBe(false);
-    expect(store.loadErrors.permissions).toBeNull();
+    expect(store.hasMenuCode('report.export')).toBe(false);
+    expect(store.loadErrors.authorizations).toBeNull();
   });
 
   it('records an authorizations error without losing the other branches', async () => {
@@ -307,15 +342,15 @@ describe('IUserMenuStore — permissions', () => {
 
     await store.load();
 
-    expect(store.loadErrors.permissions?.status).toBe(500);
-    expect(store.loadErrors.permissions?.message).toBe('authorizations exploded');
+    expect(store.loadErrors.authorizations?.status).toBe(500);
+    expect(store.loadErrors.authorizations?.message).toBe('authorizations exploded');
     // The other branches still succeed.
     expect(store.menus.length).toBe(1);
     expect(store.currentUser).not.toBeNull();
     expect(store.loadErrors.menus).toBeNull();
     // Fail-closed: nothing is granted.
-    expect(store.permissions).toEqual([]);
-    expect(store.hasPermission('report.export')).toBe(false);
+    expect(store.menuCodes).toEqual([]);
+    expect(store.hasMenuCode('report.export')).toBe(false);
   });
 
   it("drops the previous user's permissions when load() runs for a different user", async () => {
@@ -325,26 +360,27 @@ describe('IUserMenuStore — permissions', () => {
       .getAuthorizations;
 
     await store.load();
-    expect(store.permissions).toEqual(['dashboard', 'report.export']);
+    expect(store.menuCodes).toEqual(['dashboard', 'report.export']);
 
     sessionSpy.getUser.mockReturnValue({ sub: 'sub-b' });
     authSpy.mockResolvedValueOnce([]);
 
     await store.load();
 
-    expect(store.permissions).toEqual([]);
-    expect(store.hasPermission('report.export')).toBe(false);
+    expect(store.menuCodes).toEqual([]);
+    expect(store.hasMenuCode('report.export')).toBe(false);
   });
 
-  it('setPermissions deduplicates the supplied codes', () => {
-    const { store } = createStore();
+  it('authorizations deduplicate the granted codes', async () => {
+    const { store, menuSvc } = createStore();
 
-    store.setPermissions(['a', 'b', 'a']);
+    (menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> }).getAuthorizations.mockResolvedValueOnce(['a', 'b', 'a'].map((menuCode) => ({ menuCode, menuId: menuCode, type: 'function', companies: [] })));
+    await store.load();
 
-    expect(store.permissions).toEqual(['a', 'b']);
-    expect(store.hasPermission('a')).toBe(true);
-    expect(store.hasPermission(['nope', 'b'])).toBe(true);
-    expect(store.hasPermission(['nope', 'other'])).toBe(false);
+    expect(store.menuCodes).toEqual(['a', 'b']);
+    expect(store.hasMenuCode('a')).toBe(true);
+    expect(store.hasMenuCode(['nope', 'b'])).toBe(true);
+    expect(store.hasMenuCode(['nope', 'other'])).toBe(false);
   });
 
   it('reset() clears a recorded permissions error too', async () => {
@@ -354,11 +390,11 @@ describe('IUserMenuStore — permissions', () => {
     ).getAuthorizations.mockRejectedValueOnce({ status: 500, message: 'boom' });
 
     await store.load();
-    expect(store.loadErrors.permissions).not.toBeNull();
+    expect(store.loadErrors.authorizations).not.toBeNull();
 
     store.reset();
 
-    expect(store.loadErrors.permissions).toBeNull();
-    expect(store.permissions).toEqual([]);
+    expect(store.loadErrors.authorizations).toBeNull();
+    expect(store.menuCodes).toEqual([]);
   });
 });
