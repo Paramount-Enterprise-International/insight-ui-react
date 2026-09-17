@@ -1,8 +1,13 @@
 import type { CSSProperties } from 'react';
+import { IButton } from '../button/button';
+import { IIcon } from '../icon/icon';
 
-import { useIAuthContext, useISessionExpired } from '../auth/insight-auth-context';
-import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
 import { resolveApiErrorDisplayMessage } from '../api/api-error';
+import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
+import {
+  useIAuthContext,
+  useISessionExpired,
+} from '../auth/insight-auth-context';
 import type { ISessionExpiredReason } from './session-expired.service';
 
 const TITLES: Record<ISessionExpiredReason | 'default', string> = {
@@ -23,52 +28,14 @@ const MESSAGES: Record<ISessionExpiredReason | 'default', string> = {
 const overlayStyle: CSSProperties = {
   position: 'fixed',
   inset: 0,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
   backgroundColor: 'rgba(0, 0, 0, 0.5)',
   zIndex: 9999,
 };
 
 const cardStyle: CSSProperties = {
-  background: '#ffffff',
-  borderRadius: 8,
-  padding: 32,
   maxWidth: 380,
   width: 'calc(100% - 32px)',
   boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
-  textAlign: 'center',
-};
-
-const iconStyle: CSSProperties = {
-  fontSize: 48,
-  color: '#f59e0b',
-  marginBottom: 16,
-};
-
-const titleStyle: CSSProperties = {
-  margin: '0 0 8px',
-  fontSize: 22,
-  fontWeight: 600,
-  color: '#1f2937',
-};
-
-const messageStyle: CSSProperties = {
-  margin: '0 0 24px',
-  fontSize: 14,
-  lineHeight: 1.5,
-  color: '#6b7280',
-};
-
-const actionStyle: CSSProperties = {
-  border: 'none',
-  borderRadius: 6,
-  padding: '10px 20px',
-  fontSize: 14,
-  fontWeight: 600,
-  cursor: 'pointer',
-  background: '#2563eb',
-  color: '#ffffff',
 };
 
 /**
@@ -102,7 +69,7 @@ export function ISessionExpiredDialog() {
       detail: sessionExpired.detail ?? undefined,
     },
     MESSAGES[reason ?? 'default'],
-    config.errorCatalogResolver,
+    config.errorCatalogResolver
   );
   const iconClass =
     reason === 'SESSION_REPLACED'
@@ -116,16 +83,20 @@ export function ISessionExpiredDialog() {
   };
 
   return (
-    <div style={overlayStyle}>
-      <div style={cardStyle}>
-        <div style={iconStyle}>
-          <i className={iconClass}></i>
+    <div className="flex align-center justify-center" style={overlayStyle}>
+      <div className="bg-white radius-md p-3xl text-center" style={cardStyle}>
+        <div className="text-warning mb-lg">
+          <IIcon icon={iconClass} size="4xl" />
         </div>
-        <h1 style={titleStyle}>{TITLES[reason ?? 'default']}</h1>
-        <p style={messageStyle}>{message}</p>
-        <button type="button" style={actionStyle} onClick={onConfirm}>
+        <h1 className="m-0 mb-xs text-2xl font-semibold text-gray-800">
+          {TITLES[reason ?? 'default']}
+        </h1>
+        <p className="m-0 mb-2xl text-md leading-normal text-subtle">
+          {message}
+        </p>
+        <IButton type="button" onClick={onConfirm}>
           Log in again
-        </button>
+        </IButton>
       </div>
     </div>
   );

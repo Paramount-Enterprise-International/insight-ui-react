@@ -560,6 +560,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
       <i className={iconClass}></i>
 
       <span
+        title={menuLabel}
         className={[
           'ih-menu-label',
           showApplication ? 'ih-menu-label--compact' : '',
@@ -965,7 +966,7 @@ export function IHSidebar(props: IHSidebarProps) {
   const profileUrl =
     (personalProfileUrl ?? '').trim() || DEFAULT_PERSONAL_PROFILE_URL;
 
-  // Close the account dropdown on outside click and Escape while it is open.
+  // Handle account menu dismissal and keyboard focus while it is open.
   useEffect(() => {
     if (!accountMenuOpen) return;
 
@@ -975,7 +976,26 @@ export function IHSidebar(props: IHSidebarProps) {
       setAccountMenuOpen(false);
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setAccountMenuOpen(false);
+      const header = headerRef.current;
+      if (e.key === 'Escape') {
+        setAccountMenuOpen(false);
+        header?.querySelector<HTMLButtonElement>('.ih-user-chip')?.focus();
+        return;
+      }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      if (!header?.contains(e.target as Node | null)) return;
+
+      const items = Array.from(
+        header.querySelectorAll<HTMLElement>('.ih-user-dropdown-item')
+      );
+      if (!items.length) return;
+
+      e.preventDefault();
+      const current = items.indexOf(document.activeElement as HTMLElement);
+      const next = current < 0
+        ? e.key === 'ArrowDown' ? 0 : items.length - 1
+        : (current + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+      items[next].focus();
     };
 
     document.addEventListener('pointerdown', onPointerDown);
