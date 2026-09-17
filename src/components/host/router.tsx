@@ -1,9 +1,10 @@
 // router.tsx
-import React, { Suspense, lazy, useEffect, useMemo, useRef } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useHostApiOptional } from './host-api.context';
 import type { IBreadcrumbItem } from './host-api.types';
 import type { IRoute, IRouteComponent, IRoutes } from './router.types';
+import { IRouteAccessContext } from '../permission/route-access-context';
 
 export type IRouterProps = {
   routes: IRoutes;
@@ -102,6 +103,14 @@ function findMatchChain(
   if (urlSegments.length === 0) {
     const indexRoute = routes.find((r) => r.index);
     if (indexRoute) return [{ route: indexRoute, url: baseUrl || '/' }];
+    for (const route of routes) {
+      if (stripSlashes(normalizePath(route.path)) || route.redirectTo) continue;
+      const child = route.children?.length
+        ? findMatchChain(route.children, [], baseUrl)
+        : null;
+      if (child) return [{ route, url: baseUrl || '/' }, ...child];
+      if (route.element || route.loadComponent) return [{ route, url: baseUrl || '/' }];
+    }
     return null;
   }
 
@@ -246,6 +255,17 @@ export function IRouter(props: IRouterProps) {
 
   const hostApi = useHostApiOptional();
   const location = useLocation();
+  const [deniedOwners, setDeniedOwners] = useState<ReadonlySet<string>>(() => new Set());
+  const reportAccess = useCallback((owner: string, denied: boolean) => {
+    setDeniedOwners((current) => {
+      if (current.has(owner) === denied) return current;
+      const next = new Set(current);
+      if (denied) next.add(owner);
+      else next.delete(owner);
+      return next;
+    });
+  }, []);
+  const denied = deniedOwners.size > 0;
 
   const expandedRoutes = useMemo(
     () => expandImplicitIndexRoutes(routes),
@@ -265,7 +285,9 @@ export function IRouter(props: IRouterProps) {
     const urlSegments = splitPathname(location.pathname);
     const chain = findMatchChain(expandedRoutes, urlSegments, '') ?? [];
 
-    const crumbs = buildBreadcrumbsFromChain(chain);
+    const crumbs = denied
+      ? [{ label: 'Unauthorized Access' }]
+      : buildBreadcrumbsFromChain(chain);
     const crumbsKey = JSON.stringify(
       crumbs.map((c) => ({ l: c.label, u: c.url ?? '' }))
     );
@@ -274,7 +296,7 @@ export function IRouter(props: IRouterProps) {
     const lastWithTitle = [...chain]
       .reverse()
       .find((x) => x.route.title)?.route;
-    const nextTitle = lastWithTitle?.title ?? null;
+    const nextTitle = denied ? 'Unauthorized Access' : lastWithTitle?.title ?? null;
 
     if (lastTitleRef.current !== nextTitle) {
       lastTitleRef.current = nextTitle;
@@ -285,14 +307,16 @@ export function IRouter(props: IRouterProps) {
       lastCrumbsKeyRef.current = crumbsKey;
       hostApi.setBreadcrumbs(crumbs.length ? crumbs : null);
     }
-  }, [hostApi, location.pathname, expandedRoutes]);
+  }, [hostApi, location.pathname, expandedRoutes, denied]);
 
   return (
-    <Suspense fallback={loading}>
-      <Routes>
-        {routeElements}
-        <Route path="*" element={notFound} />
-      </Routes>
-    </Suspense>
+    <IRouteAccessContext.Provider value={reportAccess}>
+      <Suspense fallback={loading}>
+        <Routes>
+          {routeElements}
+          <Route path="*" element={notFound} />
+        </Routes>
+      </Suspense>
+    </IRouteAccessContext.Provider>
   );
 }
