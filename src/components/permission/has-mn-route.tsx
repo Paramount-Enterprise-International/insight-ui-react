@@ -13,9 +13,8 @@ import {
 
 import { useISession, useIUserMenuStore } from '../auth/insight-auth-context';
 import type { ILoadComponent } from '../host/router.types';
-import { IIcon } from '../icon/icon';
+import { IErrorPage } from '../error-page/error-page';
 import { ILoading } from '../loading/loading';
-import { ISection, ISectionBody, ISectionHeader } from '../section/section';
 import { IRouteAccessContext } from './route-access-context';
 import { usePermission, type IPermissionInput } from './use-permission';
 
@@ -48,16 +47,7 @@ export function IHasMnRoute({ value, children }: {
     return <ILoading label="Loading access..." aria-live="polite" />;
   }
   if (!allowed) {
-    return (
-      <ISection role="alert">
-        <ISectionHeader>
-          <IIcon icon="fa-solid fa-user-lock" /> Unauthorized Access
-        </ISectionHeader>
-        <ISectionBody>
-          <p className="text-subtle">You do not have access to this page. Please contact your administrator.</p>
-        </ISectionBody>
-      </ISection>
-    );
+    return <IErrorPage kind="forbidden" role="alert" />;
   }
   return <>{children}</>;
 }

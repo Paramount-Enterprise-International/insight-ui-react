@@ -8,7 +8,7 @@ import {
   useIAuthContext,
   useISessionExpired,
 } from '../auth/insight-auth-context';
-import type { ISessionExpiredReason } from './session-expired.service';
+import type { ISessionExpiredReason } from './session-expired';
 
 const TITLES: Record<ISessionExpiredReason | 'default', string> = {
   SESSION_REPLACED: 'Signed Out Remotely',

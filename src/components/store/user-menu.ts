@@ -4,7 +4,7 @@ import {
   type INormalizedApiError,
 } from '../api/api-error';
 import { getMenuKey, type IMenu, type IUser } from '../host';
-import type { ISessionService } from '../session/session.service';
+import type { ISessionService } from '../session/session';
 import {
   type ICurrentUserDto,
   type IAuthorizationSource,

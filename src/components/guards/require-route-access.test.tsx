@@ -6,9 +6,9 @@ import {
   IAuthContext,
   type IAuthContext as IAuthContextValue,
 } from '../auth/insight-auth-context';
-import type { ISessionService } from '../session/session.service';
-import type { ISessionExpiredService } from '../session-expired/session-expired.service';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import type { ISessionService } from '../session/session';
+import type { ISessionExpiredService } from '../session-expired/session-expired';
+import type { IUserMenuStore } from '../store/user-menu';
 import { UNAUTHORIZED_ACCESS_PATH } from './require-access';
 import { IRequireRouteAccess, type IRequireRouteAccessProps } from './require-route-access';
 

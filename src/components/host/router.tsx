@@ -5,6 +5,7 @@ import { useHostApiOptional } from './host-api.context';
 import type { IBreadcrumbItem } from './host-api.types';
 import type { IRoute, IRouteComponent, IRoutes } from './router.types';
 import { IRouteAccessContext } from '../permission/route-access-context';
+import { IErrorPage } from '../error-page/error-page';
 
 export type IRouterProps = {
   routes: IRoutes;
@@ -250,7 +251,7 @@ export function IRouter(props: IRouterProps) {
   const {
     routes,
     loading = <div style={{ padding: 16 }}>Loading…</div>,
-    notFound = <div style={{ padding: 16 }}>Not Found</div>,
+    notFound = <IErrorPage kind="not-found" />,
   } = props;
 
   const hostApi = useHostApiOptional();

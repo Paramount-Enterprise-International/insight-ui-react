@@ -6,7 +6,7 @@ import { IAuthContext, type IAuthContext as AuthContextValue } from '../auth/ins
 import { IHostApiProvider } from '../host/host-api.context';
 import { IRouter } from '../host/router';
 import type { IRoutes } from '../host/router.types';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import type { IUserMenuStore } from '../store/user-menu';
 import { hasMn } from './has-mn-route';
 
 function fixture(routes: IRoutes, path = '/reports', cold = false, sessionInitializing = false) {
@@ -54,6 +54,8 @@ describe('hasMn route helpers', () => {
     function Page() { mount(); return <div>report-content</div>; }
     const { grant, hostApi } = fixture([{ path: 'reports', title: 'Reports', breadcrumb: 'Reports', element: hasMn('reports', <Page />) }]);
     expect(screen.getByText('Unauthorized Access')).toBeTruthy();
+    expect(screen.getByRole('alert').querySelector('i-section')).not.toBeNull();
+    expect(screen.getByText('403')).toBeTruthy();
     expect(screen.getByText('/reports')).toBeTruthy();
     expect(screen.getByText('shell')).toBeTruthy();
     expect(mount).not.toHaveBeenCalled();
@@ -70,6 +72,7 @@ describe('hasMn route helpers', () => {
   it('loads cold menus once and waits without flashing denial', async () => {
     const { store, grant } = fixture([{ path: 'reports', element: hasMn('reports', <div>loaded-report</div>) }], '/reports', true);
     expect(screen.getByText('Loading access...')).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.queryByText('Unauthorized Access')).toBeNull();
     expect(store.load).toHaveBeenCalledTimes(1);
     await grant('reports');
@@ -148,7 +151,8 @@ describe('hasMn route helpers', () => {
 
   it('renders unknown routes as 404', () => {
     fixture([{ path: 'reports', element: hasMn('reports', <div>hidden</div>) }], '/unknown');
-    expect(screen.getByText('Not Found')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Page Not Found' })).toBeTruthy();
+    expect(screen.getByText('404')).toBeTruthy();
     expect(screen.queryByText('Unauthorized Access')).toBeNull();
   });
 });

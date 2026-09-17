@@ -5,9 +5,9 @@ import type { ReactNode } from 'react';
 
 import { IRequireAccess, UNAUTHORIZED_ACCESS_PATH } from './require-access';
 import { IAuthContext, type IAuthContext as IAuthContextValue } from '../auth/insight-auth-context';
-import type { ISessionService } from '../session/session.service';
-import type { IUserMenuStore } from '../store/user-menu.store';
-import type { ISessionExpiredService } from '../session-expired/session-expired.service';
+import type { ISessionService } from '../session/session';
+import type { IUserMenuStore } from '../store/user-menu';
+import type { ISessionExpiredService } from '../session-expired/session-expired';
 
 const noopObservable = {
   subscribe: () => () => undefined,

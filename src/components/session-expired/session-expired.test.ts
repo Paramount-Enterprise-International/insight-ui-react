@@ -4,7 +4,7 @@ import {
   extractProblemDetailsErrorCode,
   isSessionExpiredError,
   toSessionExpiredReason,
-} from './session-expired.service';
+} from './session-expired';
 
 describe('extractProblemDetailsErrorCode', () => {
   it('extracts from top-level errorCode', () => {

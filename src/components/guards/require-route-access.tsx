@@ -6,7 +6,7 @@ import {
   useISessionExpired,
   useIUserMenuStore,
 } from '../auth/insight-auth-context';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import type { IUserMenuStore } from '../store/user-menu';
 import { UNAUTHORIZED_ACCESS_PATH } from './require-access';
 
 /** Resolves the menu code that protects the current path. */

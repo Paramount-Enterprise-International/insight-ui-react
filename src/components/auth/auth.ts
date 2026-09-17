@@ -1,6 +1,6 @@
 import { getAuthEndpointPath, requireIdentityHost, type IAuthConfig } from './auth-config';
 import { rawRequest, type IApiError } from '../api/api.client';
-import type { ICsrfService } from '../csrf/csrf.service';
+import type { ICsrfService } from '../csrf/csrf';
 
 /**
  * Login lockout constants (local, client-side supplement to Keycloak

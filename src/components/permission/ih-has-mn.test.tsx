@@ -5,11 +5,11 @@ import {
   IAuthContext,
   type IAuthContext as IAuthContextValue,
 } from '../auth/insight-auth-context';
-import type { ISessionService } from '../session/session.service';
-import type { IUserMenuStore } from '../store/user-menu.store';
-import { IUserMenuStore as UserMenuStore } from '../store/user-menu.store';
-import type { ICurrentUserService } from '../user/current-user.service';
-import type { IUserMenuService } from '../user/user-menu.service';
+import type { ISessionService } from '../session/session';
+import type { IUserMenuStore } from '../store/user-menu';
+import { IUserMenuStore as UserMenuStore } from '../store/user-menu';
+import type { ICurrentUserService } from '../user/current-user';
+import type { IUserMenuService } from '../user/user-menu';
 import { IHasMn, INotHasMn, usePermission } from './use-permission';
 
 /** Code-aware store stub — mirrors the Angular `has-mn` directive spec behaviour. */

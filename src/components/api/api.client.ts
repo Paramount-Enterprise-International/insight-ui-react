@@ -1,5 +1,5 @@
 import { getAuthEndpointPath, requireIdentityHost, type IAuthConfig } from '../auth/auth-config';
-import type { ICsrfService } from '../csrf/csrf.service';
+import type { ICsrfService } from '../csrf/csrf';
 import { normalizeApiError, type INormalizedApiError } from './api-error';
 
 /* =========================================================

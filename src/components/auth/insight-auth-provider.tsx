@@ -5,20 +5,20 @@ import {
   resolveIAuthConfig,
   validateIAuthConfig,
 } from './auth-config';
-import { IAuthService } from './auth.service';
+import { IAuthService } from './auth';
 import { buildExternalSigninUrl } from './build-signin-redirect-url';
 import { IAuthContext } from './insight-auth-context';
-import { ICsrfService } from '../csrf/csrf.service';
+import { ICsrfService } from '../csrf/csrf';
 import { createApiClient } from '../api/api.client';
 import { normalizeApiError } from '../api/api-error';
-import { ISessionService } from '../session/session.service';
+import { ISessionService } from '../session/session';
 import {
   extractProblemDetailsErrorCode,
   ISessionExpiredService,
   toSessionExpiredReason,
-} from '../session-expired/session-expired.service';
+} from '../session-expired/session-expired';
 import { ICurrentUserService, IUserMenuService } from '../user';
-import { IUserMenuStore } from '../store/user-menu.store';
+import { IUserMenuStore } from '../store/user-menu';
 
 /**
  * Root provider for `@insight/ui`'s shared SSO stack — the React analog of

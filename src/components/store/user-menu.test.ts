@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { ISessionService } from '../session/session.service';
-import type { ICurrentUserService } from '../user/current-user.service';
+import type { ISessionService } from '../session/session';
+import type { ICurrentUserService } from '../user/current-user';
 import type { IEffectiveAuthorizationDto } from '../user/user.types';
-import type { IUserMenuService } from '../user/user-menu.service';
-import { IUserMenuStore } from './user-menu.store';
+import type { IUserMenuService } from '../user/user-menu';
+import { IUserMenuStore } from './user-menu';
 
 /** Effective authorizations returned by the `/me/authorizations` branch. */
 const AUTHORIZATIONS: IEffectiveAuthorizationDto[] = [

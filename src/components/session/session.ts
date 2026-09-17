@@ -1,15 +1,15 @@
 import type { IAuthConfig } from '../auth/auth-config';
-import { IAuthService, type IAuthUser } from '../auth/auth.service';
-import type { ICsrfService } from '../csrf/csrf.service';
+import { IAuthService, type IAuthUser } from '../auth/auth';
+import type { ICsrfService } from '../csrf/csrf';
 import {
   extractProblemDetailsErrorCode,
   isSessionExpiredError,
   type ISessionExpiredReason,
   ISessionExpiredService,
   toSessionExpiredReason,
-} from '../session-expired/session-expired.service';
+} from '../session-expired/session-expired';
 import { normalizeApiError } from '../api/api-error';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import type { IUserMenuStore } from '../store/user-menu';
 
 /** User derived from Keycloak JWT claims. */
 export type ISessionUser = {
