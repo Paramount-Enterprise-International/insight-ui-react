@@ -108,6 +108,7 @@ export function IButton(props: IButtonProps) {
 
     children,
     className,
+    'aria-label': ariaLabel,
     ...rest
   } = props;
 
@@ -128,7 +129,9 @@ export function IButton(props: IButtonProps) {
     if (isDisabled) {
       event.preventDefault();
       event.stopPropagation();
-      (event.nativeEvent as { stopImmediatePropagation?: () => void })?.stopImmediatePropagation?.();
+      (
+        event.nativeEvent as { stopImmediatePropagation?: () => void }
+      )?.stopImmediatePropagation?.();
       return;
     }
 
@@ -174,6 +177,7 @@ export function IButton(props: IButtonProps) {
       {mode === 'router' || mode === 'anchor' ? (
         <a
           className="i-button-inner"
+          aria-label={ariaLabel}
           aria-disabled={isDisabled ? 'true' : undefined}
           href={isDisabled ? undefined : url}
           target={target}
@@ -184,6 +188,7 @@ export function IButton(props: IButtonProps) {
       ) : (
         <button
           className="i-button-inner"
+          aria-label={ariaLabel}
           disabled={isDisabled}
           type={type}
           onClick={handleClick}>

@@ -1,5 +1,25 @@
 # React + TypeScript + Vite
 
+## Menu-protected routes
+
+Import `hasMn` from the package root and declare a check alongside the route:
+
+```tsx
+{ path: 'reports', element: hasMn('app.reports', createElement(Reports)) }
+{ path: 'reports/:id', loadComponent: hasMn('app.reports', () =>
+  import('./Report').then((m) => m.Report)) }
+```
+
+The helper uses the same menu shorthand, ANY array input, and authorization
+predicate evaluator as `IHasMn`. It waits for session/menu readiness, loads cold
+menus, and renders Unauthorized Access in place when access is denied. Lazy page
+imports run only after access is granted. `IRouter` updates denial metadata and
+restores route title/breadcrumbs on grant or navigation. Declare child checks
+separately; implicit index checks do not protect sibling child pages.
+
+Routes without the helper stay available; unknown routes use the router's 404.
+For buttons and ordinary UI fragments, `IHasMn`/`INotHasMn` retain hide-only behavior.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:
