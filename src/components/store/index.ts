@@ -1,1 +1,1 @@
-export * from './user-menu.store';
+export * from './user-menu';

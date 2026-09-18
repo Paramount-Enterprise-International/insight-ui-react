@@ -1767,7 +1767,7 @@ export const IInput = React.forwardRef<HTMLInputElement, IInputProps>(
 
 export type IFCInputProps = Omit<
   React.HTMLAttributes<HTMLElement>,
-  'children'
+  'children' | 'onInput' | 'onBlur'
 > & {
   label?: string;
   placeholder?: string;
@@ -1782,8 +1782,8 @@ export type IFCInputProps = Omit<
   errorMessage?: string | null;
   disabled?: boolean;
   required?: boolean;
-  onInput?: React.FormEventHandler<HTMLInputElement>;
-  onBlur?: React.FocusEventHandler<HTMLInputElement>;
+  onInput?: IInputProps['onInput'];
+  onBlur?: IInputProps['onBlur'];
 };
 
 export function IFCInput(props: IFCInputProps) {

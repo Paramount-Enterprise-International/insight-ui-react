@@ -1,5 +1,4 @@
-import type { CSSProperties } from 'react';
-import { IButton } from '../button/button';
+import { IDialog, IDialogContainer } from '../dialog/dialog';
 import { IIcon } from '../icon/icon';
 
 import { resolveApiErrorDisplayMessage } from '../api/api-error';
@@ -8,7 +7,7 @@ import {
   useIAuthContext,
   useISessionExpired,
 } from '../auth/insight-auth-context';
-import type { ISessionExpiredReason } from './session-expired.service';
+import type { ISessionExpiredReason } from './session-expired';
 
 const TITLES: Record<ISessionExpiredReason | 'default', string> = {
   SESSION_REPLACED: 'Signed Out Remotely',
@@ -25,34 +24,7 @@ const MESSAGES: Record<ISessionExpiredReason | 'default', string> = {
   default: 'Your session is no longer valid. Please log in again.',
 };
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  backgroundColor: 'rgba(0, 0, 0, 0.5)',
-  zIndex: 9999,
-};
-
-const cardStyle: CSSProperties = {
-  maxWidth: 380,
-  width: 'calc(100% - 32px)',
-  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.2)',
-};
-
-/**
- * Library-provided session-expired overlay for React consumer apps. Render it
- * once near the app root (inside `<IAuthProvider>`, mirroring
- * `<IDialogOutlet />`):
- *
- * ```tsx
- * <ISessionExpiredDialog />
- * ```
- *
- * It reads its state from the shared `ISessionExpiredService` (shown by the api
- * client's `onSessionExpired` when a refresh fails and `unauthorizedHandling`
- * is `'dialog'`) and, on "Log in again", performs a full-page redirect to
- * the configured signinUrl via `buildExternalSigninUrl`, then hides itself. It cannot
- * be dismissed by clicking the backdrop.
- */
+/** Binds session-expiry state to a non-dismissible Insight dialog and SSO handoff. */
 export function ISessionExpiredDialog() {
   const sessionExpired = useISessionExpired();
   const { config } = useIAuthContext();
@@ -69,7 +41,8 @@ export function ISessionExpiredDialog() {
       detail: sessionExpired.detail ?? undefined,
     },
     MESSAGES[reason ?? 'default'],
-    config.errorCatalogResolver
+    config.errorCatalogResolver,
+    config.errorDisplayFormatter
   );
   const iconClass =
     reason === 'SESSION_REPLACED'
@@ -83,21 +56,21 @@ export function ISessionExpiredDialog() {
   };
 
   return (
-    <div className="flex align-center justify-center" style={overlayStyle}>
-      <div className="bg-white radius-md p-3xl text-center" style={cardStyle}>
-        <div className="text-warning mb-lg">
-          <IIcon icon={iconClass} size="4xl" />
+    <IDialogContainer
+      config={{ width: '380px', disableClose: true, backdropClose: false }}
+      aria-label={TITLES[reason ?? 'default']}
+      style={{ zIndex: 9999 }}>
+      <IDialog
+        title={TITLES[reason ?? 'default']}
+        actions={[
+          { type: 'custom', label: 'Log in again', className: 'w-full' },
+        ]}
+        onCustomAction={onConfirm}>
+        <div className="flex flex-col align-center text-center gap-lg">
+          <IIcon className="text-warning" icon={iconClass} size="3xl" />
+          <p className="m-0 text-md leading-normal text-subtle">{message}</p>
         </div>
-        <h1 className="m-0 mb-xs text-2xl font-semibold text-gray-800">
-          {TITLES[reason ?? 'default']}
-        </h1>
-        <p className="m-0 mb-2xl text-md leading-normal text-subtle">
-          {message}
-        </p>
-        <IButton type="button" onClick={onConfirm}>
-          Log in again
-        </IButton>
-      </div>
-    </div>
+      </IDialog>
+    </IDialogContainer>
   );
 }

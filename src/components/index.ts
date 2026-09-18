@@ -4,6 +4,7 @@ export * from './card';
 export * from './code-viewer';
 export * from './datepicker';
 export * from './dialog';
+export * from './error-page';
 export * from './grid';
 export * from './host';
 export * from './icon';

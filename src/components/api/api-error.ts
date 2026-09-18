@@ -15,20 +15,30 @@ export type INormalizedApiError = {
 export type IApiErrorCatalogResolver = (
   errorCode: string,
   revision: number | undefined,
-  error: INormalizedApiError,
+  error: INormalizedApiError
 ) => string | null | undefined;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const readString = (value: Record<string, unknown>, key: string): string | undefined => {
+const readString = (
+  value: Record<string, unknown>,
+  key: string
+): string | undefined => {
   const candidate = value[key];
-  return typeof candidate === 'string' && candidate.trim().length > 0 ? candidate : undefined;
+  return typeof candidate === 'string' && candidate.trim().length > 0
+    ? candidate
+    : undefined;
 };
 
-const readNumber = (value: Record<string, unknown>, key: string): number | undefined => {
+const readNumber = (
+  value: Record<string, unknown>,
+  key: string
+): number | undefined => {
   const candidate = value[key];
-  return typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : undefined;
+  return typeof candidate === 'number' && Number.isFinite(candidate)
+    ? candidate
+    : undefined;
 };
 
 /** Normalize current catalog errors, legacy Problem Details, and raw transport errors. */
@@ -46,26 +56,63 @@ export function normalizeApiError(error: unknown): INormalizedApiError {
       readString(transport, 'errorCode') ??
       readString(transport, 'code'),
     code: readString(body, 'code') ?? readString(transport, 'code'),
-    message: readString(body, 'message'),
+    message: readString(body, 'message') ?? readString(body, 'Message'),
     revision: readNumber(body, 'revision') ?? readNumber(transport, 'revision'),
     detail: readString(body, 'detail'),
     title: readString(body, 'title'),
-    retryAfter: readNumber(body, 'retryAfter') ?? readNumber(transport, 'retryAfter'),
+    retryAfter:
+      readNumber(body, 'retryAfter') ?? readNumber(transport, 'retryAfter'),
   };
 }
 
-/** Resolve display text as backend message, catalog, legacy detail/title, then local fallback. */
+/** Optional application-owned formatting of a normalized backend error. */
+export type IApiErrorDisplayFormatter = (
+  error: INormalizedApiError
+) => string | null | undefined;
+
+/** Format common field-validation dictionaries without changing the error payload. */
+export function formatApiFieldErrors(
+  error: INormalizedApiError
+): string | undefined {
+  const fields = error.errors ?? error.ModelState;
+  if (!isRecord(fields)) return undefined;
+  const parts = Object.entries(fields).flatMap(([field, value]) => {
+    const messages = (Array.isArray(value) ? value : [value]).filter(
+      (item): item is string =>
+        typeof item === 'string' && item.trim().length > 0
+    );
+    return messages.length
+      ? [`${field.replace(/^model\./i, '')}: ${messages.join(', ')}`]
+      : [];
+  });
+  return parts.length ? parts.join('; ') : undefined;
+}
+
+/** Resolve display text without changing the canonical backend error fields. */
 export function resolveApiErrorDisplayMessage(
   error: unknown,
   localFallback: string,
   catalogResolver?: IApiErrorCatalogResolver,
+  formatter?: IApiErrorDisplayFormatter
 ): string {
   const normalized = normalizeApiError(error);
+  try {
+    const formatted = formatter?.(normalized);
+    if (formatted?.trim()) return formatted;
+  } catch {
+    // Optional formatters fall back to the default display behavior.
+  }
+  const validation = formatApiFieldErrors(normalized);
+  if (validation) return validation;
   if (normalized.message) return normalized.message;
 
   if (catalogResolver && normalized.errorCode) {
     try {
-      const catalogMessage = catalogResolver(normalized.errorCode, normalized.revision, normalized);
+      const catalogMessage = catalogResolver(
+        normalized.errorCode,
+        normalized.revision,
+        normalized
+      );
       if (catalogMessage?.trim()) return catalogMessage;
     } catch {
       // Catalog lookup is optional; failures safely fall through to legacy/local copy.

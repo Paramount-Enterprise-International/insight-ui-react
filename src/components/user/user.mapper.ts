@@ -1,6 +1,6 @@
 import { getMenuChildren, getMenuKey, getMenuLabel, getMenuRoute, isLeafItem, type IMenu, type IUser } from '../host';
 
-import type { ICurrentUserDto, IFavoriteMenuItemDto, IMenuNodeDto } from './user.types';
+import type { ICurrentUserDto, IEffectiveAuthorizationDto, IFavoriteMenuItemDto, IMenuNodeDto } from './user.types';
 
 /**
  * Maps the backend current-user DTO to `@insight/ui`'s sidebar `IUser` shape
@@ -149,4 +149,31 @@ export function findMenuNameById(menus: IMenu[], menuId: string | number): strin
     }
   }
   return null;
+}
+
+/** Derives company access from the effective authorization entries. */
+export function collectAuthorizationScope(items: readonly IEffectiveAuthorizationDto[]): {
+  companies: IEffectiveAuthorizationDto['companies'];
+  companyCodes: string[];
+  menuCompanies: Record<string, string[]>;
+} {
+  const seenCompanyIds = new Set<string>();
+  const companyCodes = new Set<string>();
+  const companies: IEffectiveAuthorizationDto['companies'] = [];
+  const menuCompanySets = new Map<string, Set<string>>();
+  for (const item of items) {
+    const codes = menuCompanySets.get(item.menuCode) ?? new Set<string>();
+    menuCompanySets.set(item.menuCode, codes);
+    for (const company of item.companies) {
+      codes.add(company.code);
+      companyCodes.add(company.code);
+      if (!seenCompanyIds.has(company.id)) {
+        seenCompanyIds.add(company.id);
+        companies.push({ ...company });
+      }
+    }
+  }
+  const menuCompanies: Record<string, string[]> = {};
+  for (const [code, codes] of menuCompanySets) menuCompanies[code] = [...codes];
+  return { companies, companyCodes: [...companyCodes], menuCompanies };
 }
