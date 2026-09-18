@@ -1,5 +1,6 @@
 import { getAuthEndpointPath, requireIdentityHost, type IAuthConfig } from './auth-config';
-import { rawRequest, type IApiError } from '../api/api.client';
+import { rawRequest, type IApiError, type IApiOptions, type IRequestOptions } from '../api/api.client';
+import { createRequestScope } from '../api/request-scope';
 import type { ICsrfService } from '../csrf/csrf';
 
 /**
@@ -85,10 +86,18 @@ export type IResetPasswordResponse = {
 export class IAuthService {
   private readonly config: IAuthConfig;
   private readonly csrf: ICsrfService;
+  private readonly signal?: AbortSignal;
 
-  constructor(config: IAuthConfig, csrf: ICsrfService) {
+  constructor(config: IAuthConfig, csrf: ICsrfService, signal?: AbortSignal) {
     this.config = config;
     this.csrf = csrf;
+    this.signal = signal;
+  }
+
+  private request<T>(path: string, options: IRequestOptions & { responseType?: 'json' }): Promise<T> {
+    const scope = createRequestScope(options.timeoutMs, [this.signal, options.signal]);
+    return rawRequest<T>(this.identityUrl, path, this.csrf, { ...options, signal: scope.signal })
+      .finally(() => scope.dispose());
   }
 
   private get identityUrl(): string {
@@ -115,7 +124,7 @@ export class IAuthService {
     }
 
     try {
-      const res = await rawRequest<ILoginResponse>(this.identityUrl, getAuthEndpointPath(this.config, 'login'), this.csrf, {
+      const res = await this.request<ILoginResponse>(getAuthEndpointPath(this.config, 'login'), {
         method: 'POST',
         body: {
           username,
@@ -138,16 +147,17 @@ export class IAuthService {
   }
 
   /** Silently refresh the access token via the HttpOnly session cookie. */
-  refresh(): Promise<IRefreshResponse> {
-    return rawRequest<IRefreshResponse>(this.identityUrl, getAuthEndpointPath(this.config, 'refresh'), this.csrf, {
+  refresh(options: Pick<IApiOptions, 'signal' | 'timeoutMs'> = {}): Promise<IRefreshResponse> {
+    return this.request<IRefreshResponse>(getAuthEndpointPath(this.config, 'refresh'), {
       method: 'POST',
       body: {},
+      ...options,
     });
   }
 
   /** Clear the server-side session and expire the HttpOnly session cookie. */
   async logout(refreshToken?: string): Promise<void> {
-    await rawRequest<{ ok: boolean }>(this.identityUrl, getAuthEndpointPath(this.config, 'logout'), this.csrf, {
+    await this.request<{ ok: boolean }>(getAuthEndpointPath(this.config, 'logout'), {
       method: 'POST',
       body: { refreshToken },
     });
@@ -155,7 +165,7 @@ export class IAuthService {
 
   /** Exchange a short-lived `at=` auth token for a full session (cross-app handoff). */
   exchangeAuthToken(authToken: string): Promise<ILoginResponse> {
-    return rawRequest<ILoginResponse>(this.identityUrl, getAuthEndpointPath(this.config, 'exchange'), this.csrf, {
+    return this.request<ILoginResponse>(getAuthEndpointPath(this.config, 'exchange'), {
       method: 'POST',
       body: {},
       headers: { Authorization: authToken },
@@ -164,7 +174,7 @@ export class IAuthService {
 
   /** Verify the MFA TOTP code during a login challenge. */
   verifyMfaChallenge(mfaSessionId: string, totpCode: string): Promise<IMfaChallengeResponse> {
-    return rawRequest<IMfaChallengeResponse>(this.identityUrl, '/auth/mfa/verify', this.csrf, {
+    return this.request<IMfaChallengeResponse>('/auth/mfa/verify', {
       method: 'POST',
       body: { mfaSessionId, totpCode },
     });
@@ -172,7 +182,7 @@ export class IAuthService {
 
   /** Verify the TOTP code during first-time MFA enrollment (forced at login). */
   verifyMfaEnroll(mfaSessionId: string, totpCode: string): Promise<IMfaChallengeResponse> {
-    return rawRequest<IMfaChallengeResponse>(this.identityUrl, '/auth/mfa/enroll/verify', this.csrf, {
+    return this.request<IMfaChallengeResponse>('/auth/mfa/enroll/verify', {
       method: 'POST',
       body: { mfaSessionId, totpCode },
     });
@@ -180,10 +190,8 @@ export class IAuthService {
 
   /** Self-service MFA — check enrollment status (`GET /profile/mfa`). */
   selfServiceGetStatus(): Promise<{ enrolled: boolean; createdAt?: string; lastUsedAt?: string }> {
-    return rawRequest<{ enrolled: boolean; createdAt?: string; lastUsedAt?: string }>(
-      this.identityUrl,
+    return this.request<{ enrolled: boolean; createdAt?: string; lastUsedAt?: string }>(
       '/profile/mfa',
-      this.csrf,
       { method: 'GET' },
     );
   }
@@ -194,17 +202,15 @@ export class IAuthService {
     secret: string;
     enrollmentSessionId: string;
   }> {
-    return rawRequest<{ qrCodeUri: string; secret: string; enrollmentSessionId: string }>(
-      this.identityUrl,
+    return this.request<{ qrCodeUri: string; secret: string; enrollmentSessionId: string }>(
       '/profile/mfa/enroll',
-      this.csrf,
       { method: 'POST', body: {} },
     );
   }
 
   /** Self-service MFA — verify OTP and complete enrollment (`POST /profile/mfa/enroll/verify`). */
   async selfServiceEnrollVerify(enrollmentSessionId: string, totpCode: string): Promise<void> {
-    await rawRequest<{ ok: boolean }>(this.identityUrl, '/profile/mfa/enroll/verify', this.csrf, {
+    await this.request<{ ok: boolean }>('/profile/mfa/enroll/verify', {
       method: 'POST',
       body: { enrollmentSessionId, totpCode },
     });
@@ -212,7 +218,7 @@ export class IAuthService {
 
   /** Self-service reset (un-enroll) MFA for the current user — requires password (`DELETE /profile/mfa`). */
   async selfServiceResetMfa(userSub: string, password: string): Promise<void> {
-    await rawRequest<{ ok: boolean }>(this.identityUrl, '/profile/mfa', this.csrf, {
+    await this.request<{ ok: boolean }>('/profile/mfa', {
       method: 'DELETE',
       body: { password, userSub },
     });
@@ -229,10 +235,8 @@ export class IAuthService {
     newPassword: string,
     confirmPassword: string,
   ): Promise<{ success: boolean; accessToken?: string; refreshToken?: string; expiresIn?: number }> {
-    return rawRequest<{ success: boolean; accessToken?: string; refreshToken?: string; expiresIn?: number }>(
-      this.identityUrl,
+    return this.request<{ success: boolean; accessToken?: string; refreshToken?: string; expiresIn?: number }>(
       '/auth/change-password',
-      this.csrf,
       {
         method: 'POST',
         body: { newPassword, confirmPassword },
@@ -243,7 +247,7 @@ export class IAuthService {
 
   /** Request a password-reset link via email or WhatsApp (`POST /auth/forgot-password`). */
   forgotPassword(identifier: string, mode: 'email' | 'whatsapp'): Promise<IForgotPasswordResponse> {
-    return rawRequest<IForgotPasswordResponse>(this.identityUrl, '/auth/forgot-password', this.csrf, {
+    return this.request<IForgotPasswordResponse>('/auth/forgot-password', {
       method: 'POST',
       body: { identifier, method: mode },
     });
@@ -251,7 +255,7 @@ export class IAuthService {
 
   /** Validate a reset token before showing the reset form (`GET /auth/reset-password/validate`). */
   validateResetToken(token: string): Promise<IValidateResetTokenResponse> {
-    return rawRequest<IValidateResetTokenResponse>(this.identityUrl, '/auth/reset-password/validate', this.csrf, {
+    return this.request<IValidateResetTokenResponse>('/auth/reset-password/validate', {
       method: 'GET',
       params: { token },
     });
@@ -259,7 +263,7 @@ export class IAuthService {
 
   /** Submit a new password using the reset token (`POST /auth/reset-password`). */
   resetPassword(token: string, newPassword: string, confirmPassword: string): Promise<IResetPasswordResponse> {
-    return rawRequest<IResetPasswordResponse>(this.identityUrl, '/auth/reset-password', this.csrf, {
+    return this.request<IResetPasswordResponse>('/auth/reset-password', {
       method: 'POST',
       body: { token, newPassword, confirmPassword },
     });

@@ -398,3 +398,51 @@ describe('IUserMenuStore — permissions', () => {
     expect(store.menuCodes).toEqual([]);
   });
 });
+
+describe('store session lifecycle', () => {
+  it('ignores every late load branch after reset', async () => {
+    const { store, userSvc, menuSvc } = createStore();
+    let finishUser!: (value: unknown) => void;
+    let finishAuthorizations!: (value: unknown) => void;
+    (userSvc.getCurrentUser as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((done) => {
+        finishUser = done;
+      })
+    );
+    (menuSvc.getAuthorizations as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((done) => {
+        finishAuthorizations = done;
+      })
+    );
+    const pending = store.load();
+    store.reset();
+    finishUser({ userId: 'old', username: 'old' });
+    finishAuthorizations(AUTHORIZATIONS);
+    await pending;
+    expect(store.currentUser).toBeNull();
+    expect(store.authorizations).toEqual([]);
+    expect(store.menuCodes).toEqual([]);
+    expect(store.initializing).toBe(false);
+    expect(store.initialized).toBe(false);
+    expect(store.loadError).toBeNull();
+  });
+
+  it('rejects direct stale authorization results after disposal', async () => {
+    const { store, menuSvc } = createStore();
+    let finish!: (value: unknown) => void;
+    (menuSvc.getAuthorizations as ReturnType<typeof vi.fn>).mockReturnValue(
+      new Promise((done) => {
+        finish = done;
+      })
+    );
+    const pending = store.loadAuthorizations();
+    const assertion = expect(pending).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    store.dispose();
+    finish(AUTHORIZATIONS);
+    await assertion;
+    expect(store.authorizations).toEqual([]);
+    await expect(store.load()).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});

@@ -41,7 +41,8 @@ export function ISessionExpiredDialog() {
       detail: sessionExpired.detail ?? undefined,
     },
     MESSAGES[reason ?? 'default'],
-    config.errorCatalogResolver
+    config.errorCatalogResolver,
+    config.errorDisplayFormatter
   );
   const iconClass =
     reason === 'SESSION_REPLACED'
@@ -58,13 +59,13 @@ export function ISessionExpiredDialog() {
     <IDialogContainer
       config={{ width: '380px', disableClose: true, backdropClose: false }}
       aria-label={TITLES[reason ?? 'default']}
-      style={{ zIndex: 9999 }}
-    >
+      style={{ zIndex: 9999 }}>
       <IDialog
         title={TITLES[reason ?? 'default']}
-        actions={[{ type: 'custom', label: 'Log in again', className: 'w-full' }]}
-        onCustomAction={onConfirm}
-      >
+        actions={[
+          { type: 'custom', label: 'Log in again', className: 'w-full' },
+        ]}
+        onCustomAction={onConfirm}>
         <div className="flex flex-col align-center text-center gap-lg">
           <IIcon className="text-warning" icon={iconClass} size="3xl" />
           <p className="m-0 text-md leading-normal text-subtle">{message}</p>

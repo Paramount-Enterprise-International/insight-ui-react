@@ -1,66 +1,73 @@
+import { rawRequest } from '../api/api.client';
 import { getAuthEndpointUrl, type IAuthConfig } from '../auth/auth-config';
 
-/**
- * CSRF token management — cookie-to-header pattern for @insight/ui consumer apps.
- * Mirrors `@insight/ui`'s Angular `ICsrfService`:
- *
- *   1. FE calls GET {api.identity}{csrf endpoint} (default `/auth/csrf`).
- *   2. Backend returns `{ csrfToken }` in the JSON body AND sets a `csrf_token` cookie.
- *   3. FE stores the token in memory (JS cannot read cross-origin cookies).
- *   4. FE sends the token back as `X-CSRF-Token` header on mutating requests.
- *   5. Backend validates: header value === cookie value.
- *
- * Token expiration mirrors the backend cookie maxAge (minus a safety buffer,
- * configured via `csrfTokenMaxAgeSeconds`) so the FE transparently re-fetches
- * before the server-side cookie actually expires.
- */
 export class ICsrfService {
-  private readonly config: IAuthConfig;
-
-  /** In-memory CSRF token — retrieved from the backend response body, never from document.cookie directly. */
   private token: string | null = null;
   private tokenFetchedAt: number | null = null;
+  private inFlight: Promise<void> | null = null;
+  private controller = new AbortController();
+  private disposed = false;
 
-  constructor(config: IAuthConfig) {
+  private readonly config: IAuthConfig;
+  private readonly signal?: AbortSignal;
+
+  constructor(config: IAuthConfig, signal?: AbortSignal) {
     this.config = config;
+    this.signal = signal;
   }
 
-  /**
-   * Return the in-memory CSRF token, or `null` if never fetched or expired
-   * (expiry triggers callers to re-invoke `ensureToken()`).
-   */
   getToken(): string | null {
-    if (this.token && this.isTokenExpired()) {
-      return null;
-    }
-    return this.token;
+    return this.isTokenExpired() ? null : this.token;
   }
 
-  /** Whether the in-memory token has exceeded its TTL (`csrfTokenMaxAgeSeconds`). */
   isTokenExpired(): boolean {
-    if (this.tokenFetchedAt === null) {
-      return false;
-    }
-    const maxAgeMs = (this.config.csrfTokenMaxAgeSeconds ?? 7170) * 1000;
-    return Date.now() - this.tokenFetchedAt >= maxAgeMs;
+    return (
+      this.tokenFetchedAt !== null &&
+      Date.now() - this.tokenFetchedAt >=
+        (this.config.csrfTokenMaxAgeSeconds ?? 7170) * 1000
+    );
   }
 
-  /**
-   * Fetch a fresh CSRF token from the configured identity host and store it in
-   * memory. On failure the error is propagated - a failed fetch must not be
-   * silently swallowed.
-   */
-  async ensureToken(): Promise<void> {
-    const res = await fetch(getAuthEndpointUrl(this.config, 'csrf'), {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) {
-      throw new Error(`CSRF fetch failed (${res.status})`);
-    }
-    const body = (await res.json().catch(() => null)) as { csrfToken?: string } | null;
-    this.token = body?.csrfToken ?? null;
-    this.tokenFetchedAt = Date.now();
+  /** Share the current token bootstrap and retain tokens only for this application. */
+  ensureToken(): Promise<void> {
+    if (this.disposed)
+      return Promise.reject(new Error('CSRF service is disposed.'));
+    if (this.signal?.aborted) return Promise.reject(this.signal.reason);
+    if (this.inFlight) return this.inFlight;
+    const controller = this.controller;
+    const abort = () => controller.abort();
+    this.signal?.addEventListener('abort', abort, { once: true });
+    const pending = rawRequest<{ csrfToken?: string }>(
+      getAuthEndpointUrl(this.config, 'csrf'),
+      '',
+      null,
+      {
+        signal: controller.signal,
+      }
+    )
+      .then((body) => {
+        if (controller.signal.aborted || this.controller !== controller) return;
+        this.token = body?.csrfToken ?? null;
+        this.tokenFetchedAt = Date.now();
+      })
+      .finally(() => {
+        this.signal?.removeEventListener('abort', abort);
+        if (this.inFlight === pending) this.inFlight = null;
+      });
+    this.inFlight = pending;
+    return pending;
+  }
+
+  clear(): void {
+    this.controller.abort();
+    this.controller = new AbortController();
+    this.inFlight = null;
+    this.token = null;
+    this.tokenFetchedAt = null;
+  }
+
+  dispose(): void {
+    this.clear();
+    this.disposed = true;
   }
 }

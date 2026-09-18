@@ -147,6 +147,12 @@ export class ISessionExpiredService {
     this.notify();
   }
 
+  dispose(): void {
+    this.visibleValue = false;
+    this.apiErrorValue = null;
+    this.listeners.clear();
+  }
+
   hide(): void {
     this.visibleValue = false;
     this.notify();

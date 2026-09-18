@@ -3,21 +3,23 @@ import {
   resolveApiErrorDisplayMessage,
   type INormalizedApiError,
 } from '../api/api-error';
+import { requestCancellation } from '../api/request-scope';
+import type { IAuthConfig } from '../auth/auth-config';
 import { getMenuKey, type IMenu, type IUser } from '../host';
 import type { ISessionService } from '../session/session';
 import {
-  type ICurrentUserDto,
   type IAuthorizationSource,
+  type ICurrentUserDto,
+  type ICurrentUserService,
   type IEffectiveAuthorizationDto,
   type IFavoriteMenuItemDto,
   type IMenuNodeDto,
-  type ICurrentUserService,
   type IUserMenuService,
 } from '../user';
 import {
+  collectAuthorizationScope,
   findFirstLeafRoute,
   findMenuNameById,
-  collectAuthorizationScope,
   hasAnyMenuCode,
   hasAnyRoute,
   mapToSidebarUser,
@@ -38,14 +40,22 @@ import {
  *
  * Observable store: `subscribe` + `getVersion` for `useSyncExternalStore`.
  */
-export type IUserMenuLoadSource = 'user' | 'menus' | 'favorites' | 'authorizations';
+export type IUserMenuLoadSource =
+  | 'user'
+  | 'menus'
+  | 'favorites'
+  | 'authorizations';
 
-export type IUserMenuLoadErrors = Record<IUserMenuLoadSource, INormalizedApiError | null>;
+export type IUserMenuLoadErrors = Record<
+  IUserMenuLoadSource,
+  INormalizedApiError | null
+>;
 
 export class IUserMenuStore {
   private readonly currentUserService: ICurrentUserService;
   private readonly menuService: IUserMenuService;
   private readonly session: ISessionService;
+  private readonly config?: IAuthConfig;
 
   private currentUserValue: IUser | null = null;
   private rawCurrentUserValue: ICurrentUserDto | null = null;
@@ -68,15 +78,19 @@ export class IUserMenuStore {
 
   private version = 0;
   private listeners = new Set<() => void>();
+  private generation = 0;
+  private disposed = false;
 
   constructor(
     currentUserService: ICurrentUserService,
     menuService: IUserMenuService,
     session: ISessionService,
+    config?: IAuthConfig
   ) {
     this.currentUserService = currentUserService;
     this.menuService = menuService;
     this.session = session;
+    this.config = config;
   }
 
   subscribe = (listener: () => void): (() => void) => {
@@ -87,6 +101,17 @@ export class IUserMenuStore {
   };
 
   getVersion = (): number => this.version;
+
+  private checkGeneration(generation: number): void {
+    if (this.disposed || generation !== this.generation)
+      throw requestCancellation('abort');
+  }
+
+  dispose(): void {
+    this.reset();
+    this.disposed = true;
+    this.listeners.clear();
+  }
 
   private notify(): void {
     this.version++;
@@ -129,7 +154,9 @@ export class IUserMenuStore {
   }
 
   /** Deduplicated companies from the effective authorization entries. */
-  get companies(): ReadonlyArray<IEffectiveAuthorizationDto['companies'][number]> {
+  get companies(): ReadonlyArray<
+    IEffectiveAuthorizationDto['companies'][number]
+  > {
     return collectAuthorizationScope(this.authorizationsValue).companies;
   }
 
@@ -178,7 +205,10 @@ export class IUserMenuStore {
    * Order: (1) first navigable favorite route, (2) first navigable menu route.
    */
   get defaultRoute(): string | null {
-    return findFirstLeafRoute(this.favoritesValue) ?? findFirstLeafRoute(this.menusValue);
+    return (
+      findFirstLeafRoute(this.favoritesValue) ??
+      findFirstLeafRoute(this.menusValue)
+    );
   }
 
   /** Finds a menu node's display name by id (recursive), or null. */
@@ -193,6 +223,7 @@ export class IUserMenuStore {
    * to navigate to `defaultRoute` after login).
    */
   async load(applicationId?: string): Promise<void> {
+    this.checkGeneration(this.generation);
     if (this.initializingValue) {
       // already in-flight — wait until it settles
       await this.waitUntilSettled();
@@ -215,20 +246,35 @@ export class IUserMenuStore {
     this.initializingValue = true;
     this.initializedValue = false;
     this.loadErrorValue = null;
-    this.loadErrorsValue = { user: null, menus: null, favorites: null, authorizations: null };
+    this.loadErrorsValue = {
+      user: null,
+      menus: null,
+      favorites: null,
+      authorizations: null,
+    };
     this.rolesValue = this.session.getRoles();
     this.clearAuthorizationData();
     this.notify();
 
+    const generation = this.generation;
+    const record = (source: IUserMenuLoadSource, err: unknown) => {
+      if (generation === this.generation && !this.disposed)
+        this.recordError(source, err);
+    };
     await Promise.all([
-      this.loadUserInternal().catch((err) => this.recordError('user', err)),
-      this.loadMenusInternal(applicationId).catch((err) => this.recordError('menus', err)),
-      this.loadFavoritesInternal(applicationId).catch((err) => this.recordError('favorites', err)),
+      this.loadUserInternal().catch((err) => record('user', err)),
+      this.loadMenusInternal(applicationId).catch((err) =>
+        record('menus', err)
+      ),
+      this.loadFavoritesInternal(applicationId).catch((err) =>
+        record('favorites', err)
+      ),
       this.loadAuthorizationsInternal(applicationId).catch((err) =>
-        this.recordError('authorizations', err),
+        record('authorizations', err)
       ),
     ]);
 
+    if (generation !== this.generation || this.disposed) return;
     this.initializingValue = false;
     this.initializedValue = true;
     this.notify();
@@ -265,7 +311,9 @@ export class IUserMenuStore {
   /** Checks effective item/function authorization codes (ANY match). */
   hasMenuCode(code: string | string[]): boolean {
     const granted = this.menuCodes;
-    return (Array.isArray(code) ? code : [code]).some((item) => granted.includes(item));
+    return (Array.isArray(code) ? code : [code]).some((item) =>
+      granted.includes(item)
+    );
   }
 
   /**
@@ -291,7 +339,12 @@ export class IUserMenuStore {
    * favorites so the server remains the source of truth. The menu-star change
    * is reverted on error.
    */
-  async toggleFavorite(menuId: string | number, isFavorite: boolean): Promise<void> {
+  async toggleFavorite(
+    menuId: string | number,
+    isFavorite: boolean
+  ): Promise<void> {
+    const generation = this.generation;
+    this.checkGeneration(generation);
     const previousMenus = this.menusValue;
     this.menusValue = this.applyMenuFavorite(previousMenus, menuId, isFavorite);
     this.notify();
@@ -300,8 +353,10 @@ export class IUserMenuStore {
       : this.menuService.removeFavorite(menuId);
     try {
       await call;
+      this.checkGeneration(generation);
       await this.reloadFavorites();
     } catch (err) {
+      this.checkGeneration(generation);
       this.menusValue = previousMenus;
       this.notify();
       throw err;
@@ -314,12 +369,15 @@ export class IUserMenuStore {
    * after the write. The local change is reverted on error.
    */
   async reorderFavorites(menuIds: (string | number)[]): Promise<void> {
+    const generation = this.generation;
+    this.checkGeneration(generation);
     const previous = this.favoritesValue;
     this.favoritesValue = this.applyFavoriteReorder(previous, menuIds);
     this.notify();
     try {
       await this.menuService.reorderFavorites(menuIds);
     } catch (err) {
+      this.checkGeneration(generation);
       this.favoritesValue = previous;
       this.notify();
       throw err;
@@ -337,7 +395,11 @@ export class IUserMenuStore {
    * mapped `IMenu[]`.
    */
   async loadMenus(applicationId?: string): Promise<IMenu[]> {
-    const nodes = await this.menuService.getEffectiveMenus<IMenuNodeDto[]>(applicationId);
+    const generation = this.generation;
+    this.checkGeneration(generation);
+    const nodes =
+      await this.menuService.getEffectiveMenus<IMenuNodeDto[]>(applicationId);
+    this.checkGeneration(generation);
     const mapped = toIMenus(nodes);
     this.menusValue = mapped;
     this.notify();
@@ -346,7 +408,13 @@ export class IUserMenuStore {
 
   /** Loads favorites into `favorites` — optionally for a single application. Returns the mapped `IMenu[]`. */
   async loadFavorites(applicationId?: string): Promise<IMenu[]> {
-    const items = await this.menuService.getFavorites<IFavoriteMenuItemDto[]>(applicationId);
+    const generation = this.generation;
+    this.checkGeneration(generation);
+    const items =
+      await this.menuService.getFavorites<IFavoriteMenuItemDto[]>(
+        applicationId
+      );
+    this.checkGeneration(generation);
     const mapped = items.map(toIMenuFavorite);
     this.favoritesValue = mapped;
     this.notify();
@@ -354,16 +422,24 @@ export class IUserMenuStore {
   }
 
   /** Loads effective item/function authorizations and their company scope. */
-  async loadAuthorizations(applicationId?: string): Promise<IEffectiveAuthorizationDto[]> {
+  async loadAuthorizations(
+    applicationId?: string
+  ): Promise<IEffectiveAuthorizationDto[]> {
+    const generation = this.generation;
+    this.checkGeneration(generation);
     this.clearAuthorizationData();
     this.notify();
     try {
       const items =
-        await this.menuService.getAuthorizations<IEffectiveAuthorizationDto[]>(applicationId);
+        await this.menuService.getAuthorizations<IEffectiveAuthorizationDto[]>(
+          applicationId
+        );
+      this.checkGeneration(generation);
       this.applyAuthorizations(items);
       this.notify();
       return this.authorizationsValue;
     } catch (error) {
+      this.checkGeneration(generation);
       this.clearAuthorizationData();
       this.notify();
       throw error;
@@ -382,24 +458,35 @@ export class IUserMenuStore {
   private applyMenuFavorite(
     menus: IMenu[],
     menuId: string | number,
-    isFavorite: boolean,
+    isFavorite: boolean
   ): IMenu[] {
     return menus.map((menu) => {
       if (getMenuKey(menu) === menuId) {
         return { ...menu, isFavorite };
       }
       if (menu.children?.length) {
-        return { ...menu, children: this.applyMenuFavorite(menu.children, menuId, isFavorite) };
+        return {
+          ...menu,
+          children: this.applyMenuFavorite(menu.children, menuId, isFavorite),
+        };
       }
       if (menu.child?.length) {
-        return { ...menu, child: this.applyMenuFavorite(menu.child, menuId, isFavorite) };
+        return {
+          ...menu,
+          child: this.applyMenuFavorite(menu.child, menuId, isFavorite),
+        };
       }
       return menu;
     });
   }
 
-  private applyFavoriteReorder(favorites: IMenu[], menuIds: (string | number)[]): IMenu[] {
-    const byId = new Map(favorites.map((favorite) => [String(getMenuKey(favorite)), favorite]));
+  private applyFavoriteReorder(
+    favorites: IMenu[],
+    menuIds: (string | number)[]
+  ): IMenu[] {
+    const byId = new Map(
+      favorites.map((favorite) => [String(getMenuKey(favorite)), favorite])
+    );
     const ordered: IMenu[] = [];
     const seen = new Set<string>();
     for (const id of menuIds) {
@@ -418,7 +505,9 @@ export class IUserMenuStore {
   }
 
   private async loadUserInternal(): Promise<void> {
+    const generation = this.generation;
     const raw = await this.currentUserService.getCurrentUser<ICurrentUserDto>();
+    this.checkGeneration(generation);
     this.rawCurrentUserValue = raw;
     this.currentUserValue = mapToSidebarUser(raw);
     this.notify();
@@ -432,11 +521,15 @@ export class IUserMenuStore {
     await this.loadFavorites(applicationId);
   }
 
-  private async loadAuthorizationsInternal(applicationId?: string): Promise<void> {
+  private async loadAuthorizationsInternal(
+    applicationId?: string
+  ): Promise<void> {
     await this.loadAuthorizations(applicationId);
   }
 
   private clearData(): void {
+    this.generation++;
+    this.initializingValue = false;
     this.currentUserValue = null;
     this.rawCurrentUserValue = null;
     this.menusValue = [];
@@ -445,7 +538,12 @@ export class IUserMenuStore {
     this.clearAuthorizationData();
     this.initializedValue = false;
     this.loadErrorValue = null;
-    this.loadErrorsValue = { user: null, menus: null, favorites: null, authorizations: null };
+    this.loadErrorsValue = {
+      user: null,
+      menus: null,
+      favorites: null,
+      authorizations: null,
+    };
     this.notify();
   }
 
@@ -454,8 +552,16 @@ export class IUserMenuStore {
   }
 
   private recordError(source: IUserMenuLoadSource, err: unknown): void {
-    const message = resolveApiErrorDisplayMessage(err, 'Failed to load');
-    this.loadErrorsValue = { ...this.loadErrorsValue, [source]: normalizeApiError(err) };
+    const message = resolveApiErrorDisplayMessage(
+      err,
+      'Failed to load',
+      this.config?.errorCatalogResolver,
+      this.config?.errorDisplayFormatter
+    );
+    this.loadErrorsValue = {
+      ...this.loadErrorsValue,
+      [source]: normalizeApiError(err),
+    };
     this.loadErrorValue = `${source}: ${message}`;
     console.error(`[@insight/ui][STORE] load "${source}" failed`, err);
     this.notify();
