@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { decodeJwtPayload, decodeUser, ISessionService } from './session.service';
+import { decodeJwtPayload, decodeUser, ISessionService } from './session';
 import type { IAuthConfig } from '../auth/auth-config';
-import type { IAuthService } from '../auth/auth.service';
-import type { ICsrfService } from '../csrf/csrf.service';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import type { IAuthService } from '../auth/auth';
+import type { ICsrfService } from '../csrf/csrf';
+import type { IUserMenuStore } from '../store/user-menu';
 
 // Minimal valid JWT: header.payload.signature (payload = {"sub":"u1","email":"a@b.c","name":"A","realm_access":{"roles":["role-a"]},"user_type":"external","exp":9999999999})
 const TOKEN =

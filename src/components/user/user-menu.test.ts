@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { IApiClient } from '../api/api.client';
 import type { IAuthConfig } from '../auth/auth-config';
-import { IUserMenuService } from './user-menu.service';
+import { IUserMenuService } from './user-menu';
 
 const BASE_CONFIG: IAuthConfig = {
   api: {

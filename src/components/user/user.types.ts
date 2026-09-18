@@ -114,8 +114,7 @@ export type IEffectiveAuthorizationDto = {
 
 /** Authorization data exposed to permission predicates. */
 export type IAuthorizationSource = {
-  readonly menu: readonly string[];
-  readonly permission: readonly string[];
+  readonly menuCodes: readonly string[];
   readonly roles: readonly string[];
   readonly companyCodes: readonly string[];
   readonly companies: readonly IMenuCompanyDto[];

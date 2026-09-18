@@ -1,5 +1,5 @@
 import { environment as defaultEnvironment } from '../environments/environment';
-import type { IApiErrorCatalogResolver } from '../api/api-error';
+import type { IApiErrorCatalogResolver, IApiErrorDisplayFormatter } from '../api/api-error';
 
 /**
  * Token lifespan configuration (seconds). Mirrors the platform-wide AC used by
@@ -124,6 +124,8 @@ export type IAuthConfig = {
   onUnauthorized?: (error: unknown) => void;
   /** Optional synchronous catalog lookup used only when the backend message is absent. */
   errorCatalogResolver?: IApiErrorCatalogResolver;
+  /** Optional application-owned backend error display formatter. */
+  errorDisplayFormatter?: IApiErrorDisplayFormatter;
 };
 
 /**

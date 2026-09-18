@@ -1,11 +1,11 @@
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { IAuthConfig } from './auth-config';
-import type { IAuthService } from './auth.service';
-import type { ICsrfService } from '../csrf/csrf.service';
+import type { IAuthService } from './auth';
+import type { ICsrfService } from '../csrf/csrf';
 import type { IApiClient } from '../api/api.client';
-import type { ISessionService } from '../session/session.service';
-import type { ISessionExpiredService } from '../session-expired/session-expired.service';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import type { ISessionService } from '../session/session';
+import type { ISessionExpiredService } from '../session-expired/session-expired';
+import type { IUserMenuStore } from '../store/user-menu';
 
 /**
  * Everything the shared SSO stack exposes to consumer apps. Provided by

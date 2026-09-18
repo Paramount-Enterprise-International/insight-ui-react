@@ -1,15 +1,16 @@
 import type { IAuthConfig } from '../auth/auth-config';
-import { IAuthService, type IAuthUser } from '../auth/auth.service';
-import type { ICsrfService } from '../csrf/csrf.service';
+import { IAuthService, type IAuthUser } from '../auth/auth';
+import type { ICsrfService } from '../csrf/csrf';
 import {
   extractProblemDetailsErrorCode,
   isSessionExpiredError,
   type ISessionExpiredReason,
   ISessionExpiredService,
   toSessionExpiredReason,
-} from '../session-expired/session-expired.service';
+} from '../session-expired/session-expired';
 import { normalizeApiError } from '../api/api-error';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import { requestCancellation, waitForRequest } from '../api/request-scope';
+import type { IUserMenuStore } from '../store/user-menu';
 
 /** User derived from Keycloak JWT claims. */
 export type ISessionUser = {
@@ -96,6 +97,12 @@ export class ISessionService {
   private refreshInFlight: Promise<string> | null = null;
   private restoreInFlight: Promise<{ reason?: ISessionExpiredReason }> | null = null;
 
+  private generation = 0;
+  private refreshController: AbortController | null = null;
+  private requestController = new AbortController();
+  private loggedOut = false;
+  private disposed = false;
+
   private version = 0;
   private listeners = new Set<() => void>();
 
@@ -124,6 +131,39 @@ export class ISessionService {
   };
 
   getVersion = (): number => this.version;
+
+  isLoggedOut = (): boolean => this.loggedOut;
+  getRequestSignal = (): AbortSignal => this.requestController.signal;
+
+  /** Metadata belongs to an application; access tokens remain in memory. */
+  private storageKey(name: string): string {
+    const scope = JSON.stringify([
+      this.config.api?.identity ?? '',
+      this.config.appId ?? '',
+    ]);
+    return `iam.${encodeURIComponent(scope)}.${name}`;
+  }
+
+  private invalidatePendingSession(): void {
+    this.generation++;
+    this.refreshController?.abort(requestCancellation('abort'));
+    this.refreshController = null;
+    this.refreshInFlight = null;
+    this.requestController.abort(requestCancellation('abort'));
+    this.requestController = new AbortController();
+  }
+
+  private assertActive(): void {
+    if (this.disposed) throw new Error('Session service is disposed.');
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.clearSession();
+    this.disposed = true;
+    this.requestController.abort(requestCancellation('abort'));
+    this.listeners.clear();
+  }
 
   private notify(): void {
     this.version++;
@@ -178,14 +218,14 @@ export class ISessionService {
 
   setChangePasswordToken(token: string): void {
     this.changePasswordTokenValue = token;
-    sessionStorage.setItem('iam.changePasswordToken', token);
+    sessionStorage.setItem(this.storageKey('changePasswordToken'), token);
   }
 
   getChangePasswordToken(): string | null {
     if (this.changePasswordTokenValue) {
       return this.changePasswordTokenValue;
     }
-    const stored = sessionStorage.getItem('iam.changePasswordToken');
+    const stored = sessionStorage.getItem(this.storageKey('changePasswordToken'));
     if (stored) {
       this.changePasswordTokenValue = stored;
       return stored;
@@ -195,7 +235,9 @@ export class ISessionService {
 
   clearChangePasswordToken(): void {
     this.changePasswordTokenValue = null;
-    sessionStorage.removeItem('iam.changePasswordToken');
+    this.initializingValue = false;
+    this.userMenuStore?.reset();
+    sessionStorage.removeItem(this.storageKey('changePasswordToken'));
   }
 
   getAccessToken(): string | null {
@@ -250,6 +292,9 @@ export class ISessionService {
    * own `exp` claim, then falls back to the configured `accessTokenSeconds`.
    */
   setAccessToken(accessToken: string, expiresIn?: number): void {
+    this.assertActive();
+    this.invalidatePendingSession();
+    this.loggedOut = false;
     this.accessToken = accessToken;
     const effectiveExpiresIn =
       expiresIn ?? this.readExpiresInFromToken(accessToken) ?? this.config.tokenLifespan.accessTokenSeconds;
@@ -269,6 +314,13 @@ export class ISessionService {
    * start from a refresh-after-revocation.
    */
   setSession(accessToken: string, expiresIn: number, user: IAuthUser, refreshToken?: string): void {
+    this.assertActive();
+    this.invalidatePendingSession();
+    this.loggedOut = false;
+    this.writeSession(accessToken, expiresIn, user, refreshToken);
+  }
+
+  private writeSession(accessToken: string, expiresIn: number, user: IAuthUser, refreshToken?: string): void {
     this.accessToken = accessToken;
     if (refreshToken) {
       this._refreshToken = refreshToken;
@@ -280,13 +332,14 @@ export class ISessionService {
     const neverExpired = decoded?.['never_expired'] === true;
     const pwdExpired = decoded?.['pwd_expired'] === true;
     this.passwordExpired = !neverExpired && pwdExpired;
-    sessionStorage.setItem('iam.session.active', 'true');
+    sessionStorage.setItem(this.storageKey('session.active'), 'true');
     this.lastVerifiedAt = Date.now();
     this.initializingValue = false;
     this.notify();
   }
 
   clearSession(): void {
+    this.invalidatePendingSession();
     this.accessToken = null;
     this._refreshToken = null;
     this.expiresAt = null;
@@ -294,7 +347,9 @@ export class ISessionService {
     this.passwordExpired = false;
     this.sessionStartedAt = null;
     this.changePasswordTokenValue = null;
-    sessionStorage.removeItem('iam.changePasswordToken');
+    this.initializingValue = false;
+    this.userMenuStore?.reset();
+    sessionStorage.removeItem(this.storageKey('changePasswordToken'));
     // NOTE: `iam.session.active` is intentionally NOT cleared here — it must
     // survive mid-session revocation so `tryRestoreSession()` can detect
     // "refresh after revocation" on the next load; explicit logout clears it.
@@ -308,14 +363,13 @@ export class ISessionService {
    * page).
    */
   async logout(): Promise<void> {
+    this.assertActive();
     const refreshToken = this._refreshToken ?? undefined;
+    this.loggedOut = true;
     this.clearSession();
     // Explicit logout also clears the "active session" flag so a later
     // tryRestoreSession() treats the next load as a cold start.
-    sessionStorage.removeItem('iam.session.active');
-    // Drop cached sidebar data (user/menus/favorites/permissions) so no stale
-    // data from this session leaks into the next login.
-    this.userMenuStore?.reset();
+    sessionStorage.removeItem(this.storageKey('session.active'));
     try {
       // Ensure a valid CSRF token first: the backend CsrfGuard requires
       // X-CSRF-Token on POST /auth/logout.
@@ -336,34 +390,41 @@ export class ISessionService {
    * Single-flight: concurrent callers share the in-flight refresh.
    */
   refreshToken(): Promise<string> {
-    if (this.refreshInFlight) {
-      return this.refreshInFlight;
-    }
-
-    const inFlight = this.authService
-      .refresh()
+    this.assertActive();
+    if (this.loggedOut)
+      return Promise.reject(
+        normalizeApiError({
+          status: 401,
+          errorCode: 'AUTH_NO_SESSION',
+          message: 'Authentication required.',
+        })
+      );
+    if (this.refreshInFlight) return this.refreshInFlight;
+    const generation = this.generation;
+    const controller = new AbortController();
+    this.refreshController = controller;
+    const pending = waitForRequest(
+      this.authService.refresh({ signal: controller.signal }),
+      controller.signal
+    )
       .then((res) => {
-        this.setSession(
+        if (generation !== this.generation || this.disposed || this.loggedOut)
+          throw requestCancellation('abort');
+        this.writeSession(
           res.accessToken,
           res.expiresIn,
           this.currentUser ?? decodeUser(res.accessToken),
-          res.refreshToken,
+          res.refreshToken
         );
         return res.accessToken;
       })
-      .catch((err) => {
-        console.warn('[@insight/ui][SESSION] silent refresh failed', {
-          status: (err as { status?: number })?.status,
-          errorCode: extractProblemDetailsErrorCode(err),
-        });
-        throw err;
-      })
       .finally(() => {
-        this.refreshInFlight = null;
+        if (this.refreshInFlight === pending) this.refreshInFlight = null;
+        if (this.refreshController === controller)
+          this.refreshController = null;
       });
-
-    this.refreshInFlight = inFlight;
-    return inFlight;
+    this.refreshInFlight = pending;
+    return pending;
   }
 
   /** True if the session was verified against the backend within `cooldownMs` (default 30s). */
@@ -395,59 +456,60 @@ export class ISessionService {
    * decide overlay vs. signin.
    */
   tryRestoreSession(): Promise<{ reason?: ISessionExpiredReason }> {
-    if (this.restoreInFlight) {
-      return this.restoreInFlight;
-    }
-
+    this.assertActive();
+    if (this.restoreInFlight) return this.restoreInFlight;
     const pathname = window.location.pathname ?? '';
     const isSigninPage = /^\/auth\/signin$|^\/signin$/i.test(pathname);
     const isOtherAuthPage =
-      /^\/auth(\/|$)|^\/forgot-password|^\/reset-password/i.test(pathname) && !isSigninPage;
-
-    if (isOtherAuthPage) {
+      /^\/auth(\/|$)|^\/forgot-password|^\/reset-password/i.test(pathname) &&
+      !isSigninPage;
+    if (isOtherAuthPage || this.accessToken || this.loggedOut) {
       this.initializingValue = false;
-      return Promise.resolve({});
+      this.notify();
+      this.restoreInFlight = Promise.resolve({});
+      return this.restoreInFlight;
     }
-
-    const restorePromise = this.authService
-      .refresh()
-      .then((res) => {
-        this.setSession(res.accessToken, res.expiresIn, decodeUser(res.accessToken), res.refreshToken);
-        return {} as { reason?: ISessionExpiredReason };
-      })
+    const generation = this.generation;
+    const refresh = this.refreshToken();
+    const controller = this.refreshController;
+    const timer = setTimeout(
+      () => controller?.abort(requestCancellation('timeout')),
+      10_000
+    );
+    this.restoreInFlight = refresh
+      .then(() => ({}))
       .catch((err): { reason?: ISessionExpiredReason } => {
-        console.debug('[@insight/ui][SESSION] tryRestoreSession: FAILED', {
-          status: (err as { status?: number })?.status,
-        });
+        if (generation !== this.generation || this.disposed || this.loggedOut)
+          return {};
         const rawErrorCode = extractProblemDetailsErrorCode(err);
-        const code = toSessionExpiredReason(rawErrorCode);
-        const wasActive = sessionStorage.getItem('iam.session.active') === 'true';
-        const isAuthPage = /^\/auth(\/|$)|^\/signin$|^\/logout$/i.test(pathname);
+        const reason = toSessionExpiredReason(rawErrorCode);
+        const wasActive =
+          sessionStorage.getItem(this.storageKey('session.active')) === 'true';
+        const isAuthPage = /^\/auth(\/|$)|^\/signin$|^\/logout$/i.test(
+          pathname
+        );
         if (wasActive && !isAuthPage && isSessionExpiredError(err)) {
           const apiError = normalizeApiError(err);
           this.sessionExpiredService.show(
             pathname,
-            code ?? 'TOKEN_EXPIRED',
+            reason ?? 'TOKEN_EXPIRED',
             rawErrorCode,
             apiError.detail,
             apiError.message,
-            apiError,
+            apiError
           );
         }
-        if (isSessionExpiredError(err)) {
-          this.authService.logout().catch(() => void 0);
+        if (isSessionExpiredError(err))
+          void this.authService.logout().catch(() => undefined);
+        return { reason };
+      })
+      .finally(() => {
+        clearTimeout(timer);
+        if (!this.disposed) {
+          this.initializingValue = false;
+          this.notify();
         }
-        return { reason: code };
       });
-
-    const safetyTimer = new Promise<{ reason?: ISessionExpiredReason }>((resolve) =>
-      setTimeout(() => resolve({}), 10_000),
-    );
-
-    this.restoreInFlight = Promise.race([restorePromise, safetyTimer]).finally(() => {
-      this.initializingValue = false;
-      this.notify();
-    });
     return this.restoreInFlight;
   }
 

@@ -5,9 +5,9 @@ import type { ReactNode } from 'react';
 
 import { IRequireAccess, UNAUTHORIZED_ACCESS_PATH } from './require-access';
 import { IAuthContext, type IAuthContext as IAuthContextValue } from '../auth/insight-auth-context';
-import type { ISessionService } from '../session/session.service';
-import type { IUserMenuStore } from '../store/user-menu.store';
-import type { ISessionExpiredService } from '../session-expired/session-expired.service';
+import type { ISessionService } from '../session/session';
+import type { IUserMenuStore } from '../store/user-menu';
+import type { ISessionExpiredService } from '../session-expired/session-expired';
 
 const noopObservable = {
   subscribe: () => () => undefined,
@@ -29,21 +29,19 @@ function makeStore(
     initialized?: boolean;
     menusLoaded?: boolean;
     menusError?: unknown;
-    hasMenu?: boolean | (() => boolean);
-    hasPermission?: boolean;
+    hasMenuCode?: boolean | (() => boolean);
     load?: () => Promise<void>;
   } = {},
 ) {
   const resolveMenu = (): boolean =>
-    typeof opts.hasMenu === 'function' ? opts.hasMenu() : (opts.hasMenu ?? false);
+    typeof opts.hasMenuCode === 'function' ? opts.hasMenuCode() : (opts.hasMenuCode ?? false);
   return {
     ...noopObservable,
     initializing: opts.initializing ?? false,
     initialized: opts.initialized ?? opts.menusLoaded ?? opts.menusError !== undefined,
     menus: opts.menusLoaded ? [{ id: 1, name: 'Admin' }] : [],
     loadErrors: { menus: opts.menusError ?? null },
-    hasMenu: resolveMenu,
-    hasPermission: () => opts.hasPermission ?? false,
+    hasMenuCode: resolveMenu,
     load: opts.load ?? (async () => undefined),
   } as unknown as IUserMenuStore;
 }
@@ -84,7 +82,7 @@ describe('IRequireAccess', () => {
       <IRequireAccess value="admin-iam">
         <div>protected-content</div>
       </IRequireAccess>,
-      { session: makeSession(), store: makeStore({ menusLoaded: true, hasMenu: true }) },
+      { session: makeSession(), store: makeStore({ menusLoaded: true, hasMenuCode: true }) },
     );
     expect(await screen.findByText('protected-content')).toBeTruthy();
   });
@@ -94,7 +92,7 @@ describe('IRequireAccess', () => {
       <IRequireAccess value="admin-iam">
         <div>protected-content</div>
       </IRequireAccess>,
-      { session: makeSession(), store: makeStore({ menusLoaded: true, hasMenu: false }) },
+      { session: makeSession(), store: makeStore({ menusLoaded: true, hasMenuCode: false }) },
     );
     expect(await screen.findByText('unauthorized-access-page')).toBeTruthy();
   });
@@ -133,9 +131,10 @@ describe('IRequireAccess', () => {
     let granted = false;
     const store = makeStore({
       menusLoaded: false,
-      hasMenu: () => granted,
+      hasMenuCode: () => granted,
       load: async () => {
         granted = true;
+        Object.assign(store, { initialized: true });
       },
     });
 

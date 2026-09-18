@@ -6,9 +6,9 @@ import {
   IAuthContext,
   type IAuthContext as IAuthContextValue,
 } from '../auth/insight-auth-context';
-import type { ISessionService } from '../session/session.service';
-import type { ISessionExpiredService } from '../session-expired/session-expired.service';
-import type { IUserMenuStore } from '../store/user-menu.store';
+import type { ISessionService } from '../session/session';
+import type { ISessionExpiredService } from '../session-expired/session-expired';
+import type { IUserMenuStore } from '../store/user-menu';
 import { UNAUTHORIZED_ACCESS_PATH } from './require-access';
 import { IRequireRouteAccess, type IRequireRouteAccessProps } from './require-route-access';
 
@@ -19,7 +19,7 @@ const observable = {
 
 function renderGuard(
   props: Omit<IRequireRouteAccessProps, 'children'>,
-  hasMenu: boolean,
+  hasMenuCode: boolean,
 ) {
   const store = {
     ...observable,
@@ -27,7 +27,7 @@ function renderGuard(
     initializing: false,
     menus: [],
     loadErrors: { menus: null },
-    hasMenu: vi.fn(() => hasMenu),
+    hasMenuCode: vi.fn(() => hasMenuCode),
   } as unknown as IUserMenuStore;
   const session = {
     ...observable,
@@ -73,7 +73,7 @@ describe('IRequireRouteAccess', () => {
     const store = renderGuard({ menuCode: 'atlas.overview' }, true);
 
     expect(await screen.findByText('protected-content')).toBeTruthy();
-    expect(store.hasMenu).toHaveBeenCalledWith('atlas.overview');
+    expect(store.hasMenuCode).toHaveBeenCalledWith('atlas.overview');
   });
 
   it('uses the host resolver and denies an ungranted menu code', async () => {
@@ -83,20 +83,20 @@ describe('IRequireRouteAccess', () => {
     );
 
     expect(await screen.findByText('unauthorized-access-page')).toBeTruthy();
-    expect(store.hasMenu).toHaveBeenCalledWith('atlas.overview');
+    expect(store.hasMenuCode).toHaveBeenCalledWith('atlas.overview');
   });
 
   it('allows a missing mapping by default', async () => {
     const store = renderGuard({}, false);
 
     expect(await screen.findByText('protected-content')).toBeTruthy();
-    expect(store.hasMenu).not.toHaveBeenCalled();
+    expect(store.hasMenuCode).not.toHaveBeenCalled();
   });
 
   it('can deny a missing mapping explicitly', async () => {
     const store = renderGuard({ missingMenuCode: 'deny' }, false);
 
     expect(await screen.findByText('unauthorized-access-page')).toBeTruthy();
-    expect(store.hasMenu).not.toHaveBeenCalled();
+    expect(store.hasMenuCode).not.toHaveBeenCalled();
   });
 });

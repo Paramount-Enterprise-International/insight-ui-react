@@ -208,23 +208,35 @@ export function IDialogProvider(props: IDialogProviderProps) {
  * Outlet + Container (Angular-like)
  * ========================================================= */
 
-type IDialogContainerProps = {
-  instance: IDialogInstance;
-  isTopMost: boolean;
+export type IDialogContainerProps = React.HTMLAttributes<HTMLElement> & {
+  instance?: IDialogInstance;
+  config?: IDialogConfig;
+  isTopMost?: boolean;
+  onClose?: () => void;
 };
 
-function IDialogContainer(props: IDialogContainerProps) {
-  const { instance, isTopMost } = props;
-  const { width, height, disableClose, backdropClose } = instance.config;
+/** Dialog overlay shared by service instances and directly controlled content. */
+export function IDialogContainer({
+  instance,
+  config = {},
+  isTopMost = true,
+  onClose,
+  children,
+  className,
+  ...rest
+}: IDialogContainerProps) {
+  const { width, height, disableClose, backdropClose = true } = instance?.config ?? config;
+  const requestClose = useCallback(() => {
+    if (instance) instance.ref.close(undefined);
+    else onClose?.();
+  }, [instance, onClose]);
 
   const onEsc = useCallback(
     (e: KeyboardEvent) => {
-      if (!isTopMost) return;
-      if (e.key !== 'Escape') return;
-      if (disableClose) return;
-      instance.ref.close(undefined);
+      if (!isTopMost || e.key !== 'Escape' || disableClose) return;
+      requestClose();
     },
-    [isTopMost, disableClose, instance.ref]
+    [isTopMost, disableClose, requestClose]
   );
 
   useEffect(() => {
@@ -233,28 +245,27 @@ function IDialogContainer(props: IDialogContainerProps) {
   }, [onEsc]);
 
   const onBackdropClick = () => {
-    if (!isTopMost) return;
-    if (disableClose) return;
-    if (!backdropClose) return;
-    instance.ref.close(undefined);
+    if (!isTopMost || disableClose || !backdropClose) return;
+    requestClose();
   };
 
   const panelStyles: React.CSSProperties = {
     width: width || undefined,
     height: height || undefined,
   };
-
-  const Comp = instance.component;
+  const Comp = instance?.component;
 
   return (
-    <i-dialog-container>
+    <i-dialog-container class={className} role="dialog" aria-modal="true" {...rest}>
       <div className="i-dialog-backdrop" onClick={onBackdropClick} />
       <div className="i-dialog-wrapper">
         <div className="i-dialog-panel" style={panelStyles}>
-          <IDialogInstanceContext.Provider
-            value={{ data: instance.config.data, dialogRef: instance.ref }}>
-            <Comp />
-          </IDialogInstanceContext.Provider>
+          {instance && Comp ? (
+            <IDialogInstanceContext.Provider
+              value={{ data: instance.config.data, dialogRef: instance.ref }}>
+              <Comp />
+            </IDialogInstanceContext.Provider>
+          ) : children}
         </div>
       </div>
     </i-dialog-container>
