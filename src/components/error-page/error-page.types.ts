@@ -5,6 +5,7 @@ export type IErrorPageKind =
   | 'server-error'
   | 'service-unavailable'
   | 'application-access-denied'
+  | 'timeout'
   | 'custom';
 
 export type IErrorPageMode = 'contained' | 'fullpage';
@@ -43,6 +44,12 @@ export const I_ERROR_PAGE_PRESETS: Record<
     description: 'The service is temporarily unavailable. Please try again later.',
     icon: 'fa-solid fa-server',
     code: '503',
+  },
+  timeout: {
+    title: 'Request Timed Out',
+    description: 'The request took too long to complete. Please try again.',
+    icon: 'fa-solid fa-clock',
+    code: '',
   },
   'application-access-denied': {
     title: 'Unauthorized Access',
