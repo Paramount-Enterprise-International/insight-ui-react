@@ -18,10 +18,15 @@ import {
 import { buildExternalSigninUrl } from './build-signin-redirect-url';
 import type { IAuthContext } from './insight-auth-context';
 
+/** Application-scoped services and lifecycle exposed by the React auth runtime. */
 export type IRuntime = IAuthContext & {
+  /** Current runtime lifecycle state. */
   readonly status: 'idle' | 'initializing' | 'ready' | 'disposed';
+  /** Whether initial session restoration has completed. */
   readonly ready: boolean;
+  /** Restores the existing session once and resolves when initialization settles. */
   initialize(): Promise<void>;
+  /** Cancels runtime work and releases subscriptions and stores. */
   dispose(): void;
 };
 

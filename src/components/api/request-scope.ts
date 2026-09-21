@@ -1,5 +1,6 @@
 import { normalizeApiError } from './api-error';
 
+/** Creates the normalized transport error used for aborts and timeouts. */
 export function requestCancellation(kind: 'abort' | 'timeout') {
   return normalizeApiError({
     status: 0,

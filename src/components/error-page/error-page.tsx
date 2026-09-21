@@ -12,18 +12,29 @@ import {
   type IErrorPageMode,
 } from './error-page.types';
 
+/** Configuration and content accepted by the shared error-page component. */
 export type IErrorPageProps = HTMLAttributes<HTMLDivElement> & {
+  /** Selects the default title, description, icon, and status code. */
   kind?: IErrorPageKind;
+  /** Selects a section-contained or viewport-filling presentation. */
   mode?: IErrorPageMode;
+  /** Overrides the preset description. */
   description?: string;
+  /** Overrides the preset icon class. */
   icon?: string;
+  /** Overrides the preset status code. */
   code?: string;
+  /** Support address to display, or an empty string to hide support contact. */
   supportEmail?: string;
+  /** Built-in recovery buttons to render in the supplied order. */
   actions?: readonly IErrorPageAction[];
+  /** Reports a built-in action without performing navigation. */
   onAction?: (action: IErrorPageAction) => void;
+  /** Additional controls rendered after the built-in actions. */
   customActions?: ReactNode;
 };
 
+/** Renders a preset or consumer-defined error state with optional recovery actions. */
 export function IErrorPage({
   kind = 'not-found',
   mode = 'contained',
@@ -60,10 +71,14 @@ export function IErrorPage({
           ) : null}
         </div>
       ) : null}
-      {resolved.title ? <h1 className="m-0 text-3xl font-normal">{resolved.title}</h1> : null}
+      {resolved.title ? (
+        <h1 className="m-0 text-3xl font-normal">{resolved.title}</h1>
+      ) : null}
       <div className="i-error-page__message text-md text-subtle leading-relaxed">
         {resolved.description ? (
-          <p className="m-0 text-subtle leading-relaxed">{resolved.description}</p>
+          <p className="m-0 text-subtle leading-relaxed">
+            {resolved.description}
+          </p>
         ) : null}
         <div className="i-error-page__extra">{children}</div>
         {supportEmail ? (
@@ -73,8 +88,7 @@ export function IErrorPage({
               : 'For assistance, please contact:'}
             <a
               className="i-error-page__support text-primary font-medium underline"
-              href={`mailto:${supportEmail}`}
-            >
+              href={`mailto:${supportEmail}`}>
               {supportEmail}
             </a>
           </p>
@@ -87,8 +101,7 @@ export function IErrorPage({
             type="button"
             icon={I_ERROR_PAGE_ACTIONS[action].icon}
             variant={I_ERROR_PAGE_ACTIONS[action].variant}
-            onClick={() => onAction?.(action)}
-          >
+            onClick={() => onAction?.(action)}>
             {I_ERROR_PAGE_ACTIONS[action].label}
           </IButton>
         ))}
@@ -107,8 +120,7 @@ export function IErrorPage({
       ]
         .filter(Boolean)
         .join(' ')}
-      {...rest}
-    >
+      {...rest}>
       {mode === 'contained' ? (
         <ISection className="i-error-page__section">
           <ISectionBody className="i-error-page__body">{content}</ISectionBody>

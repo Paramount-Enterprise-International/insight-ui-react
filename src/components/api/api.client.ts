@@ -7,16 +7,21 @@ import type { ICsrfService } from '../csrf/csrf';
 import { normalizeApiError, type INormalizedApiError } from './api-error';
 import { createRequestScope, waitForRequest } from './request-scope';
 
+/** Normalized error returned by the shared API client. */
 export type IApiError = INormalizedApiError;
+
+/** Supported response representations for API calls. */
 export type IResponseType =
   | 'json'
   | 'response'
   | 'blob'
   | 'arraybuffer'
   | 'text';
+/** Query parameters accepted as a plain object or URLSearchParams. */
 export type IQueryParams =
   | Record<string, string | number | boolean | undefined>
   | URLSearchParams;
+/** Shared transport options accepted by every API method. */
 export type IApiOptions<R extends IResponseType = 'json'> = {
   apiUrl?: string;
   headers?: Record<string, string>;
@@ -28,10 +33,13 @@ export type IApiOptions<R extends IResponseType = 'json'> = {
   /** Total call deadline, including readiness and refresh. Defaults to 60000 ms. */
   timeoutMs?: number;
 };
-export type IRequestOptions<R extends IResponseType = 'json'> = IApiOptions<R> & {
-  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-};
+/** Low-level request options including the HTTP method. */
+export type IRequestOptions<R extends IResponseType = 'json'> =
+  IApiOptions<R> & {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  };
 
+/** Converts a failed fetch response into the normalized API error contract. */
 export async function normalizeFetchError(
   res: Response,
   body: unknown
@@ -121,6 +129,7 @@ async function sendRequest(
   }
 }
 
+/** Sends a credentialed request without session refresh orchestration. */
 export function rawRequest(
   baseUrl: string,
   path: string,
@@ -177,6 +186,7 @@ export async function rawRequest(
   }
 }
 
+/** Combines a base URL, path, and optional query parameters. */
 export function buildUrl(
   baseUrl: string,
   path: string,
@@ -197,6 +207,7 @@ export function buildUrl(
   return url;
 }
 
+/** Services and lifecycle hooks required to create an application API client. */
 export type IApiClientDeps = {
   config: IAuthConfig;
   csrf: ICsrfService;
@@ -214,6 +225,7 @@ export type IApiClientDeps = {
   onSessionExpired?: (error: IApiError) => void;
 };
 
+/** Overloaded signature for API methods without a request body. */
 export interface IApiRead {
   (
     path: string,
@@ -236,6 +248,7 @@ export interface IApiRead {
     options?: IApiOptions & { responseType?: 'json' }
   ): Promise<T>;
 }
+/** Overloaded signature for API methods with an optional request body. */
 export interface IApiWrite {
   (
     path: string,
@@ -263,6 +276,7 @@ export interface IApiWrite {
     options?: IApiOptions & { responseType?: 'json' }
   ): Promise<T>;
 }
+/** Authenticated application API methods sharing refresh and cancellation behavior. */
 export type IApiClient = {
   get: IApiRead;
   post: IApiWrite;
@@ -379,12 +393,21 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
   return {
     get: ((path: string, options?: IApiOptions<IResponseType>) =>
       doRequest(path, 'GET', undefined, options)) as IApiRead,
-    post: ((path: string, body?: unknown, options?: IApiOptions<IResponseType>) =>
-      doRequest(path, 'POST', body, options)) as IApiWrite,
-    put: ((path: string, body?: unknown, options?: IApiOptions<IResponseType>) =>
-      doRequest(path, 'PUT', body, options)) as IApiWrite,
-    patch: ((path: string, body?: unknown, options?: IApiOptions<IResponseType>) =>
-      doRequest(path, 'PATCH', body, options)) as IApiWrite,
+    post: ((
+      path: string,
+      body?: unknown,
+      options?: IApiOptions<IResponseType>
+    ) => doRequest(path, 'POST', body, options)) as IApiWrite,
+    put: ((
+      path: string,
+      body?: unknown,
+      options?: IApiOptions<IResponseType>
+    ) => doRequest(path, 'PUT', body, options)) as IApiWrite,
+    patch: ((
+      path: string,
+      body?: unknown,
+      options?: IApiOptions<IResponseType>
+    ) => doRequest(path, 'PATCH', body, options)) as IApiWrite,
     delete: ((path: string, options?: IApiOptions<IResponseType>) =>
       doRequest(path, 'DELETE', options?.body, options)) as IApiRead,
   };
