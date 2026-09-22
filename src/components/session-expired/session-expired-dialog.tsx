@@ -61,13 +61,13 @@ export function ISessionExpiredDialog() {
       aria-label={TITLES[reason ?? 'default']}
       style={{ zIndex: 9999 }}>
       <IDialog
-        title={TITLES[reason ?? 'default']}
         actions={[
           { type: 'custom', label: 'Log in again', className: 'w-full' },
         ]}
         onCustomAction={onConfirm}>
         <div className="flex flex-col align-center text-center gap-lg">
-          <IIcon className="text-warning" icon={iconClass} size="3xl" />
+          <IIcon className="text-warning" icon={iconClass} size="2xl" />
+          <h4 className="font-semibold">{TITLES[reason ?? 'default']}</h4>
           <p className="m-0 text-md leading-normal text-subtle">{message}</p>
         </div>
       </IDialog>
