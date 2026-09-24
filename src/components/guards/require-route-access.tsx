@@ -10,8 +10,12 @@ import type { IUserMenuStore } from '../store/user-menu';
 import { UNAUTHORIZED_ACCESS_PATH } from './require-access';
 
 /** Resolves the menu code that protects the current path. */
-export type IRouteMenuCodeResolver = (path: string, store: IUserMenuStore) => string | null | undefined;
+export type IRouteMenuCodeResolver = (
+  path: string,
+  store: IUserMenuStore
+) => string | null | undefined;
 
+/** Inputs used to authorize a route against an explicit or resolved menu code. */
 export type IRequireRouteAccessProps = {
   /** Static menu code protecting the wrapped route. */
   menuCode?: string;
@@ -72,7 +76,7 @@ export function IRequireRouteAccess({
   // guard would flash a redirect to the unauthorized page before the authorizations
   // arrive (a cold-start deep link must never be denied early).
   const [accessLoading, setAccessLoading] = useState(
-    () => !store.initializing && !accessSettled,
+    () => !store.initializing && !accessSettled
   );
 
   // Route membership needs authorizations loaded. When they have not been fetched yet
@@ -98,7 +102,11 @@ export function IRequireRouteAccess({
   }
 
   if (isInitializing) {
-    return (loading as ReactNode) ?? <div className="ih-route-loading">Loading session...</div>;
+    return (
+      (loading as ReactNode) ?? (
+        <div className="ih-route-loading">Loading session...</div>
+      )
+    );
   }
 
   if (!isAuth) {
@@ -110,14 +118,24 @@ export function IRequireRouteAccess({
   // keep showing the loading placeholder whether the store load is in flight
   // (`store.initializing`) or our own cold-start load is running/queued.
   if (!accessSettled && (store.initializing || accessLoading)) {
-    return (loading as ReactNode) ?? <div className="ih-route-loading">Loading access...</div>;
+    return (
+      (loading as ReactNode) ?? (
+        <div className="ih-route-loading">Loading access...</div>
+      )
+    );
   }
 
   const path = location.pathname.replace(/\/+$/, '') || '/';
   const resolvedMenuCode = (menuCode ?? resolveMenuCode?.(path, store))?.trim();
   if (!resolvedMenuCode) {
-    console.warn(`[@insight/ui] No menu code mapping found for route "${path}".`);
-    return missingMenuCode === 'allow' ? <>{children}</> : <Navigate to={unauthorizedPath} replace />;
+    console.warn(
+      `[@insight/ui] No menu code mapping found for route "${path}".`
+    );
+    return missingMenuCode === 'allow' ? (
+      <>{children}</>
+    ) : (
+      <Navigate to={unauthorizedPath} replace />
+    );
   }
 
   if (!store.hasMenuCode(resolvedMenuCode)) {

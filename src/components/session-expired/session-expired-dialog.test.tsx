@@ -42,8 +42,10 @@ describe('ISessionExpiredDialog', () => {
     service.show('/home', reason);
     const { container } = render(<ISessionExpiredDialog />);
     expect(screen.getByRole('dialog', { name: title })).toHaveAttribute('aria-modal', 'true');
-    expect(container.querySelector('i-dialog .i-dialog-title')?.textContent).toBe(title);
+    expect(container.querySelector('i-dialog .i-dialog-title')).toBeNull();
+    expect(container.querySelector('i-dialog .i-dialog-content h4')?.textContent).toBe(title);
     expect(container.querySelector('i-icon i')?.classList.contains(icon)).toBe(true);
+    expect(container.querySelector('i-icon i')?.classList.contains('i-icon-2xl')).toBe(true);
     expect(screen.getByRole('button', { name: 'Log in again' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
   });

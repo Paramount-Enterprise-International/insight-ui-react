@@ -321,6 +321,9 @@ export class ISessionService {
   }
 
   private writeSession(accessToken: string, expiresIn: number, user: IAuthUser, refreshToken?: string): void {
+    if (this.currentUser?.sub && this.currentUser.sub !== user.sub) {
+      this.userMenuStore?.reset();
+    }
     this.accessToken = accessToken;
     if (refreshToken) {
       this._refreshToken = refreshToken;
@@ -403,6 +406,10 @@ export class ISessionService {
     const generation = this.generation;
     const controller = new AbortController();
     this.refreshController = controller;
+    const timer = setTimeout(
+      () => controller.abort(requestCancellation('timeout')),
+      30_000
+    );
     const pending = waitForRequest(
       this.authService.refresh({ signal: controller.signal }),
       controller.signal
@@ -419,6 +426,7 @@ export class ISessionService {
         return res.accessToken;
       })
       .finally(() => {
+        clearTimeout(timer);
         if (this.refreshInFlight === pending) this.refreshInFlight = null;
         if (this.refreshController === controller)
           this.refreshController = null;
@@ -471,11 +479,6 @@ export class ISessionService {
     }
     const generation = this.generation;
     const refresh = this.refreshToken();
-    const controller = this.refreshController;
-    const timer = setTimeout(
-      () => controller?.abort(requestCancellation('timeout')),
-      10_000
-    );
     this.restoreInFlight = refresh
       .then(() => ({}))
       .catch((err): { reason?: ISessionExpiredReason } => {
@@ -499,12 +502,9 @@ export class ISessionService {
             apiError
           );
         }
-        if (isSessionExpiredError(err))
-          void this.authService.logout().catch(() => undefined);
         return { reason };
       })
       .finally(() => {
-        clearTimeout(timer);
         if (!this.disposed) {
           this.initializingValue = false;
           this.notify();

@@ -30,6 +30,17 @@ describe('IErrorPage', () => {
     },
   );
 
+  it('renders timeout with a clock icon and no error code', () => {
+    const { container } = render(<IErrorPage kind="timeout" />);
+    expect(screen.getByRole('heading', { name: 'Request Timed Out' })).toBeTruthy();
+    expect(
+      screen.getByText('The request took too long to complete. Please try again.'),
+    ).toBeTruthy();
+    expect(container.querySelector('i-icon i')?.className).toContain('fa-clock');
+    expect(container.querySelector('.i-error-page__code')).toBeNull();
+    expect(container.querySelector('.i-error-page--not-found')).toBeNull();
+  });
+
   it('switches to fullpage without rendering a section and switches back', () => {
     const { container, rerender } = render(<IErrorPage />);
     rerender(<IErrorPage mode="fullpage" />);

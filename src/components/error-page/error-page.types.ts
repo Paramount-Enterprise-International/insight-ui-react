@@ -1,3 +1,4 @@
+/** Built-in error presentations available to consumers. */
 export type IErrorPageKind =
   | 'not-found'
   | 'unauthorized'
@@ -5,11 +6,16 @@ export type IErrorPageKind =
   | 'server-error'
   | 'service-unavailable'
   | 'application-access-denied'
+  | 'timeout'
   | 'custom';
 
+/** Controls whether the error is contained by a section or fills the viewport. */
 export type IErrorPageMode = 'contained' | 'fullpage';
+
+/** Built-in recovery actions reported by the error page. */
 export type IErrorPageAction = 'home' | 'logout' | 'retry';
 
+/** Default content and visual treatment for each error kind. */
 export const I_ERROR_PAGE_PRESETS: Record<
   IErrorPageKind,
   { title: string; description: string; icon: string; code: string }
@@ -28,7 +34,8 @@ export const I_ERROR_PAGE_PRESETS: Record<
   },
   forbidden: {
     title: 'Unauthorized Access',
-    description: 'You do not have access to this page. Please contact your administrator.',
+    description:
+      'You do not have access to this page. Please contact your administrator.',
     icon: 'fa-solid fa-user-lock',
     code: '403',
   },
@@ -40,9 +47,16 @@ export const I_ERROR_PAGE_PRESETS: Record<
   },
   'service-unavailable': {
     title: 'Service Unavailable',
-    description: 'The service is temporarily unavailable. Please try again later.',
+    description:
+      'The service is temporarily unavailable. Please try again later.',
     icon: 'fa-solid fa-server',
     code: '503',
+  },
+  timeout: {
+    title: 'Request Timed Out',
+    description: 'The request took too long to complete. Please try again.',
+    icon: 'fa-solid fa-clock',
+    code: '',
   },
   'application-access-denied': {
     title: 'Unauthorized Access',
@@ -59,10 +73,21 @@ export const I_ERROR_PAGE_PRESETS: Record<
   },
 };
 
+/** Labels, icons, and button variants for built-in recovery actions. */
 export const I_ERROR_PAGE_ACTIONS = {
-  home: { label: 'Back to Home', icon: 'fa-solid fa-house', variant: 'primary' },
-  logout: { label: 'Logout', icon: 'fa-solid fa-right-from-bracket', variant: 'danger' },
+  home: {
+    label: 'Back to Home',
+    icon: 'fa-solid fa-house',
+    variant: 'primary',
+  },
+  logout: {
+    label: 'Logout',
+    icon: 'fa-solid fa-right-from-bracket',
+    variant: 'danger',
+  },
   retry: { label: 'Retry', icon: 'sync', variant: 'primary' },
 } as const;
 
-export const I_ERROR_PAGE_SUPPORT_EMAIL = 'it.helpdesk@paramountenterprise.co.id';
+/** Default support address displayed when a consumer does not provide one. */
+export const I_ERROR_PAGE_SUPPORT_EMAIL =
+  'it.helpdesk@paramountenterprise.co.id';
