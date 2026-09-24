@@ -138,7 +138,7 @@ describe('application runtime lifecycle', () => {
     expect(owned.status).toBe('disposed');
   });
 
-  it('aborts restore after ten seconds and cannot commit its late response', async () => {
+  it('aborts restore after thirty seconds and cannot commit its late response', async () => {
     vi.useFakeTimers();
     const response = deferred<Response>();
     let signal!: AbortSignal;
@@ -151,7 +151,7 @@ describe('application runtime lifecycle', () => {
     );
     const runtime = create();
     const ready = runtime.initialize();
-    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(30_000);
     await ready;
     expect(signal.aborted).toBe(true);
     expect(runtime.session.initializing).toBe(false);
