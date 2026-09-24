@@ -1,16 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* datepicker.tsx */
-/**
- * IDatepicker (React)
- * Version: 1.5.6
- *
- * Fixes (1.5.6):
- * - ✅ Fix “panel only appears after slight scroll” when datepicker is inside a scroll container:
- *   -> listen to scroll on *actual scroll parents* (not window/document)
- * - ✅ Fix “top placement offscreen until next layout”:
- *   -> when maxHeight clamps the panel, compute top using the *effective* height
- * - Keep your 1.5.5 open-cycle + failsafe unhide + smart controlled behavior intact.
- */
+/** Date input with a calendar panel and form control wrapper. */
 
 import React, {
   useCallback,
@@ -58,6 +47,7 @@ export type IDatepickerProps = Omit<
   invalid?: boolean;
 
   format?: string;
+  displayFormat?: string;
   panelPosition?: IDatepickerPanelPosition;
 
   portalToBody?: boolean;
@@ -78,6 +68,7 @@ export type IFCDatepickerProps = Omit<
   label?: string;
   placeholder?: string;
   format?: string;
+  displayFormat?: string;
   panelPosition?: IDatepickerPanelPosition;
 
   portalToBody?: boolean;
@@ -123,7 +114,9 @@ function noop(): void {
 }
 
 function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const result = new Date(date);
+  result.setHours(0, 0, 0, 0);
+  return result;
 }
 
 function isSameDate(a: Date, b: Date): boolean {
@@ -145,48 +138,62 @@ function dateKey(d: Date | null): string | null {
 function parseInputDate(value: string, format: string): Date | null {
   if (!value) return null;
 
-  const fmt = format || 'yyyy-MM-dd';
-  const parts = value.match(/\d+/g);
-  if (!parts || parts.length < 3) return null;
+  const chunks = (format || 'dd/MM/yyyy').match(/yyyy|MM|dd|./g) ?? [];
+  const fields = chunks.filter((chunk) => /^(yyyy|MM|dd)$/.test(chunk));
+  if (fields.length !== 3 || new Set(fields).size !== 3) return null;
 
-  const tokens = fmt.match(/(yyyy|MM|dd)/g) || ['yyyy', 'MM', 'dd'];
+  const pattern = chunks
+    .map((chunk) =>
+      /^(yyyy|MM|dd)$/.test(chunk)
+        ? `(\\d{${chunk.length}})`
+        : chunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    )
+    .join('');
+  const match = new RegExp(`^${pattern}$`).exec(value);
+  if (!match) return null;
 
-  let year: number | undefined;
-  let month: number | undefined;
-  let day: number | undefined;
+  const parts = Object.fromEntries(
+    fields.map((field, index) => [field, Number(match[index + 1])])
+  );
+  const year = parts['yyyy'];
+  const month = parts['MM'];
+  const day = parts['dd'];
+  if (!year || !month || !day || month > 12) return null;
 
-  tokens.forEach((t, idx) => {
-    const p = parts[idx];
-    if (!p) return;
-
-    const n = Number(p);
-    if (t === 'yyyy') year = n;
-    else if (t === 'MM') month = n;
-    else if (t === 'dd') day = n;
-  });
-
-  if (!year || !month || !day) return null;
-
-  const d = new Date(year, month - 1, day);
+  const date = new Date(0);
+  date.setFullYear(year, month - 1, day);
+  date.setHours(0, 0, 0, 0);
   if (
-    d.getFullYear() !== year ||
-    d.getMonth() !== month - 1 ||
-    d.getDate() !== day
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
   ) {
     return null;
   }
 
-  return startOfDay(d);
+  return date;
 }
 
 function formatDateLocal(date: Date, format: string): string {
-  const fmt = format || 'yyyy-MM-dd';
+  // Render date-only tokens with English month names.
+  const month = date.getMonth() + 1;
+  const year = String(date.getFullYear());
+  const shortMonth = new Intl.DateTimeFormat('en', { month: 'short' }).format(date);
+  const longMonth = new Intl.DateTimeFormat('en', { month: 'long' }).format(date);
 
-  const yyyy = String(date.getFullYear());
-  const MM = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-
-  return fmt.replace(/yyyy/g, yyyy).replace(/MM/g, MM).replace(/dd/g, dd);
+  return (format || 'dd/MM/yyyy').replace(
+    /MMMM|MMM|MM|M|dd|d|yyyyy|yyyy|yyy|yy|y/g,
+    (token) => {
+      if (token === 'MMMM') return longMonth;
+      if (token === 'MMM') return shortMonth;
+      if (token === 'MM') return String(month).padStart(2, '0');
+      if (token === 'M') return String(month);
+      if (token === 'dd') return String(date.getDate()).padStart(2, '0');
+      if (token === 'd') return String(date.getDate());
+      if (token === 'yy') return year.slice(-2).padStart(2, '0');
+      return year.padStart(token.length, '0');
+    }
+  );
 }
 
 function normalizeToDate(
@@ -292,6 +299,7 @@ export function IDatepicker(props: IDatepickerProps) {
     invalid = false,
 
     format = 'dd/MM/yyyy',
+    displayFormat,
     panelPosition = 'bottom left',
 
     portalToBody = true,
@@ -316,6 +324,7 @@ export function IDatepicker(props: IDatepickerProps) {
   const listeningScrollParentsRef = useRef(false);
 
   const [modelValue, setModelValue] = useState<Date | null>(null);
+  const modelValueRef = useRef<Date | null>(null);
   const [displayText, setDisplayText] = useState<string>('');
   const [isOpen, setIsOpen] = useState(false);
 
@@ -331,9 +340,10 @@ export function IDatepicker(props: IDatepickerProps) {
   const openSeqRef = useRef(0);
   const unhideTimerRef = useRef<number | null>(null);
 
-  // ✅ smart controlled echo suppression
+  // Track edits and defer external values until focus leaves the input.
   const isEditingRef = useRef(false);
   const lastEmittedKeyRef = useRef<string | null>(null);
+  const pendingExternalRef = useRef<Date | null | undefined>(undefined);
 
   const weeks = useMemo(
     () => buildCalendar(viewYear, viewMonth, modelValue),
@@ -378,25 +388,31 @@ export function IDatepicker(props: IDatepickerProps) {
     return iInput ?? host;
   }, []);
 
-  // -------- writeValue parity (SMART) --------
+  // -------- external value synchronization --------
   useEffect(() => {
     const next = normalizeToDate(value, format);
     const nextKey = dateKey(next);
 
-    // ✅ ignore "echo" while user is typing
-    if (isEditingRef.current && nextKey === lastEmittedKeyRef.current) {
-      setModelValue(next);
+    // Preserve the current edit when the parent echoes an emitted value.
+    if (isEditingRef.current) {
+      if (nextKey === lastEmittedKeyRef.current) {
+        modelValueRef.current = next;
+        setModelValue(next);
+        return;
+      }
+      pendingExternalRef.current = next;
       return;
     }
 
+    modelValueRef.current = next;
     setModelValue(next);
-    setDisplayText(next ? formatDateLocal(next, format) : '');
+    setDisplayText(next ? formatDateLocal(next, displayFormat || format) : '');
 
     const base = next ?? startOfDay(new Date());
     setViewYear(base.getFullYear());
     setViewMonth(base.getMonth());
     setYears((prev) => ensureYearRange(base.getFullYear(), prev));
-  }, [value, format]);
+  }, [value, format, displayFormat]);
 
   useEffect(() => {
     if (!viewYear) return;
@@ -414,6 +430,7 @@ export function IDatepicker(props: IDatepickerProps) {
     const parsed = parseInputDate(raw, format);
     if (!parsed) return; // partial typing shouldn't wipe
 
+    modelValueRef.current = parsed;
     setModelValue(parsed);
     setDisplayText(formatDateLocal(parsed, format));
   }, [format, refreshInnerInputRef]);
@@ -770,6 +787,7 @@ export function IDatepicker(props: IDatepickerProps) {
       const trimmed = raw.trim();
       const parsed = trimmed ? parseInputDate(trimmed, format) : null;
 
+      modelValueRef.current = parsed;
       setModelValue(parsed);
 
       if (parsed) {
@@ -792,8 +810,11 @@ export function IDatepicker(props: IDatepickerProps) {
 
       const selected = startOfDay(day.date);
 
+      modelValueRef.current = selected;
       setModelValue(selected);
-      setDisplayText(formatDateLocal(selected, format));
+      setDisplayText(formatDateLocal(selected, displayFormat || format));
+      pendingExternalRef.current = undefined;
+      isEditingRef.current = false;
 
       lastEmittedKeyRef.current = dateKey(selected);
       onChanged(selected);
@@ -803,8 +824,9 @@ export function IDatepicker(props: IDatepickerProps) {
       setYears((p) => ensureYearRange(selected.getFullYear(), p));
 
       closePanel();
+      inputElRef.current?.blur();
     },
-    [closePanel, disabled, format, onChanged]
+    [closePanel, disabled, displayFormat, format, onChanged]
   );
 
   const prevMonth = useCallback(() => {
@@ -867,7 +889,7 @@ export function IDatepicker(props: IDatepickerProps) {
   );
 
   // input events bubble (month/year ISelect inner inputs)
-  const onHostInputCapture: React.FormEventHandler<HTMLElement> = (event) => {
+  const onHostInput: React.FormEventHandler<HTMLElement> = (event) => {
     const target = event.target as HTMLElement | null;
     const dateInput = inputElRef.current;
     if (!dateInput) return;
@@ -993,7 +1015,7 @@ export function IDatepicker(props: IDatepickerProps) {
       ]
         .filter(Boolean)
         .join(' ')}
-      onInput={onHostInputCapture as any}
+      onInput={onHostInput as any}
       {...rest}>
       <IInput
         append={appendAddon}
@@ -1002,15 +1024,36 @@ export function IDatepicker(props: IDatepickerProps) {
         invalid={invalid}
         placeholder={placeholder}
         readonly={disabled}
-        value={displayText}
+        value={
+          disabled && modelValue
+            ? formatDateLocal(modelValue, displayFormat || format)
+            : displayText
+        }
         onFocus={() => {
           isEditingRef.current = true;
+          if (modelValueRef.current) {
+            setDisplayText(formatDateLocal(modelValueRef.current, format));
+          }
         }}
         onBlur={() => {
           isEditingRef.current = false;
+          const pending = pendingExternalRef.current;
+          pendingExternalRef.current = undefined;
+          const next = pending !== undefined ? pending : modelValueRef.current;
+          if (pending !== undefined) {
+            modelValueRef.current = pending;
+            setModelValue(pending);
+          }
+          setDisplayText(
+            next
+              ? formatDateLocal(next, displayFormat || format)
+              : pending !== undefined
+                ? ''
+                : (inputElRef.current?.value ?? '')
+          );
         }}
         onInput={() => {
-          /* handled via host capture + target check */
+          /* Input events are handled by the datepicker host. */
         }}
       />
 
@@ -1040,6 +1083,7 @@ export function IFCDatepicker(props: IFCDatepickerProps) {
     label = '',
     placeholder = '',
     format = 'dd/MM/yyyy',
+    displayFormat,
     panelPosition = 'bottom left',
 
     portalToBody = true,
@@ -1103,6 +1147,7 @@ export function IFCDatepicker(props: IFCDatepickerProps) {
       <IDatepicker
         disabled={disabled}
         format={format}
+        displayFormat={displayFormat}
         invalid={invalid}
         panelPosition={panelPosition}
         placeholder={placeholder}

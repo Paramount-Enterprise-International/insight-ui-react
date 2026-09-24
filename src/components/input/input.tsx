@@ -401,49 +401,20 @@ export function useInputMask(
       const { tokens, seps } = splitDateFormat(format);
       if (!tokens.length) return digits;
 
-      const totalDigits = tokens.reduce((a, t) => a + t.length, 0);
-      const d = digits.replace(/\D/g, '').slice(0, totalDigits);
-
-      const firstSep = seps[1] ?? '';
-      const secondSep = seps[2] ?? '';
-
-      if (d.length <= 2) {
-        if (d.length === 2 && firstSep) return d + firstSep;
-        return d;
-      }
-
-      if (d.length <= 4) {
-        const dRaw = d.slice(0, 2);
-        const mRaw = d.slice(2);
-
-        let res = dRaw;
-        if (firstSep) res += firstSep;
-
-        if (mRaw.length) {
-          res += mRaw;
-          if (mRaw.length === 2 && secondSep) res += secondSep;
+      const totalDigits = tokens.reduce((sum, token) => sum + token.length, 0);
+      const value = digits.replace(/\D/g, '').slice(0, totalDigits);
+      let result = seps[0] ?? '';
+      let offset = 0;
+      for (let i = 0; i < tokens.length; i++) {
+        const part = value.slice(offset, offset + tokens[i].length);
+        if (!part) break;
+        result += part;
+        offset += part.length;
+        if (part.length === tokens[i].length && i < tokens.length - 1) {
+          result += seps[i + 1] ?? '';
         }
-
-        return res;
       }
-
-      const dStr = d.slice(0, 2);
-      const mStr = d.slice(2, 4);
-      const yStr = d.slice(4, 8);
-
-      let day = Number(dStr || '1');
-      let month = Number(mStr || '1');
-      let year = Number(yStr || '2000');
-
-      month = clamp(month, 1, 12);
-
-      if (!Number.isFinite(year) || year <= 0) year = 2000;
-      year = Math.min(year, 9999);
-
-      const maxDay = daysInMonth(year, month);
-      day = clamp(day, 1, maxDay);
-
-      return formatDateFromParts(day, month, year, format);
+      return result;
     };
 
     const applyDateMask = (raw: string, format: string) => {
@@ -489,57 +460,7 @@ export function useInputMask(
         parts.push({ kind, raw: rawSeg, len, closed, out: '' });
       }
 
-      const dayPart = parts.find((p) => p.kind === 'day');
-      const monthPart = parts.find((p) => p.kind === 'month');
-      const yearPart = parts.find((p) => p.kind === 'year');
-
-      let monthNumForClamp: number | null = null;
-
-      if (monthPart && monthPart.closed && monthPart.raw) {
-        let m = Number(monthPart.raw);
-        if (!Number.isFinite(m)) m = 1;
-        m = clamp(m, 1, 12);
-        monthNumForClamp = m;
-      }
-
-      let yearForCalc = 2000;
-      if (yearPart && yearPart.closed && yearPart.raw) {
-        let y = Number(yearPart.raw);
-        if (!Number.isFinite(y) || y <= 0) y = 2000;
-        y = Math.min(y, 9999);
-        yearForCalc = y;
-      }
-
-      if (monthPart) {
-        if (monthPart.closed && monthPart.raw) {
-          let m = monthNumForClamp ?? Number(monthPart.raw);
-          if (!Number.isFinite(m)) m = 1;
-          m = clamp(m, 1, 12);
-          monthPart.out = String(m).padStart(monthPart.len, '0');
-          monthNumForClamp = m;
-        } else {
-          monthPart.out = monthPart.raw;
-        }
-      }
-
-      if (dayPart) {
-        if (dayPart.closed && dayPart.raw) {
-          let d = Number(dayPart.raw);
-          if (!Number.isFinite(d)) d = 1;
-
-          const monthForDay = monthNumForClamp !== null ? monthNumForClamp : 1;
-          const maxDay = daysInMonth(yearForCalc, monthForDay);
-
-          d = clamp(d, 1, maxDay);
-          dayPart.out = String(d).padStart(dayPart.len, '0');
-        } else {
-          dayPart.out = dayPart.raw;
-        }
-      }
-
-      if (yearPart) {
-        yearPart.out = yearPart.raw;
-      }
+      for (const part of parts) part.out = part.raw;
 
       const outSegs = parts.map((p) => p.out);
       const hasDigitsArr = parts.map((p) => p.raw.length > 0);
@@ -567,89 +488,8 @@ export function useInputMask(
       });
     };
 
-    const normalizeDateValue = (value: string, format: string) => {
-      if (!value) return value;
-
-      const segments = getDateSegments(value, format);
-      if (!segments.length) return value;
-
-      let day = 1;
-      let month = 1;
-      let year = 2000;
-
-      for (const seg of segments) {
-        const n = seg.raw ? Number(seg.raw) : NaN;
-        if (Number.isNaN(n)) continue;
-
-        if (seg.kind === 'day') day = n;
-        else if (seg.kind === 'month') month = n;
-        else year = n;
-      }
-
-      month = clamp(month, 1, 12);
-
-      if (!Number.isFinite(year) || year <= 0) year = 2000;
-      year = Math.min(year, 9999);
-
-      const maxDay = daysInMonth(year, month);
-      day = clamp(day, 1, maxDay);
-
-      return formatDateFromParts(day, month, year, format);
-    };
-
     const normalizePastedDate = (text: string, format: string): string => {
-      if (!text) return '';
-
-      const nums = text.match(/\d+/g) ?? [];
-      if (!nums.length) return '';
-
-      const { tokens } = splitDateFormat(format);
-
-      let day = 1;
-      let month = 1;
-      let year = 2000;
-
-      if (nums.length >= 3) {
-        const a = nums[0] ?? '';
-        const b = nums[1] ?? '';
-        const c = nums[2] ?? '';
-
-        const aNum = Number(a);
-        const bNum = Number(b);
-        const cNum = Number(c);
-
-        if (a.length === 4) {
-          year = aNum;
-          month = bNum;
-          day = cNum;
-        } else if (c.length === 4) {
-          day = aNum;
-          month = bNum;
-          year = cNum;
-        } else {
-          tokens.forEach((t, i) => {
-            const rawNum = nums[i] ?? '';
-            const n = Number(rawNum);
-            if (!Number.isFinite(n)) return;
-
-            if (t[0] === 'd') day = n;
-            else if (t[0] === 'M') month = n;
-            else year = n;
-          });
-        }
-      } else {
-        const digits = nums.join('').replace(/\D/g, '');
-        return applyDateMaskDigitsOnly(digits, format);
-      }
-
-      if (!Number.isFinite(year) || year <= 0) year = 2000;
-      year = Math.min(year, 9999);
-
-      month = clamp(month, 1, 12);
-      const maxDay = daysInMonth(year, month);
-      day = clamp(day, 1, maxDay);
-
-      return formatDateFromParts(day, month, year, format);
+      return applyDateMask(text, format);
     };
 
     const handleDateDigitKeydown = (digitChar: string) => {
@@ -686,7 +526,6 @@ export function useInputMask(
 
       let idx = ranges.findIndex((r) => digitCursor < r.end);
       if (idx === -1) idx = ranges.length - 1;
-      if (idx > 0 && digitCursor === ranges[idx].start) idx = idx - 1;
 
       const r = ranges[idx];
       const tokenLen = r.end - r.start;
@@ -719,60 +558,7 @@ export function useInputMask(
 
       const before = currentDigits.slice(0, r.start);
       const after = currentDigits.slice(r.end);
-      let nextDigits = (before + newToken + after).slice(0, totalDigits);
-
-      const monthRange = ranges.find((x) => x.kind === 'month');
-      const yearRange = ranges.find((x) => x.kind === 'year');
-
-      const monthRaw = monthRange
-        ? nextDigits.slice(monthRange.start, monthRange.end)
-        : '';
-      const yearRaw = yearRange
-        ? nextDigits.slice(yearRange.start, yearRange.end)
-        : '';
-
-      if (r.kind === 'month' && newToken.length === 2) {
-        let m = Number(newToken);
-        if (!Number.isFinite(m)) m = 1;
-        m = clamp(m, 1, 12);
-
-        nextDigits =
-          nextDigits.slice(0, r.start) +
-          String(m).padStart(2, '0') +
-          nextDigits.slice(r.end);
-        nextDigits = nextDigits.slice(0, totalDigits);
-      }
-
-      if (r.kind === 'day' && newToken.length === 2) {
-        let d = Number(newToken);
-        if (!Number.isFinite(d)) d = 1;
-
-        let m = Number(monthRaw);
-        if (!Number.isFinite(m) || m < 1) m = 1;
-        m = clamp(m, 1, 12);
-
-        let y = Number(yearRaw);
-        if (!Number.isFinite(y) || y <= 0) y = 2000;
-        y = Math.min(y, 9999);
-
-        const maxDay = daysInMonth(y, m);
-        d = clamp(d, 1, maxDay);
-
-        nextDigits =
-          nextDigits.slice(0, r.start) +
-          String(d).padStart(2, '0') +
-          nextDigits.slice(r.end);
-        nextDigits = nextDigits.slice(0, totalDigits);
-      }
-
-      if (yearRange) {
-        const y = nextDigits.slice(yearRange.start, yearRange.end).slice(0, 4);
-        nextDigits =
-          nextDigits.slice(0, yearRange.start) +
-          y +
-          nextDigits.slice(yearRange.end);
-        nextDigits = nextDigits.slice(0, totalDigits);
-      }
+      const nextDigits = (before + newToken + after).slice(0, totalDigits);
 
       const masked = applyDateMaskDigitsOnly(nextDigits, format);
 
@@ -784,10 +570,43 @@ export function useInputMask(
       el.value = masked;
       dispatchInput();
 
-      const nextCaret = caretPosAfterDigits(masked, nextDigitCursor);
+      let nextCaret = caretPosAfterDigits(masked, nextDigitCursor);
+      while (nextCaret < masked.length && /\D/.test(masked[nextCaret])) {
+        nextCaret++;
+      }
       safeSetSelectionRange(nextCaret, nextCaret);
 
       return true;
+    };
+
+    // Pad the active date segment and move the caret past its separator.
+    const handleDateSeparatorKeydown = (key: string) => {
+      const format = fmt || 'dd/MM/yyyy';
+      const { tokens, seps } = splitDateFormat(format);
+      const value = el.value;
+      const caret = el.selectionStart ?? value.length;
+      const segments = getDateSegments(value, format);
+      const index = segments.findIndex(
+        (segment, i) =>
+          i < tokens.length - 1 &&
+          caret >= segment.start &&
+          caret <= segment.end
+      );
+      if (index < 0 || !seps[index + 1]?.includes(key)) return;
+
+      const segment = segments[index];
+      if (!segment.raw) return;
+      const padded = segment.raw.padStart(tokens[index].length, '0');
+      let next = value.slice(0, segment.start) + padded + value.slice(segment.end);
+      let nextCaret = segment.start + padded.length;
+      const separator = seps[index + 1];
+      if (!next.startsWith(separator, nextCaret)) {
+        next = next.slice(0, nextCaret) + separator + next.slice(nextCaret);
+      }
+      nextCaret += separator.length;
+      el.value = next;
+      dispatchInput();
+      safeSetSelectionRange(nextCaret, nextCaret);
     };
 
     const adjustDateSegmentByArrow = (key: 'ArrowUp' | 'ArrowDown') => {
@@ -1430,11 +1249,6 @@ export function useInputMask(
       const raw = el.value ?? '';
       if (!raw) return;
 
-      if (type === 'date' && fmt) {
-        const norm = normalizeDateValue(raw, fmt);
-        if (norm !== raw) setValue(norm);
-      }
-
       if (type === 'time' && fmt) {
         const norm = normalizeTimeValue(raw, fmt);
         if (norm !== raw) setValue(norm);
@@ -1500,13 +1314,6 @@ export function useInputMask(
 
       if (type === 'date' && fmt && e.key === 'Enter') {
         e.preventDefault();
-        if (el.value) {
-          const norm = normalizeDateValue(el.value, fmt);
-          if (norm !== el.value) {
-            el.value = norm;
-            dispatchInput();
-          }
-        }
         return;
       }
 
@@ -1547,6 +1354,12 @@ export function useInputMask(
             handleTimeDigitKeydown(e.key);
           }
 
+          return;
+        }
+
+        if (type === 'date' && allowedSeps.has(e.key)) {
+          e.preventDefault();
+          handleDateSeparatorKeydown(e.key);
           return;
         }
 

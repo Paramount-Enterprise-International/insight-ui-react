@@ -1,5 +1,18 @@
 # React + TypeScript + Vite
 
+## Datepicker formatting
+
+`IDatepicker` and `IFCDatepicker` use `format` for numeric date entry and
+parsing. The supported input tokens are `dd`, `MM`, and `yyyy`; their order
+and separators can vary, for example `yyyy-MM-dd`.
+
+Set `displayFormat` to show a different format when the input is not focused
+or is disabled. For example, `format="dd/MM/yyyy"` with
+`displayFormat="dd MMM yyyy"` displays `14 Jul 2026` and switches to
+`14/07/2026` for editing. `MMM` and `MMMM` display English month names.
+When omitted, `displayFormat` uses `format`. Incomplete or invalid input
+remains visible and emits `null`.
+
 ## Routes protected by authorization codes
 
 Import `hasMn` from the package root and declare a check alongside the route:
