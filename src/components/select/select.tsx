@@ -368,9 +368,24 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   const unhideTimerRef = useRef<number | null>(null);
 
   // Rx filter debounce (parity with Angular)
-  const filterInput$ = useMemo(() => new Subject<string>(), []);
+  const filterInput$ = useMemo(
+    () => new Subject<{ text: string; revision: number }>(),
+    []
+  );
   const filterSubRef = useRef<Subscription | null>(null);
   const optionsSubRef = useRef<Subscription | null>(null);
+  const filterRevisionRef = useRef(0);
+  const editingRef = useRef(false);
+  const pendingFilterRef = useRef<{ text: string; revision: number } | null>(
+    null
+  );
+  const filterHandlerRef = useRef<(text: string) => void>(() => {});
+
+  const cancelPendingFilter = useCallback(() => {
+    filterRevisionRef.current += 1;
+    pendingFilterRef.current = null;
+    editingRef.current = false;
+  }, []);
 
   // cleanup timers on unmount
   useEffect(() => {
@@ -452,10 +467,18 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   );
 
   // ---------- sync model from props ----------
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!isControlled) return;
+    cancelPendingFilter();
     setModelValue(value ?? null);
-  }, [isControlled, value]);
+    setDisplayText(resolveDisplayText(value ?? null));
+    setFilterText('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isControlled, value, cancelPendingFilter]);
+
+  useLayoutEffect(() => {
+    if (disabled) cancelPendingFilter();
+  }, [disabled, cancelPendingFilter]);
 
   // ---------- subscribe options$ ----------
   useEffect(() => {
@@ -471,6 +494,9 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
         error: () => {
           setIsLoading(false);
         },
+        complete: () => {
+          setIsLoading(false);
+        },
       });
 
       return () => {
@@ -479,6 +505,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       };
     }
 
+    setIsLoading(false);
     setRawOptions(options ?? []);
     return undefined;
   }, [options$, options]);
@@ -488,16 +515,18 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     filterSubRef.current?.unsubscribe();
     filterSubRef.current = filterInput$
       .pipe(debounceTime(filterDelay))
-      .subscribe((val) => {
-        handleInputText(val);
-        setIsLoading(false);
+      .subscribe(({ text, revision }) => {
+        if (revision !== filterRevisionRef.current) return;
+        pendingFilterRef.current = null;
+        filterHandlerRef.current(text);
       });
+
+    if (pendingFilterRef.current) filterInput$.next(pendingFilterRef.current);
 
     return () => {
       filterSubRef.current?.unsubscribe();
       filterSubRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterInput$, filterDelay]);
 
   // ---------- derived ----------
@@ -547,6 +576,10 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 
   // ---------- sync view text from model/options ----------
   useEffect(() => {
+    if (editingRef.current) {
+      applyFilter(isOpen, filterText);
+      return;
+    }
     if (!isOpen) {
       setDisplayText(resolveDisplayText(modelValue));
       setFilterText('');
@@ -558,7 +591,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     setDisplayText(resolveDisplayText(modelValue));
     applyFilter(true, filterText);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modelValue, rawOptions]);
+  }, [modelValue, rawOptions, filterPredicate, filterMinLength, displayWith]);
 
   // ---------- positioning ----------
   const getAnchorEl = (): HTMLElement | null => {
@@ -947,6 +980,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   };
 
   const closeDropdown = () => {
+    cancelPendingFilter();
     setIsOpen(false);
     setHighlightIndex(-1);
 
@@ -978,7 +1012,6 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 
   // ---------- input behavior ----------
   const handleInputText = (val: string) => {
-    setDisplayText(val);
     setFilterText(val);
 
     if (!isOpen) {
@@ -989,11 +1022,18 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     }
   };
 
+  useLayoutEffect(() => {
+    filterHandlerRef.current = handleInputText;
+  });
+
   const onHostInput: React.FormEventHandler<HTMLInputElement> = (e) => {
     if (disabled) return;
     const v = e.currentTarget.value ?? '';
-    setIsLoading(true);
-    filterInput$.next(v);
+    editingRef.current = true;
+    setDisplayText(v);
+    const pending = { text: v, revision: ++filterRevisionRef.current };
+    pendingFilterRef.current = pending;
+    filterInput$.next(pending);
   };
 
   // ---------- toggle behavior ----------
@@ -1007,6 +1047,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     if (!isOpen) {
       openDropdown();
     } else if (hasNoResults) {
+      cancelPendingFilter();
       setDisplayText('');
       setFilterText('');
       applyFilter(true, '');
@@ -1033,6 +1074,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     event?.stopPropagation();
 
     if (disabled) return;
+
+    cancelPendingFilter();
 
     if (!isControlled) setModelValue(row);
 
@@ -1098,6 +1141,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
         break;
 
       case 'Escape':
+        cancelPendingFilter();
         if (isOpen) {
           event.preventDefault();
           closeDropdown();
@@ -1109,7 +1153,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   // ---------- outside click (host + panel) ----------
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
-      if (!isOpen) return;
+      if (!isOpen && !editingRef.current) return;
 
       const target = e.target as Node | null;
       if (!target) return;
@@ -1131,18 +1175,15 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   }, [isOpen]);
 
   // ---------- append addon ----------
-  const appendAddon: IInputAddonButton | IInputAddonLoading = useMemo(() => {
-    if (isLoading) return { type: 'loading', visible: true };
-
-    return {
+  const appendAddon: IInputAddonButton | IInputAddonLoading = isLoading
+    ? { type: 'loading', visible: true }
+    : {
       type: 'button',
       icon: isOpen ? 'angle-up' : 'angle-down',
       visible: true,
       variant: 'primary',
       onClick: () => toggleDropdown(),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, isOpen]);
 
   // ---------- render options (as <i-options>) ----------
   const optionsNode = hasOptionsList ? (
