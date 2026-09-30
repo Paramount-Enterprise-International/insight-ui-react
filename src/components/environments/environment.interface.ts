@@ -20,21 +20,13 @@ export type IEnvironment = {
   };
   /** Full URL of this app's sign-in page. Left empty by default - set by the consumer app. */
   signinUrl: string;
-  /** Full URL of this app's own auth callback (informational, unused by the library). */
-  authCallbackUrl: string;
-  securityMode: boolean;
   tokenLifespan: {
     accessTokenSeconds: number;
     refreshTokenSeconds: number;
     ssoSessionMaxSeconds: number;
   };
-  cookieSecure: boolean;
   /** CSRF token max age in seconds (backend cookie maxAge minus a safety buffer). */
   csrfTokenMaxAgeSeconds: number;
-  /** MFA challenge session timeout (seconds). */
-  mfaChallengeSessionTimeoutSeconds?: number;
-  /** Origins this app's sign-in page trusts for post-login redirects (informational). */
-  allowedReturnOrigins: string[];
   /** This app's registered application API key (attached as `Api-Key` header). */
   apiKey?: string;
   /** This app's application id (used as the default filter when loading effective menus). */
