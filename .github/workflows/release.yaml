@@ -79,7 +79,7 @@ jobs:
           mkdir -p release-tmp/dist
 
           cp -R dist/. release-tmp/dist/
-          cp package.json release-tmp/
+          jq 'del(.scripts.prepare)' package.json > release-tmp/package.json
           cp README.md release-tmp/ 2>/dev/null || true
           cp LICENSE release-tmp/ 2>/dev/null || true
 
