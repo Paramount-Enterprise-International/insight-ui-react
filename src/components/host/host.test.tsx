@@ -26,6 +26,7 @@ describe('IHSidebar empty groups', () => {
   for (const collapsible of [false, true]) {
     for (const route of [null, '/empty']) {
       it(`renders empty groups as headers with route=${route} and collapsible=${collapsible}`, () => {
+        const toggles: IMenuFavoriteToggleEvent[] = [];
         const menus: IMenu[] = [
           { id: 'empty-root', name: 'Docs Empty', type: 'group', route, children: [] },
           {
@@ -37,7 +38,12 @@ describe('IHSidebar empty groups', () => {
         ];
         const { container } = render(
           <MemoryRouter>
-            <IHSidebar menus={menus} collapsible={collapsible} favoriteMode />
+            <IHSidebar
+              menus={menus}
+              collapsible={collapsible}
+              favoriteMode
+              onFavoriteToggle={(event) => toggles.push(event)}
+            />
           </MemoryRouter>
         );
 
@@ -48,6 +54,8 @@ describe('IHSidebar empty groups', () => {
         expect(container.querySelectorAll('a.is-spa').length).toBe(1);
         expect(container.querySelectorAll('.ih-menu-favorite').length).toBe(1);
         expect(headers[0].querySelector('.ih-menu-chevron') !== null).toBe(collapsible);
+        fireEvent.click(container.querySelector('.ih-menu-favorite')!);
+        expect(toggles).toEqual([{ id: 'page', isFavorite: true }]);
 
         const search = container.querySelector<HTMLInputElement>('.ih-sidebar-search input')!;
         fireEvent.change(search, { target: { value: 'Docs' } });
