@@ -1,4 +1,5 @@
-import { getMenuChildren, getMenuKey, getMenuLabel, getMenuRoute, isLeafItem, type IMenu, type IUser } from '../host';
+import type { IMenu, IUser } from '../host/host-api.types';
+import { getMenuChildren, getMenuKey, getMenuLabel, getMenuRoute, isLeafItem } from '../host/menu';
 
 import type { ICurrentUserDto, IEffectiveAuthorizationDto, IFavoriteMenuItemDto, IMenuNodeDto } from './user.types';
 
