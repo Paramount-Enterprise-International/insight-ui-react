@@ -22,6 +22,43 @@ describe('IHContent', () => {
   });
 });
 
+describe('IHSidebar empty groups', () => {
+  for (const collapsible of [false, true]) {
+    for (const route of [null, '/empty']) {
+      it(`renders empty groups as headers with route=${route} and collapsible=${collapsible}`, () => {
+        const menus: IMenu[] = [
+          { id: 'empty-root', name: 'Docs Empty', type: 'group', route, children: [] },
+          {
+            id: 'docs', name: 'Docs', type: 'group', children: [
+              { id: 'empty-nested', name: 'Docs Section', type: 'group', route, children: [] },
+              { id: 'page', name: 'Docs Page', type: 'item', route: '/page', children: [] },
+            ],
+          },
+        ];
+        const { container } = render(
+          <MemoryRouter>
+            <IHSidebar menus={menus} collapsible={collapsible} favoriteMode />
+          </MemoryRouter>
+        );
+
+        const headers = container.querySelectorAll('.ih-menu-group');
+        expect(headers.length).toBe(3);
+        expect(headers[0].textContent).toContain('Docs Empty');
+        expect(headers[2].textContent).toContain('Docs Section');
+        expect(container.querySelectorAll('a.is-spa').length).toBe(1);
+        expect(container.querySelectorAll('.ih-menu-favorite').length).toBe(1);
+        expect(headers[0].querySelector('.ih-menu-chevron') !== null).toBe(collapsible);
+
+        const search = container.querySelector<HTMLInputElement>('.ih-sidebar-search input')!;
+        fireEvent.change(search, { target: { value: 'Docs' } });
+        container.querySelector<HTMLElement>('a.is-spa')!.scrollIntoView = () => {};
+        fireEvent.keyDown(search, { key: 'ArrowDown' });
+        expect(container.querySelector('a.is-selected')?.textContent).toContain('Docs Page');
+      });
+    }
+  }
+});
+
 describe('IHSidebar account menu', () => {
   function renderSidebar() {
     return render(

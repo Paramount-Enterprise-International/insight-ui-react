@@ -379,6 +379,7 @@ function flattenNavigableMenus(menus: IMenu[]): IMenu[] {
     const hasChildren = children.length > 0;
 
     const isLeaf =
+      menu.type !== 'group' &&
       Number(menu.menuTypeId) === 3 &&
       (!hasChildren || menu.visibility === 'no-child');
 
