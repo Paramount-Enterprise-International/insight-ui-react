@@ -5,7 +5,8 @@ import {
 } from '../api/api-error';
 import { requestCancellation } from '../api/request-scope';
 import type { IAuthConfig } from '../auth/auth-config';
-import { getMenuKey, type IMenu, type IUser } from '../host';
+import type { IMenu, IUser } from '../host/host-api.types';
+import { getMenuKey } from '../host/menu';
 import type { ISessionService } from '../session/session';
 import {
   type IAuthorizationSource,
