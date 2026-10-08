@@ -58,7 +58,7 @@ describe('host/menu helpers', () => {
     const group = normalized[0];
     expect(group.menuTypeId).toBe(3);
     expect(group.menuName).toBe('Group');
-    expect(group.type).toBeUndefined();
+    expect(group.type).toBe('group');
     expect(group.children).toBeUndefined();
     expect(group.child?.[0]?.menuName).toBe('Sales Report');
     expect(group.child?.[0]?.id).toBe('m1'); // modern extras preserved

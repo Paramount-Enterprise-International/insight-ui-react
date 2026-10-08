@@ -172,7 +172,7 @@ function normalizeMenu(menu: IMenu, level: number): IMenu {
     child: children.map((child) => normalizeMenu(child, level + 1)),
     children: undefined,
     name: undefined,
-    type: undefined,
+    type: menu.type === 'group' ? 'group' : undefined,
   };
 
   return normalized;
@@ -182,7 +182,8 @@ function normalizeMenu(menu: IMenu, level: number): IMenu {
  * Converts modern (contract-aligned) menu nodes into the legacy `IMenu` shape
  * that `IHMenu` renders. Modern extras (`id`, `isFavorite`, `application`,
  * `companies`, `openIn`, `route`, `icon`) are preserved for pin / favorites /
- * application-grouping rendering. Legacy nodes pass through untouched.
+ * application-grouping rendering. Explicit group types are retained even when
+ * children are empty. Legacy nodes pass through untouched.
  */
 export function normalizeMenuTree(menus: IMenu[] | null | undefined): IMenu[] {
   return (menus ?? []).map((menu) => normalizeMenu(menu, 0));
