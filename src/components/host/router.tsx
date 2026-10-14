@@ -176,8 +176,8 @@ function buildBreadcrumbsFromChain(chain: MatchNode[]): IBreadcrumbItem[] {
   const items: IBreadcrumbItem[] = [];
 
   for (const m of chain) {
-    // ignore redirect-only nodes
-    if (m.route.redirectTo) continue;
+    // Redirects and suppressed levels do not contribute; descendants still do.
+    if (m.route.redirectTo || m.route.breadcrumb === false) continue;
 
     const label = m.route.breadcrumb ?? m.route.title;
     if (!label) continue;

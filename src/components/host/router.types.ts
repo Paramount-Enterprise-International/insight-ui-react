@@ -12,7 +12,8 @@ export type IRoute = {
   redirectTo?: string;
 
   title?: string;
-  breadcrumb?: string;
+  /** Override the label, or hide this level while retaining its title. */
+  breadcrumb?: string | false;
 
   element?: React.ReactNode;
   loadComponent?: ILoadComponent;

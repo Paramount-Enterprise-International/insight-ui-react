@@ -301,3 +301,28 @@ Identity acceptance by business backends, audit username mapping, callback
 allowlists, CORS/cookie configuration and cross-origin exposure of pagination and
 download headers remain integration responsibilities. Runtimes isolate client
 state; server cookies still follow the browser and backend's cookie scoping.
+
+## Route breadcrumb labels
+
+`IRoute.breadcrumb` accepts a string or `false`. Omit it to use `title`, supply
+a string for a separate breadcrumb label, or use `false` to hide that route's
+breadcrumb while retaining its page title. Child routes still contribute their
+own labels, and their links include the hidden parent's path segments.
+
+```tsx
+{
+  path: 'customers',
+  title: 'Customers',
+  children: [{
+    index: true,
+    title: 'Customer Directory',
+    breadcrumb: false,
+    element: <CustomerDirectory />,
+  }],
+}
+```
+
+This sends the heading `Customer Directory` and the breadcrumb `Customers`
+through the host bridge. If every matched level is hidden, the router sends
+`null` for its remote breadcrumb contribution; an Angular host can retain its
+host portion. Standalone React uses the same route metadata behavior.
