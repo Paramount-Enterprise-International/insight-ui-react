@@ -40,6 +40,31 @@ afterEach(async () => {
 });
 
 describe('application runtime lifecycle', () => {
+  it('keeps impersonation status isolated between application runtimes', async () => {
+    const a = create('actor-a');
+    const b = create('actor-b');
+    const token = (actor: string) =>
+      'e30.' +
+      btoa(JSON.stringify({ sub: 'subject', act: { sub: actor } })) +
+      '.sig';
+    a.session.setAccessToken(token('a'));
+    b.session.setAccessToken(token('b'));
+    vi.spyOn(a.api, 'get').mockResolvedValue({
+      mode: 'IMPERSONATING',
+      impersonatingUser: { fullName: 'Actor A' },
+    });
+    vi.spyOn(b.api, 'get').mockResolvedValue({
+      mode: 'IMPERSONATING',
+      impersonatingUser: { fullName: 'Actor B' },
+    });
+    await a.impersonation.loadStatus();
+    await b.impersonation.loadStatus();
+    a.session.clearSession();
+    expect(a.impersonation.status).toBeNull();
+    expect(b.impersonation.status?.actorName).toBe('Actor B');
+    expect(b.session.isImpersonating()).toBe(true);
+  });
+
   it('creates without network and initializes once from API calls before provider mount', async () => {
     const refresh = deferred<Response>();
     const fetchMock = vi.fn((url: string) =>
@@ -207,12 +232,12 @@ describe('application runtime lifecycle', () => {
     const b = create('b');
     a.session.setAccessToken('token-a');
     b.session.setAccessToken('token-b');
-    vi.spyOn(a.api, 'get').mockResolvedValueOnce({ data: [
-      { menuCode: 'read-a', companies: [] },
-    ] });
-    vi.spyOn(b.api, 'get').mockResolvedValueOnce({ data: [
-      { menuCode: 'read-b', companies: [] },
-    ] });
+    vi.spyOn(a.api, 'get').mockResolvedValueOnce({
+      data: [{ menuCode: 'read-a', companies: [] }],
+    });
+    vi.spyOn(b.api, 'get').mockResolvedValueOnce({
+      data: [{ menuCode: 'read-b', companies: [] }],
+    });
     await a.userMenuStore.loadAuthorizations();
     await b.userMenuStore.loadAuthorizations();
     a.session.setChangePasswordToken('change-a');

@@ -4,6 +4,7 @@ import {
   type IAuthConfig,
 } from '../auth/auth-config';
 import type { ICsrfService } from '../csrf/csrf';
+import { extractProblemDetailsErrorCode } from '../session-expired/session-expired';
 import { normalizeApiError, type INormalizedApiError } from './api-error';
 import { createRequestScope, waitForRequest } from './request-scope';
 
@@ -289,9 +290,16 @@ export type IApiClient = {
 export function createApiClient(deps: IApiClientDeps): IApiClient {
   const base = requireIdentityHost(deps.config);
   const isAuthPath = (url: string) =>
-    (['csrf', 'refresh', 'login', 'logout', 'exchange'] as const).some(
-      (key) => url.split('?')[0] === getAuthEndpointUrl(deps.config, key)
-    );
+    (
+      [
+        'csrf',
+        'refresh',
+        'login',
+        'logout',
+        'exchange',
+        'impersonationEnd',
+      ] as const
+    ).some((key) => url.split('?')[0] === getAuthEndpointUrl(deps.config, key));
   const requireSession = () => {
     if (deps.session.isLoggedOut?.())
       throw normalizeApiError({
@@ -343,6 +351,18 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
       try {
         return await send();
       } catch (error) {
+        if (
+          !scope.signal.aborted &&
+          (error as IApiError)?.status === 401 &&
+          (extractProblemDetailsErrorCode(error) ===
+            'IMPERSONATION_SESSION_INVALID' ||
+            buildUrl(baseUrl, path).split('?')[0] ===
+              getAuthEndpointUrl(deps.config, 'impersonationEnd'))
+        ) {
+          expiryReported = true;
+          deps.onSessionExpired?.(error as IApiError);
+          throw error;
+        }
         if (
           skipAuth ||
           (error as IApiError)?.status !== 401 ||

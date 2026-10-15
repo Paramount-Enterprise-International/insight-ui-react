@@ -1,15 +1,24 @@
-import type { IAuthConfig } from '../auth/auth-config';
-import { IAuthService, type IAuthUser } from '../auth/auth';
-import type { ICsrfService } from '../csrf/csrf';
-import {
-  extractProblemDetailsErrorCode,
-  isSessionExpiredError,
-  type ISessionExpiredReason,
-  ISessionExpiredService,
-  toSessionExpiredReason,
-} from '../session-expired/session-expired';
 import { normalizeApiError } from '../api/api-error';
 import { requestCancellation, waitForRequest } from '../api/request-scope';
+import { IAuthService, type IAuthUser } from '../auth/auth';
+import type { IAuthConfig } from '../auth/auth-config';
+import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
+import type { ICsrfService } from '../csrf/csrf';
+import {
+  impersonationContextKey,
+  isImpersonationCsrfError,
+  readImpersonationActor,
+  type IEndImpersonationResult,
+  type IImpersonationActor,
+} from '../impersonation/impersonation-utils';
+import {
+  extractProblemDetailsErrorCode,
+  ISessionExpiredService,
+  isSessionExpiredError,
+  toSessionExpiredReason,
+  type ISessionExpiredReason,
+} from '../session-expired/session-expired';
+import { IStorageService } from '../storage/storage';
 import type { IUserMenuStore } from '../store/user-menu';
 
 /** User derived from Keycloak JWT claims. */
@@ -26,19 +35,24 @@ export type ISessionUser = {
  * avoid forcing a new dependency onto every @insight/ui consumer. Returns
  * `null` on any decode failure.
  */
-export function decodeJwtPayload(token: string): Record<string, unknown> | null {
+export function decodeJwtPayload(
+  token: string
+): Record<string, unknown> | null {
   try {
     const payload = token.split('.')[1];
     if (!payload) {
       return null;
     }
     const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const padded = base64.padEnd(
+      base64.length + ((4 - (base64.length % 4)) % 4),
+      '='
+    );
     const json = decodeURIComponent(
       atob(padded)
         .split('')
         .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join(''),
+        .join('')
     );
     return JSON.parse(json);
   } catch {
@@ -49,12 +63,20 @@ export function decodeJwtPayload(token: string): Record<string, unknown> | null 
 /** Decodes an `IAuthUser` from the token's Keycloak claims. */
 export function decodeUser(accessToken: string): IAuthUser {
   const decoded = decodeJwtPayload(accessToken);
-  const realmAccess = decoded?.['realm_access'] as { roles?: unknown } | undefined;
-  const roles = Array.isArray(realmAccess?.roles) ? (realmAccess.roles as string[]) : [];
+  const realmAccess = decoded?.['realm_access'] as
+    | { roles?: unknown }
+    | undefined;
+  const roles = Array.isArray(realmAccess?.roles)
+    ? (realmAccess.roles as string[])
+    : [];
   return {
     sub: typeof decoded?.['sub'] === 'string' ? (decoded['sub'] as string) : '',
-    email: typeof decoded?.['email'] === 'string' ? (decoded['email'] as string) : '',
-    name: typeof decoded?.['name'] === 'string' ? (decoded['name'] as string) : '',
+    email:
+      typeof decoded?.['email'] === 'string'
+        ? (decoded['email'] as string)
+        : '',
+    name:
+      typeof decoded?.['name'] === 'string' ? (decoded['name'] as string) : '',
     roles,
     userType: decoded?.['user_type'] === 'external' ? 'external' : 'internal',
   };
@@ -95,7 +117,8 @@ export class ISessionService {
   private initializingValue = true;
 
   private refreshInFlight: Promise<string> | null = null;
-  private restoreInFlight: Promise<{ reason?: ISessionExpiredReason }> | null = null;
+  private restoreInFlight: Promise<{ reason?: ISessionExpiredReason }> | null =
+    null;
 
   private generation = 0;
   private refreshController: AbortController | null = null;
@@ -110,7 +133,7 @@ export class ISessionService {
     config: IAuthConfig,
     authService: IAuthService,
     csrf: ICsrfService,
-    sessionExpiredService: ISessionExpiredService,
+    sessionExpiredService: ISessionExpiredService
   ) {
     this.config = config;
     this.authService = authService;
@@ -132,6 +155,70 @@ export class ISessionService {
 
   getVersion = (): number => this.version;
 
+  private endingImpersonation: Promise<IEndImpersonationResult> | null = null;
+  actor(): IImpersonationActor | null {
+    return readImpersonationActor(this.accessToken);
+  }
+  isImpersonating(): boolean {
+    return this.actor() !== null;
+  }
+  endImpersonation(): Promise<IEndImpersonationResult> {
+    this.assertActive();
+    if (this.endingImpersonation) return this.endingImpersonation;
+    const generation = this.generation;
+    const current = (): boolean =>
+      !this.disposed && generation === this.generation;
+    const signal = this.getRequestSignal();
+    const work = async (): Promise<IEndImpersonationResult> => {
+      try {
+        if (!this.csrf.getToken()) await this.csrf.ensureToken();
+        let response: IEndImpersonationResult | null;
+        try {
+          response = await this.authService.endImpersonation(signal);
+        } catch (error) {
+          if (!current() || !isImpersonationCsrfError(error)) throw error;
+          await this.csrf.ensureToken();
+          response = await this.authService.endImpersonation(signal);
+        }
+        if (!current()) throw requestCancellation('abort');
+        this.loggedOut = true;
+        this.clearSession();
+        sessionStorage.removeItem(this.storageKey('session.active'));
+        new IStorageService().clear();
+        return response ?? {};
+      } catch (error) {
+        if (current() && (error as { status?: number })?.status === 401) {
+          this.clearSession();
+          if (this.config.onUnauthorized) this.config.onUnauthorized(error);
+          else if (
+            (this.config.unauthorizedHandling ?? 'dialog') === 'dialog'
+          ) {
+            const apiError = normalizeApiError(error);
+            const code = extractProblemDetailsErrorCode(apiError);
+            this.sessionExpiredService.show(
+              window.location.pathname + window.location.search,
+              toSessionExpiredReason(code),
+              code,
+              apiError.detail,
+              apiError.message,
+              apiError
+            );
+          } else
+            window.location.href = buildExternalSigninUrl(
+              this.config,
+              window.location.pathname + window.location.search
+            );
+        }
+        throw error;
+      }
+    };
+    const result = work().finally(() => {
+      if (this.endingImpersonation === result) this.endingImpersonation = null;
+    });
+    this.endingImpersonation = result;
+    return result;
+  }
+
   isLoggedOut = (): boolean => this.loggedOut;
   getRequestSignal = (): AbortSignal => this.requestController.signal;
 
@@ -146,6 +233,7 @@ export class ISessionService {
 
   private invalidatePendingSession(): void {
     this.generation++;
+    this.endingImpersonation = null;
     this.refreshController?.abort(requestCancellation('abort'));
     this.refreshController = null;
     this.refreshInFlight = null;
@@ -181,7 +269,11 @@ export class ISessionService {
   }
 
   isAuth(): boolean {
-    return !!this.accessToken && !this.isTokenExpired() && !this.isSsoSessionExpired();
+    return (
+      !!this.accessToken &&
+      !this.isTokenExpired() &&
+      !this.isSsoSessionExpired()
+    );
   }
 
   isTokenExpired(): boolean {
@@ -225,7 +317,9 @@ export class ISessionService {
     if (this.changePasswordTokenValue) {
       return this.changePasswordTokenValue;
     }
-    const stored = sessionStorage.getItem(this.storageKey('changePasswordToken'));
+    const stored = sessionStorage.getItem(
+      this.storageKey('changePasswordToken')
+    );
     if (stored) {
       this.changePasswordTokenValue = stored;
       return stored;
@@ -270,11 +364,13 @@ export class ISessionService {
     if (!this.accessToken) {
       return [];
     }
-    const decoded = decodeJwtPayload(this.accessToken) as
-      | { realm_access?: { roles?: unknown } }
-      | null;
+    const decoded = decodeJwtPayload(this.accessToken) as {
+      realm_access?: { roles?: unknown };
+    } | null;
     const roles = decoded?.realm_access?.roles;
-    return Array.isArray(roles) ? roles.filter((role): role is string => typeof role === 'string') : [];
+    return Array.isArray(roles)
+      ? roles.filter((role): role is string => typeof role === 'string')
+      : [];
   }
 
   /** True if the current access token claims ANY of the given roles. */
@@ -295,9 +391,17 @@ export class ISessionService {
     this.assertActive();
     this.invalidatePendingSession();
     this.loggedOut = false;
+    if (
+      this.accessToken &&
+      impersonationContextKey(this.accessToken) !==
+        impersonationContextKey(accessToken)
+    )
+      this.userMenuStore?.reset();
     this.accessToken = accessToken;
     const effectiveExpiresIn =
-      expiresIn ?? this.readExpiresInFromToken(accessToken) ?? this.config.tokenLifespan.accessTokenSeconds;
+      expiresIn ??
+      this.readExpiresInFromToken(accessToken) ??
+      this.config.tokenLifespan.accessTokenSeconds;
     // 30-second buffer to avoid edge cases, matches iam-web's convention.
     this.expiresAt = Date.now() + (effectiveExpiresIn - 30) * 1000;
     if (this.sessionStartedAt === null) {
@@ -313,15 +417,30 @@ export class ISessionService {
    * marks an active session so `tryRestoreSession()` can distinguish a cold
    * start from a refresh-after-revocation.
    */
-  setSession(accessToken: string, expiresIn: number, user: IAuthUser, refreshToken?: string): void {
+  setSession(
+    accessToken: string,
+    expiresIn: number,
+    user: IAuthUser,
+    refreshToken?: string
+  ): void {
     this.assertActive();
     this.invalidatePendingSession();
     this.loggedOut = false;
     this.writeSession(accessToken, expiresIn, user, refreshToken);
   }
 
-  private writeSession(accessToken: string, expiresIn: number, user: IAuthUser, refreshToken?: string): void {
-    if (this.currentUser?.sub && this.currentUser.sub !== user.sub) {
+  private writeSession(
+    accessToken: string,
+    expiresIn: number,
+    user: IAuthUser,
+    refreshToken?: string
+  ): void {
+    if (
+      (this.currentUser?.sub && this.currentUser.sub !== user.sub) ||
+      (this.accessToken &&
+        impersonationContextKey(this.accessToken) !==
+          impersonationContextKey(accessToken))
+    ) {
       this.userMenuStore?.reset();
     }
     this.accessToken = accessToken;
@@ -518,6 +637,9 @@ export class ISessionService {
     if (!decoded || typeof decoded['exp'] !== 'number') {
       return null;
     }
-    return Math.max(0, (decoded['exp'] as number) - Math.floor(Date.now() / 1000));
+    return Math.max(
+      0,
+      (decoded['exp'] as number) - Math.floor(Date.now() / 1000)
+    );
   }
 }

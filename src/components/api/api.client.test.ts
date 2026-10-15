@@ -33,6 +33,22 @@ afterEach(() => {
 });
 
 describe('application API transport', () => {
+  it('reports an invalid impersonation session without attempting refresh', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Response.json(
+          { errorCode: 'IMPERSONATION_SESSION_INVALID', message: 'Ended' },
+          { status: 401 }
+        )
+      )
+    );
+    const { api, session, onSessionExpired } = setup();
+    await expect(api.get('/item')).rejects.toMatchObject({ status: 401 });
+    expect(session.refreshToken).not.toHaveBeenCalled();
+    expect(onSessionExpired).toHaveBeenCalledOnce();
+  });
+
   it('preserves raw arrays, parameters, and pagination headers without consuming raw responses', async () => {
     const fetchMock = vi.fn<
       (url: string, init?: RequestInit) => Promise<Response>
