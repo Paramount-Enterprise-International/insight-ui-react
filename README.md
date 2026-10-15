@@ -73,15 +73,15 @@ export default defineConfig([
       // other options...
     },
   },
-])
+]);
 ```
 
 You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
 ```js
 // eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+import reactX from 'eslint-plugin-react-x';
+import reactDom from 'eslint-plugin-react-dom';
 
 export default defineConfig([
   globalIgnores(['dist']),
@@ -102,7 +102,7 @@ export default defineConfig([
       // other options...
     },
   },
-])
+]);
 ```
 
 ## Authorization codes and navigation
@@ -139,16 +139,16 @@ Backend endpoints and enforcement remain unchanged.
 
 ### Breaking migration
 
-| Previous API | Replacement |
-| --- | --- |
-| `source.menu`, `source.permission` | `source.menuCodes` from authorizations |
-| `store.permissions`, Angular `permissions$` | `store.menuCodes`, Angular `menuCodes$` |
-| `hasPermission()` | `hasMenuCode()` |
-| `hasMenu()` | `hasMenuCode()` for access; `hasNavigableMenu()` for navigation |
-| `loadPermissions()` | `loadAuthorizations()` returning authorization DTOs |
-| `loadErrors.permissions`, load branch `permissions` | `loadErrors.authorizations`, branch `authorizations` |
-| Guard source `'menu'` / `'permission'` | `'menuCode'` |
-| `setPermissions()` | Removed; refresh backend authorizations |
+| Previous API                                        | Replacement                                                     |
+| --------------------------------------------------- | --------------------------------------------------------------- |
+| `source.menu`, `source.permission`                  | `source.menuCodes` from authorizations                          |
+| `store.permissions`, Angular `permissions$`         | `store.menuCodes`, Angular `menuCodes$`                         |
+| `hasPermission()`                                   | `hasMenuCode()`                                                 |
+| `hasMenu()`                                         | `hasMenuCode()` for access; `hasNavigableMenu()` for navigation |
+| `loadPermissions()`                                 | `loadAuthorizations()` returning authorization DTOs             |
+| `loadErrors.permissions`, load branch `permissions` | `loadErrors.authorizations`, branch `authorizations`            |
+| Guard source `'menu'` / `'permission'`              | `'menuCode'`                                                    |
+| `setPermissions()`                                  | Removed; refresh backend authorizations                         |
 
 No compatibility aliases or manual code override are provided.
 
@@ -164,6 +164,7 @@ No compatibility aliases or manual code override are provided.
   <button>Example for Jakarta</button>
 </IHasMn>
 ```
+
 ## Application runtime and API access
 
 Create one runtime in an application-owned module. The factory validates config
@@ -242,9 +243,13 @@ const response = await iApiService.get('/orders', {
 const total = response.headers.get('X-Total-Count');
 const orders = await response.json();
 
-const download = await iApiService.post('/report', { id: 1 }, {
-  responseType: 'response',
-});
+const download = await iApiService.post(
+  '/report',
+  { id: 1 },
+  {
+    responseType: 'response',
+  }
+);
 const contentType = download.headers.get('Content-Type');
 const disposition = download.headers.get('Content-Disposition');
 const file = await download.blob();
@@ -254,7 +259,10 @@ form.append('file', selectedFile);
 await iApiService.post('/upload', form);
 
 const controller = new AbortController();
-await iApiService.get('/orders', { signal: controller.signal, timeoutMs: 60_000 });
+await iApiService.get('/orders', {
+  signal: controller.signal,
+  timeoutMs: 60_000,
+});
 ```
 
 All verbs support `responseType: 'json' | 'response' | 'blob' | 'arraybuffer' |
@@ -301,3 +309,115 @@ Identity acceptance by business backends, audit username mapping, callback
 allowlists, CORS/cookie configuration and cross-origin exposure of pagination and
 download headers remain integration responsibilities. Runtimes isolate client
 state; server cookies still follow the browser and backend's cookie scoping.
+
+## Route breadcrumb labels
+
+`IRoute.breadcrumb` accepts a string or `false`. Omit it to use `title`, supply
+a string for a separate breadcrumb label, or use `false` to hide that route's
+breadcrumb while retaining its page title. Child routes still contribute their
+own labels, and their links include the hidden parent's path segments.
+
+```tsx
+{
+  path: 'customers',
+  title: 'Customers',
+  children: [{
+    index: true,
+    title: 'Customer Directory',
+    breadcrumb: false,
+    element: <CustomerDirectory />,
+  }],
+}
+```
+
+This sends the heading `Customer Directory` and the breadcrumb `Customers`
+through the host bridge. If every matched level is hidden, the router sends
+`null` for its remote breadcrumb contribution; an Angular host can retain its
+host portion. Standalone React uses the same route metadata behavior.
+
+## React host and remote composition
+
+React hosts support the same routing and breadcrumb responsibilities as Angular
+hosts. Wrap the host router in HostShell. Use route-level remoteMount to mark
+the host/remote boundary and hostBreadcrumbs to provide explicit host ancestry.
+These fields are direct IRoute properties in React; Angular uses route data.
+
+The host trail uses nonempty hostBreadcrumbs first, then the longest
+segment-aligned menu ancestry, then matched host route labels. IRouter reads
+menu changes from the optional auth menu store, or from its menus prop.
+Remote route labels append after that trail. Heading priority is an explicit
+title override, remote title, then the deepest route title.
+
+| Capability                                   | Angular                          | React                              |
+| -------------------------------------------- | -------------------------------- | ---------------------------------- |
+| Hide a breadcrumb without hiding its heading | data.breadcrumb: false           | breadcrumb: false                  |
+| Host/remote boundary                         | data.remoteMount                 | remoteMount                        |
+| Explicit host ancestry                       | data.hostBreadcrumbs             | hostBreadcrumbs                    |
+| Reactive menu fallback                       | IUserMenuStore.menus$            | Auth menu store or IRouter menus   |
+| Remote-only metadata                         | IHTitleBreadcrumbService setters | useHostUi setters or remote bridge |
+| Full overrides                               | setTitle / setBreadcrumbs        | setTitle / setBreadcrumbs          |
+| Clear only remote contribution               | clearRemote()                    | clearRemote()                      |
+| Restore route defaults and clear overrides   | clear()                          | useHostUi().clear()                |
+
+Both UI state APIs provide setRemoteTitle(), setRemoteBreadcrumbs() and
+clearRemote(). Calling clearRemote() preserves host routes and full overrides.
+Passing null to a full override restores defaults; setBreadcrumbs([]) explicitly
+renders the Home placeholder without the normal trail.
+
+For a remote with its own descendant IRouter, create one bridge at the active
+mount. Existing remote setTitle/setBreadcrumbs calls then update only the remote
+contribution. The router publishes permission denial through a separate metadata
+channel so the entire displayed trail can become Unauthorized Access.
+
+```tsx
+import {
+  HostShell,
+  IRouter,
+  IHostApiProvider,
+  useRemoteHostApi,
+} from '@insight/ui-react';
+
+function CustomerRemote() {
+  const hostApi = useRemoteHostApi();
+  return (
+    <IHostApiProvider hostApi={hostApi}>
+      <IRouter routes={customerRoutes} />
+    </IHostApiProvider>
+  );
+}
+
+const hostRoutes = [
+  {
+    path: 'sales/customer/*',
+    title: 'Customer',
+    remoteMount: true,
+    hostBreadcrumbs: [
+      { label: 'Sales' },
+      { label: 'Customer', url: '/sales/customer' },
+    ],
+    element: <CustomerRemote />,
+  },
+];
+
+// Place under BrowserRouter, with its actual basename.
+<HostShell>
+  <IRouter routes={hostRoutes} />
+</HostShell>;
+```
+
+Use one active remote bridge per HostShell. It clears remote state on unmount
+and ignores subsequent metadata callbacks from that unmounted bridge. Do not
+remount HostShell for individual pages. Bridge navigation accepts host URLs;
+a federation adapter still owns module loading and translation of a remote's
+business navigation URLs when needed.
+
+HostShell retains full setTitle/setBreadcrumbs overrides. The built-in router
+uses setRouteMetadata so ordinary navigation cannot overwrite those overrides.
+The added IHostApi methods are optional for compatibility with existing custom
+bridges; bridges without setRouteMetadata retain the previous complete-metadata
+callbacks.
+
+Breadcrumb URLs support text-only groups, resolved parameters and the router
+basename without double-prefixing. Link hrefs preserve query strings and
+fragments, and modified clicks use native browser behavior. The last level stays
+non-clickable.

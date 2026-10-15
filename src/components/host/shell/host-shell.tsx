@@ -1,20 +1,42 @@
 import React, { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useHref, useNavigate } from 'react-router-dom';
 import { IHostApiProvider } from '../host-api.context';
 import type { IHostApi } from '../host-api.types';
 import { IHostUiProvider, useHostUi } from '../host-ui.context';
+import { toRouterUrl } from '../router-breadcrumbs';
 
 function HostApiBridge(props: { children: React.ReactNode }) {
   const navigate = useNavigate();
-  const { setTitle, setBreadcrumbs } = useHostUi();
+  const baseHref = useHref('/');
+  const {
+    setTitle,
+    setBreadcrumbs,
+    setRemoteTitle,
+    setRemoteBreadcrumbs,
+    clearRemote,
+    setRouteMetadata,
+  } = useHostUi();
 
   const hostApi = useMemo<IHostApi>(
     () => ({
-      navigate: (url) => navigate(url),
+      navigate: (url) => navigate(toRouterUrl(url, baseHref)),
       setTitle,
       setBreadcrumbs,
+      setRemoteTitle,
+      setRemoteBreadcrumbs,
+      clearRemote,
+      setRouteMetadata,
     }),
-    [navigate, setTitle, setBreadcrumbs]
+    [
+      navigate,
+      baseHref,
+      setTitle,
+      setBreadcrumbs,
+      setRemoteTitle,
+      setRemoteBreadcrumbs,
+      clearRemote,
+      setRouteMetadata,
+    ]
   );
 
   return (

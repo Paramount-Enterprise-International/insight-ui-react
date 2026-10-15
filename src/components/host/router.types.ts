@@ -1,5 +1,6 @@
 // router.types.ts
 import type React from 'react';
+import type { IBreadcrumbItem } from './host-api.types';
 
 export type IRouteComponent = React.ComponentType<unknown>;
 
@@ -12,7 +13,12 @@ export type IRoute = {
   redirectTo?: string;
 
   title?: string;
-  breadcrumb?: string;
+  /** Override the label, or hide this level while retaining its title. */
+  breadcrumb?: string | false;
+  /** Marks the boundary between the host trail and remote route labels. */
+  remoteMount?: boolean;
+  /** Explicit host trail; otherwise resolved from menus or parent routes. */
+  hostBreadcrumbs?: IBreadcrumbItem[];
 
   element?: React.ReactNode;
   loadComponent?: ILoadComponent;
