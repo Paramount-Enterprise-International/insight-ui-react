@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useHref, useNavigate } from 'react-router-dom';
 import {
   useISession,
   useIUserMenuStore,
@@ -9,6 +9,7 @@ import type { IBreadcrumbItem } from '../host-api.types';
 import { useHostUi } from '../host-ui.context';
 import { isHttpRoute } from '../menu';
 import { isPlainLeftClick } from '../menu/menu.utils';
+import { toRouterUrl } from '../router-breadcrumbs';
 
 function normalizeCrumbs(
   items: IBreadcrumbItem[] | null | undefined
@@ -19,7 +20,25 @@ function normalizeCrumbs(
 }
 
 function isInternalAppUrl(url: string): boolean {
-  return url.startsWith('/') && !isHttpRoute(url);
+  return url.startsWith('/') && !url.startsWith('//') && !isHttpRoute(url);
+}
+
+function BreadcrumbLink(props: {
+  item: IBreadcrumbItem;
+  baseHref: string;
+  onClick: (event: React.MouseEvent<HTMLAnchorElement>, url: string) => void;
+}) {
+  const url = props.item.url!;
+  const internal = isInternalAppUrl(url);
+  const href = useHref(internal ? toRouterUrl(url, props.baseHref) : '/');
+  return (
+    <a
+      className="ih-content-breadcrumb ih-content-breadcrumb__link"
+      href={internal ? href : url}
+      onClick={(event) => props.onClick(event, url)}>
+      {props.item.label}
+    </a>
+  );
 }
 
 export function IHContent(props: {
@@ -34,6 +53,7 @@ export function IHContent(props: {
   onLoadingChange?: (loading: boolean) => void;
 }) {
   const nav = useNavigate();
+  const baseHref = useHref('/');
 
   const { onNavigate, loading, onLoadingChange } = props;
 
@@ -71,9 +91,9 @@ export function IHContent(props: {
   const go = useCallback(
     (url: string) => {
       if (onNavigate) return onNavigate(url);
-      nav(url);
+      nav(toRouterUrl(url, baseHref));
     },
-    [nav, onNavigate]
+    [nav, onNavigate, baseHref]
   );
 
   const onCrumbClick = useCallback(
@@ -117,12 +137,11 @@ export function IHContent(props: {
             return (
               <React.Fragment key={`${b.label}-${idx}`}>
                 {clickable ? (
-                  <a
-                    className="ih-content-breadcrumb ih-content-breadcrumb__link"
-                    href={b.url}
-                    onClick={(e) => onCrumbClick(e, b.url!)}>
-                    {b.label}
-                  </a>
+                  <BreadcrumbLink
+                    item={b}
+                    baseHref={baseHref}
+                    onClick={onCrumbClick}
+                  />
                 ) : (
                   <span
                     className={[

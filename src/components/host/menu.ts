@@ -20,7 +20,9 @@ export function isHttpRoute(route: string | null | undefined): boolean {
  * Node key used for tracking and selection — prefers the modern UUID `id`,
  * falls back to the legacy numeric `menuId`.
  */
-export function getMenuKey(menu: IMenu | null | undefined): string | number | null {
+export function getMenuKey(
+  menu: IMenu | null | undefined
+): string | number | null {
   return menu?.id ?? menu?.menuId ?? null;
 }
 
@@ -126,7 +128,8 @@ export function isNewTabMenu(menu: IMenu | null | undefined): boolean {
   const route = getMenuRoute(menu);
 
   if (!route) return false;
-  if (menu?.openIn) return menu.openIn === 'NEW_TAB' || menu.openIn === 'NEW_WINDOW';
+  if (menu?.openIn)
+    return menu.openIn === 'NEW_TAB' || menu.openIn === 'NEW_WINDOW';
 
   return !!menu?.openInNewTab;
 }
@@ -187,4 +190,44 @@ function normalizeMenu(menu: IMenu, level: number): IMenu {
  */
 export function normalizeMenuTree(menus: IMenu[] | null | undefined): IMenu[] {
   return (menus ?? []).map((menu) => normalizeMenu(menu, 0));
+}
+
+/** Finds the deepest segment-aligned menu route, preserving structural ancestors. */
+export function findBreadcrumbMenuChain(
+  menus: readonly IMenu[],
+  path: string,
+  baseHref = '/-/'
+): IMenu[] {
+  const normalize = (value: string) => {
+    let clean = value.split(/[?#]/)[0].replace(/\/+/g, '/');
+    const base = baseHref.replace(/\/+$|^\/+/g, '');
+    clean = clean.replace(/^\/+|\/+$/g, '');
+    if (base && (clean === base || clean.startsWith(base + '/'))) {
+      clean = clean.slice(base.length).replace(/^\/+/, '');
+    }
+    return clean;
+  };
+  const target = normalize(path);
+  let best: IMenu[] = [];
+  let bestLength = 0;
+  const visit = (nodes: readonly IMenu[], parents: IMenu[]) => {
+    for (const menu of nodes) {
+      const chain = [...parents, menu];
+      const route = getMenuRoute(menu);
+      if (route && !isHttpRoute(route) && !route.startsWith('//')) {
+        const candidate = normalize(route);
+        if (
+          candidate &&
+          (target === candidate || target.startsWith(candidate + '/')) &&
+          candidate.length > bestLength
+        ) {
+          best = chain;
+          bestLength = candidate.length;
+        }
+      }
+      visit(getMenuChildren(menu), chain);
+    }
+  };
+  visit(menus, []);
+  return best;
 }

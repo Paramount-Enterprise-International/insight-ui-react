@@ -5,10 +5,21 @@ export type IBreadcrumbItem = {
   url?: string; // undefined means current / non-clickable
 };
 
+export type IHostRouteMetadata = {
+  title: string | null;
+  breadcrumbs: IBreadcrumbItem[] | null;
+  denied?: boolean;
+};
+
 export type IHostApi = {
   navigate: (url: string) => void | Promise<void>;
   setTitle: (title: string | null) => void;
   setBreadcrumbs: (items: IBreadcrumbItem[] | null) => void;
+  setRemoteTitle?: (title: string | null) => void;
+  setRemoteBreadcrumbs?: (items: IBreadcrumbItem[] | null) => void;
+  clearRemote?: () => void;
+  /** Publishes route metadata without replacing explicit UI overrides. */
+  setRouteMetadata?: (metadata: IHostRouteMetadata) => void;
 };
 
 export type IMenuApplication = {

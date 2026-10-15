@@ -1,36 +1,45 @@
 // router.tsx
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
-import { useHostApiOptional } from './host-api.context';
-import type { IBreadcrumbItem } from './host-api.types';
-import type { IRoute, IRouteComponent, IRoutes } from './router.types';
-import { IRouteAccessContext } from '../permission/route-access-context';
+import React, {
+  Suspense,
+  lazy,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import type { RouteObject } from 'react-router-dom';
+import {
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  UNSAFE_RouteContext,
+  matchRoutes,
+  useHref,
+  useLocation,
+} from 'react-router-dom';
+import { IAuthContext } from '../auth/insight-auth-context';
 import { IErrorPage } from '../error-page/error-page';
+import { IRouteAccessContext } from '../permission/route-access-context';
+import { useHostApiOptional } from './host-api.context';
+import type { IMenu } from './host-api.types';
+import { buildRouteMetadata } from './router-breadcrumbs';
+import type { IRoute, IRouteComponent, IRoutes } from './router.types';
 
 export type IRouterProps = {
   routes: IRoutes;
   loading?: React.ReactNode;
   notFound?: React.ReactNode;
+  menus?: readonly IMenu[];
 };
-
-function stripSlashes(s: string): string {
-  return (s ?? '').replace(/^\/+|\/+$/g, '');
-}
 
 function normalizePath(path?: string) {
   // react-router treats "" specially; we use "" to mean "index-like" when redirecting
   if (path == null) return '';
   return path;
-}
-
-function splitPathname(pathname: string): string[] {
-  const clean = stripSlashes(pathname);
-  return clean ? clean.split('/').filter(Boolean) : [];
-}
-
-function matchSegment(routeSegment: string, urlSegment: string) {
-  if (routeSegment.startsWith(':')) return true;
-  return routeSegment === urlSegment;
 }
 
 /**
@@ -57,7 +66,7 @@ function expandImplicitIndexRoutes(routes: IRoutes): IRoutes {
         return { ...r, children: expandedChildren };
       }
 
-      // ✅ DO NOT rewrite index-like layout routes (path "" / undefined)
+      // Preserve index-like layout routes (path "" / undefined).
       // This is what keeps DevLayout rendering in AppDev.
       const p = r.path;
       const isIndexLikeLayout = p == null || p === '';
@@ -69,7 +78,7 @@ function expandImplicitIndexRoutes(routes: IRoutes): IRoutes {
 
       const implicitIndex: IRoute = {
         index: true,
-        // ✅ NO meta here (parent keeps it so nested children show parent crumb)
+        // Metadata stays on the parent for nested breadcrumbs.
         title: undefined,
         breadcrumb: undefined,
         redirectTo: undefined,
@@ -77,7 +86,7 @@ function expandImplicitIndexRoutes(routes: IRoutes): IRoutes {
         loadComponent: r.loadComponent,
       };
 
-      // ✅ parent becomes outlet wrapper but keeps meta
+      // The parent becomes an outlet wrapper and retains metadata.
       const parent: IRoute = {
         ...r,
         element: <Outlet />,
@@ -93,108 +102,21 @@ function expandImplicitIndexRoutes(routes: IRoutes): IRoutes {
   return walk(routes);
 }
 
-type MatchNode = { route: IRoute; url: string };
-
-function findMatchChain(
-  routes: IRoutes,
-  urlSegments: string[],
-  baseUrl: string
-): MatchNode[] | null {
-  // at end: match index route if present
-  if (urlSegments.length === 0) {
-    const indexRoute = routes.find((r) => r.index);
-    if (indexRoute) return [{ route: indexRoute, url: baseUrl || '/' }];
-    for (const route of routes) {
-      if (stripSlashes(normalizePath(route.path)) || route.redirectTo) continue;
-      const child = route.children?.length
-        ? findMatchChain(route.children, [], baseUrl)
-        : null;
-      if (child) return [{ route, url: baseUrl || '/' }, ...child];
-      if (route.element || route.loadComponent) return [{ route, url: baseUrl || '/' }];
-    }
-    return null;
-  }
-
-  for (const r of routes) {
-    if (r.index) continue;
-
-    const routePath = stripSlashes(normalizePath(r.path));
-    const routeSegments = routePath ? routePath.split('/').filter(Boolean) : [];
-
-    // path '' wrapper: try children without consuming segments
-    if (routeSegments.length === 0) {
-      if (r.children?.length) {
-        const next = findMatchChain(r.children, urlSegments, baseUrl);
-        if (next) return [{ route: r, url: baseUrl || '/' }, ...next];
-      }
-      continue;
-    }
-
-    if (routeSegments.length > urlSegments.length) continue;
-
-    let ok = true;
-    const consumed: string[] = [];
-
-    for (let i = 0; i < routeSegments.length; i++) {
-      const a = routeSegments[i];
-      const b = urlSegments[i];
-      if (!matchSegment(a, b)) {
-        ok = false;
-        break;
-      }
-      consumed.push(b);
-    }
-    if (!ok) continue;
-
-    const nextBase = (baseUrl + '/' + consumed.join('/')).replace(/\/+/g, '/');
-    const remaining = urlSegments.slice(routeSegments.length);
-
-    if (remaining.length === 0) {
-      // exact match: if it has index child, include it (it renders the parent’s content)
-      if (r.children?.length) {
-        const indexChild = r.children.find((c) => c.index);
-        if (indexChild) {
-          return [
-            { route: r, url: nextBase || '/' },
-            { route: indexChild, url: nextBase || '/' },
-          ];
+function metadataRoutes(routes: IRoutes): RouteObject[] {
+  return routes.map((route) =>
+    route.index || (route.redirectTo && !route.path)
+      ? { index: true, handle: route }
+      : {
+          path: route.path || undefined,
+          handle: route,
+          children: route.children ? metadataRoutes(route.children) : undefined,
         }
-      }
-      return [{ route: r, url: nextBase || '/' }];
-    }
-
-    if (r.children?.length) {
-      const child = findMatchChain(r.children, remaining, nextBase);
-      if (child) return [{ route: r, url: nextBase || '/' }, ...child];
-    }
-  }
-
-  return null;
+  );
 }
 
-function buildBreadcrumbsFromChain(chain: MatchNode[]): IBreadcrumbItem[] {
-  const items: IBreadcrumbItem[] = [];
-
-  for (const m of chain) {
-    // ignore redirect-only nodes
-    if (m.route.redirectTo) continue;
-
-    const label = m.route.breadcrumb ?? m.route.title;
-    if (!label) continue;
-
-    // de-dupe consecutive labels
-    const last = items[items.length - 1];
-    if (last && last.label === label) continue;
-
-    items.push({ label, url: m.url });
-  }
-
-  if (items.length) {
-    items[items.length - 1] = { ...items[items.length - 1], url: undefined };
-  }
-
-  return items;
-}
+const EMPTY_MENUS: readonly IMenu[] = [];
+const NOOP_SUBSCRIBE = () => () => {};
+const ZERO_VERSION = () => 0;
 
 function makeElement(r: IRoute) {
   // redirect node
@@ -256,7 +178,21 @@ export function IRouter(props: IRouterProps) {
 
   const hostApi = useHostApiOptional();
   const location = useLocation();
-  const [deniedOwners, setDeniedOwners] = useState<ReadonlySet<string>>(() => new Set());
+  const baseHref = useHref('/');
+  // Match the same parent base used by descendant React Router Routes.
+  const routeBase =
+    useContext(UNSAFE_RouteContext).matches.at(-1)?.pathnameBase ?? '/';
+  const auth = useContext(IAuthContext);
+  const store = auth?.userMenuStore;
+  useSyncExternalStore(
+    store?.subscribe ?? NOOP_SUBSCRIBE,
+    store?.getVersion ?? ZERO_VERSION,
+    store?.getVersion ?? ZERO_VERSION
+  );
+  const menus = props.menus ?? store?.menus ?? EMPTY_MENUS;
+  const [deniedOwners, setDeniedOwners] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   const reportAccess = useCallback((owner: string, denied: boolean) => {
     setDeniedOwners((current) => {
       if (current.has(owner) === denied) return current;
@@ -277,27 +213,38 @@ export function IRouter(props: IRouterProps) {
     [expandedRoutes]
   );
 
+  const matchingRoutes = useMemo(
+    () => metadataRoutes(expandedRoutes),
+    [expandedRoutes]
+  );
+
   const lastTitleRef = useRef<string | null>(null);
   const lastCrumbsKeyRef = useRef<string>('');
 
   useEffect(() => {
     if (!hostApi) return;
 
-    const urlSegments = splitPathname(location.pathname);
-    const chain = findMatchChain(expandedRoutes, urlSegments, '') ?? [];
+    const chain = (
+      matchRoutes(matchingRoutes, location.pathname, routeBase) ?? []
+    ).map((match) => ({
+      route: match.route.handle as IRoute,
+      url: routeBase.replace(/\/+$/, '') + match.pathname || '/',
+      mountUrl: routeBase.replace(/\/+$/, '') + match.pathnameBase || '/',
+    }));
+    const metadata = buildRouteMetadata(chain, menus, baseHref);
+    if (hostApi.setRouteMetadata) {
+      hostApi.setRouteMetadata({ ...metadata, denied });
+      return;
+    }
 
+    // Older host bridges consume complete title and breadcrumb overrides.
     const crumbs = denied
-      ? [{ label: 'Unauthorized Access' }]
-      : buildBreadcrumbsFromChain(chain);
-    const crumbsKey = JSON.stringify(
-      crumbs.map((c) => ({ l: c.label, u: c.url ?? '' }))
-    );
-
-    // title = last route in chain that has title
-    const lastWithTitle = [...chain]
-      .reverse()
-      .find((x) => x.route.title)?.route;
-    const nextTitle = denied ? 'Unauthorized Access' : lastWithTitle?.title ?? null;
+      ? [{ label: 'Unauthorized Access', url: undefined }]
+      : (metadata.breadcrumbs ?? []).map((crumb, index, all) =>
+          index === all.length - 1 ? { ...crumb, url: undefined } : crumb
+        );
+    const crumbsKey = JSON.stringify(crumbs);
+    const nextTitle = denied ? 'Unauthorized Access' : metadata.title;
 
     if (lastTitleRef.current !== nextTitle) {
       lastTitleRef.current = nextTitle;
@@ -308,7 +255,15 @@ export function IRouter(props: IRouterProps) {
       lastCrumbsKeyRef.current = crumbsKey;
       hostApi.setBreadcrumbs(crumbs.length ? crumbs : null);
     }
-  }, [hostApi, location.pathname, expandedRoutes, denied]);
+  }, [
+    hostApi,
+    location.pathname,
+    matchingRoutes,
+    menus,
+    baseHref,
+    routeBase,
+    denied,
+  ]);
 
   return (
     <IRouteAccessContext.Provider value={reportAccess}>
