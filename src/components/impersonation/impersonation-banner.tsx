@@ -176,7 +176,7 @@ export function IHImpersonationBanner() {
           </div>
           <div className="flex flex-wrap align-center gap-sm shrink-0">
             <IButton
-              icon="info"
+              icon="fa-solid fa-info"
               size="sm"
               aria-label="About impersonation sessions"
               data-testid="impersonation-info"
