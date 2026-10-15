@@ -1,5 +1,8 @@
+import type {
+  IApiErrorCatalogResolver,
+  IApiErrorDisplayFormatter,
+} from '../api/api-error';
 import { environment as defaultEnvironment } from '../environments/environment';
-import type { IApiErrorCatalogResolver, IApiErrorDisplayFormatter } from '../api/api-error';
 
 /**
  * Token lifespan configuration (seconds). Mirrors the platform-wide AC used by
@@ -26,6 +29,7 @@ export type ITokenLifespan = {
  * by identity-owner apps only (e.g. iam-web) and stay fixed.
  */
 export type IAuthEndpoints = {
+  impersonationEnd?: string;
   /** CSRF bootstrap: `GET {identity}{csrf}` returns `{ csrfToken }` and sets the CSRF cookie. */
   csrf?: string;
   /** Mode-2 username/password login: `POST {identity}{login}` (identity-owner apps only). */
@@ -42,6 +46,7 @@ export type IAuthEndpoints = {
 export function getDefaultIAuthEndpoints(): IAuthEndpoints {
   return {
     csrf: '/auth/csrf',
+    impersonationEnd: '/auth/impersonation/end',
     login: '/auth/login',
     refresh: '/auth/refresh',
     logout: '/auth/logout',
@@ -55,6 +60,7 @@ export function getDefaultIAuthEndpoints(): IAuthEndpoints {
  * `IAuthCallback`). Mirrors the Angular `IAuthConfig`.
  */
 export type IAuthConfig = {
+  impersonation?: { source: 'iam-user' | 'bff'; informationText?: string };
   /**
    * API base URLs grouped by backend service. `identity` is REQUIRED and must
    * point at this app's OWN auth backend (typically a same-origin BFF that
@@ -176,7 +182,7 @@ export function getDefaultIAuthConfig(): IAuthConfig {
  * config resolution.
  */
 export function resolveIAuthConfig(
-  overrides?: IAuthConfigOverrides,
+  overrides?: IAuthConfigOverrides
 ): IAuthConfig {
   const defaults = getDefaultIAuthConfig();
   return {
@@ -196,8 +202,8 @@ export function resolveIAuthConfig(
 export function requireIdentityHost(config: IAuthConfig): string {
   if (!config.api.identity) {
     throw new Error(
-      '[@insight/ui-react] api.identity is not configured. Point it at this app\'s own auth host/BFF ' +
-        '(e.g. <IAuthProvider config={{ api: { identity: "https://<your-app>/api" }, signinUrl: "..." }} />).',
+      "[@insight/ui-react] api.identity is not configured. Point it at this app's own auth host/BFF " +
+        '(e.g. <IAuthProvider config={{ api: { identity: "https://<your-app>/api" }, signinUrl: "..." }} />).'
     );
   }
   return config.api.identity;
@@ -209,7 +215,7 @@ export function requireIdentityHost(config: IAuthConfig): string {
  */
 export function getAuthEndpointPath(
   config: IAuthConfig,
-  key: keyof IAuthEndpoints,
+  key: keyof IAuthEndpoints
 ): string {
   return config.endpoints?.[key] ?? getDefaultIAuthEndpoints()[key] ?? '';
 }
@@ -220,7 +226,7 @@ export function getAuthEndpointPath(
  */
 export function getAuthEndpointUrl(
   config: IAuthConfig,
-  key: keyof IAuthEndpoints,
+  key: keyof IAuthEndpoints
 ): string {
   return `${requireIdentityHost(config)}${getAuthEndpointPath(config, key)}`;
 }
@@ -234,14 +240,14 @@ export function getAuthEndpointUrl(
 export function validateIAuthConfig(config: IAuthConfig): void {
   if (!config.api.identity) {
     throw new Error(
-      '[@insight/ui-react] IAuthProvider requires api.identity - the base URL of this app\'s own ' +
-        'auth host/BFF. The library no longer defaults to a shared identity provider.',
+      "[@insight/ui-react] IAuthProvider requires api.identity - the base URL of this app's own " +
+        'auth host/BFF. The library no longer defaults to a shared identity provider.'
     );
   }
   if (!config.signinUrl) {
     throw new Error(
-      '[@insight/ui-react] IAuthProvider requires signinUrl - the full URL of this app\'s ' +
-        'sign-in page / BFF login route.',
+      "[@insight/ui-react] IAuthProvider requires signinUrl - the full URL of this app's " +
+        'sign-in page / BFF login route.'
     );
   }
 }

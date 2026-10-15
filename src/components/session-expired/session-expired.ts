@@ -1,6 +1,9 @@
 import type { INormalizedApiError } from '../api/api-error';
 
-export type ISessionExpiredReason = 'TOKEN_EXPIRED' | 'SESSION_REVOKED' | 'SESSION_REPLACED';
+export type ISessionExpiredReason =
+  | 'TOKEN_EXPIRED'
+  | 'SESSION_REVOKED'
+  | 'SESSION_REPLACED';
 
 /** Minimal structural shape for error-code extraction (normalized or raw errors). */
 type SessionErrorShape = {
@@ -9,16 +12,23 @@ type SessionErrorShape = {
   error?: { errorCode?: string; code?: string };
 };
 
-const valueAt = (value: unknown, key: 'errorCode' | 'code'): string | undefined => {
+const valueAt = (
+  value: unknown,
+  key: 'errorCode' | 'code'
+): string | undefined => {
   if (typeof value !== 'object' || value === null) {
     return undefined;
   }
   const candidate = (value as Record<string, unknown>)[key];
-  return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
+  return typeof candidate === 'string' && candidate.length > 0
+    ? candidate
+    : undefined;
 };
 
 /** Supports normalized Problem Details errors and raw legacy HTTP error bodies. */
-export const extractProblemDetailsErrorCode = (error: unknown): string | undefined => {
+export const extractProblemDetailsErrorCode = (
+  error: unknown
+): string | undefined => {
   if (error === null || error === undefined) {
     return undefined;
   }
@@ -33,13 +43,14 @@ export const extractProblemDetailsErrorCode = (error: unknown): string | undefin
 
 /** Maps current backend and legacy error codes to the session-expired UI states. */
 export const toSessionExpiredReason = (
-  errorCode: string | undefined,
+  errorCode: string | undefined
 ): ISessionExpiredReason | undefined => {
   switch (errorCode) {
     case 'AUTH_TOKEN_EXPIRED':
     case 'TOKEN_EXPIRED':
     case 'AUTH_NO_SESSION':
       return 'TOKEN_EXPIRED';
+    case 'IMPERSONATION_SESSION_INVALID':
     case 'AUTH_SESSION_REVOKED':
     case 'SESSION_REVOKED':
       return 'SESSION_REVOKED';
@@ -61,7 +72,9 @@ export const isSessionExpiredError = (error: unknown): boolean => {
   if (status === 401 || status === 498) {
     return true;
   }
-  return toSessionExpiredReason(extractProblemDetailsErrorCode(error)) !== undefined;
+  return (
+    toSessionExpiredReason(extractProblemDetailsErrorCode(error)) !== undefined
+  );
 };
 
 /**
@@ -135,7 +148,7 @@ export class ISessionExpiredService {
     errorCode?: string | null,
     detail?: string | null,
     message?: string | null,
-    apiError?: INormalizedApiError | null,
+    apiError?: INormalizedApiError | null
   ): void {
     this.returnUrlValue = returnUrl || '/';
     this.reasonValue = reason;

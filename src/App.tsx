@@ -1,3 +1,4 @@
+import { ImpersonationDemo } from './demos/impersonation/impersonation';
 /* App.tsx */
 import {
   createBrowserRouter,
@@ -35,6 +36,11 @@ const router = createBrowserRouter(
     <>
       {/* Layout wrapper (like Angular ih-root) */}
       <Route element={<IHRootLayout />}>
+        <Route
+          path="demos/impersonation"
+          element={<ImpersonationDemo />}
+          handle={{ title: 'Impersonation' }}
+        />
         <Route index element={<Navigate to="/demos/grid" replace />} />
 
         <Route

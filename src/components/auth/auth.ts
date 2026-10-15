@@ -1,7 +1,17 @@
-import { getAuthEndpointPath, requireIdentityHost, type IAuthConfig } from './auth-config';
-import { rawRequest, type IApiError, type IApiOptions, type IRequestOptions } from '../api/api.client';
+import {
+  rawRequest,
+  type IApiError,
+  type IApiOptions,
+  type IRequestOptions,
+} from '../api/api.client';
 import { createRequestScope } from '../api/request-scope';
 import type { ICsrfService } from '../csrf/csrf';
+import type { IEndImpersonationResult } from '../impersonation/impersonation-utils';
+import {
+  getAuthEndpointPath,
+  requireIdentityHost,
+  type IAuthConfig,
+} from './auth-config';
 
 /**
  * Login lockout constants (local, client-side supplement to Keycloak
@@ -94,10 +104,18 @@ export class IAuthService {
     this.signal = signal;
   }
 
-  private request<T>(path: string, options: IRequestOptions & { responseType?: 'json' }): Promise<T> {
-    const scope = createRequestScope(options.timeoutMs, [this.signal, options.signal]);
-    return rawRequest<T>(this.identityUrl, path, this.csrf, { ...options, signal: scope.signal })
-      .finally(() => scope.dispose());
+  private request<T>(
+    path: string,
+    options: IRequestOptions & { responseType?: 'json' }
+  ): Promise<T> {
+    const scope = createRequestScope(options.timeoutMs, [
+      this.signal,
+      options.signal,
+    ]);
+    return rawRequest<T>(this.identityUrl, path, this.csrf, {
+      ...options,
+      signal: scope.signal,
+    }).finally(() => scope.dispose());
   }
 
   private get identityUrl(): string {
@@ -108,7 +126,7 @@ export class IAuthService {
     username: string,
     password: string,
     recaptchaToken?: string,
-    isChallengeResponse?: boolean,
+    isChallengeResponse?: boolean
   ): Promise<ILoginResponse> {
     const cleanUsername = username.trim().toLowerCase();
 
@@ -117,22 +135,27 @@ export class IAuthService {
       const retryAfter = Math.ceil((lockData.lockedUntil - Date.now()) / 1000);
       throw {
         status: 423,
-        message: 'Login access is temporarily restricted. Please try again in a few moments.',
-        detail: 'Login access is temporarily restricted. Please try again in a few moments.',
+        message:
+          'Login access is temporarily restricted. Please try again in a few moments.',
+        detail:
+          'Login access is temporarily restricted. Please try again in a few moments.',
         retryAfter,
       } as IApiError;
     }
 
     try {
-      const res = await this.request<ILoginResponse>(getAuthEndpointPath(this.config, 'login'), {
-        method: 'POST',
-        body: {
-          username,
-          password,
-          recaptchaToken,
-          isChallengeResponse: isChallengeResponse ?? false,
-        },
-      });
+      const res = await this.request<ILoginResponse>(
+        getAuthEndpointPath(this.config, 'login'),
+        {
+          method: 'POST',
+          body: {
+            username,
+            password,
+            recaptchaToken,
+            isChallengeResponse: isChallengeResponse ?? false,
+          },
+        }
+      );
       if (res.accessToken || res.mfaRequired || res.passwordExpired) {
         this.resetLockout(cleanUsername);
       }
@@ -146,34 +169,58 @@ export class IAuthService {
     }
   }
 
-  /** Silently refresh the access token via the HttpOnly session cookie. */
-  refresh(options: Pick<IApiOptions, 'signal' | 'timeoutMs'> = {}): Promise<IRefreshResponse> {
-    return this.request<IRefreshResponse>(getAuthEndpointPath(this.config, 'refresh'), {
+  endImpersonation(
+    signal?: AbortSignal
+  ): Promise<IEndImpersonationResult | null> {
+    return this.request(getAuthEndpointPath(this.config, 'impersonationEnd'), {
       method: 'POST',
       body: {},
-      ...options,
+      signal,
     });
+  }
+
+  /** Silently refresh the access token via the HttpOnly session cookie. */
+  refresh(
+    options: Pick<IApiOptions, 'signal' | 'timeoutMs'> = {}
+  ): Promise<IRefreshResponse> {
+    return this.request<IRefreshResponse>(
+      getAuthEndpointPath(this.config, 'refresh'),
+      {
+        method: 'POST',
+        body: {},
+        ...options,
+      }
+    );
   }
 
   /** Clear the server-side session and expire the HttpOnly session cookie. */
   async logout(refreshToken?: string): Promise<void> {
-    await this.request<{ ok: boolean }>(getAuthEndpointPath(this.config, 'logout'), {
-      method: 'POST',
-      body: { refreshToken },
-    });
+    await this.request<{ ok: boolean }>(
+      getAuthEndpointPath(this.config, 'logout'),
+      {
+        method: 'POST',
+        body: { refreshToken },
+      }
+    );
   }
 
   /** Exchange a short-lived `at=` auth token for a full session (cross-app handoff). */
   exchangeAuthToken(authToken: string): Promise<ILoginResponse> {
-    return this.request<ILoginResponse>(getAuthEndpointPath(this.config, 'exchange'), {
-      method: 'POST',
-      body: {},
-      headers: { Authorization: authToken },
-    });
+    return this.request<ILoginResponse>(
+      getAuthEndpointPath(this.config, 'exchange'),
+      {
+        method: 'POST',
+        body: {},
+        headers: { Authorization: authToken },
+      }
+    );
   }
 
   /** Verify the MFA TOTP code during a login challenge. */
-  verifyMfaChallenge(mfaSessionId: string, totpCode: string): Promise<IMfaChallengeResponse> {
+  verifyMfaChallenge(
+    mfaSessionId: string,
+    totpCode: string
+  ): Promise<IMfaChallengeResponse> {
     return this.request<IMfaChallengeResponse>('/auth/mfa/verify', {
       method: 'POST',
       body: { mfaSessionId, totpCode },
@@ -181,7 +228,10 @@ export class IAuthService {
   }
 
   /** Verify the TOTP code during first-time MFA enrollment (forced at login). */
-  verifyMfaEnroll(mfaSessionId: string, totpCode: string): Promise<IMfaChallengeResponse> {
+  verifyMfaEnroll(
+    mfaSessionId: string,
+    totpCode: string
+  ): Promise<IMfaChallengeResponse> {
     return this.request<IMfaChallengeResponse>('/auth/mfa/enroll/verify', {
       method: 'POST',
       body: { mfaSessionId, totpCode },
@@ -189,11 +239,16 @@ export class IAuthService {
   }
 
   /** Self-service MFA — check enrollment status (`GET /profile/mfa`). */
-  selfServiceGetStatus(): Promise<{ enrolled: boolean; createdAt?: string; lastUsedAt?: string }> {
-    return this.request<{ enrolled: boolean; createdAt?: string; lastUsedAt?: string }>(
-      '/profile/mfa',
-      { method: 'GET' },
-    );
+  selfServiceGetStatus(): Promise<{
+    enrolled: boolean;
+    createdAt?: string;
+    lastUsedAt?: string;
+  }> {
+    return this.request<{
+      enrolled: boolean;
+      createdAt?: string;
+      lastUsedAt?: string;
+    }>('/profile/mfa', { method: 'GET' });
   }
 
   /** Self-service MFA — initiate enrollment to get the QR & session id (`POST /profile/mfa/enroll`). */
@@ -202,14 +257,18 @@ export class IAuthService {
     secret: string;
     enrollmentSessionId: string;
   }> {
-    return this.request<{ qrCodeUri: string; secret: string; enrollmentSessionId: string }>(
-      '/profile/mfa/enroll',
-      { method: 'POST', body: {} },
-    );
+    return this.request<{
+      qrCodeUri: string;
+      secret: string;
+      enrollmentSessionId: string;
+    }>('/profile/mfa/enroll', { method: 'POST', body: {} });
   }
 
   /** Self-service MFA — verify OTP and complete enrollment (`POST /profile/mfa/enroll/verify`). */
-  async selfServiceEnrollVerify(enrollmentSessionId: string, totpCode: string): Promise<void> {
+  async selfServiceEnrollVerify(
+    enrollmentSessionId: string,
+    totpCode: string
+  ): Promise<void> {
     await this.request<{ ok: boolean }>('/profile/mfa/enroll/verify', {
       method: 'POST',
       body: { enrollmentSessionId, totpCode },
@@ -233,20 +292,30 @@ export class IAuthService {
   changePassword(
     changePasswordToken: string,
     newPassword: string,
-    confirmPassword: string,
-  ): Promise<{ success: boolean; accessToken?: string; refreshToken?: string; expiresIn?: number }> {
-    return this.request<{ success: boolean; accessToken?: string; refreshToken?: string; expiresIn?: number }>(
-      '/auth/change-password',
-      {
-        method: 'POST',
-        body: { newPassword, confirmPassword },
-        headers: { Authorization: `Bearer ${changePasswordToken}` },
-      },
-    );
+    confirmPassword: string
+  ): Promise<{
+    success: boolean;
+    accessToken?: string;
+    refreshToken?: string;
+    expiresIn?: number;
+  }> {
+    return this.request<{
+      success: boolean;
+      accessToken?: string;
+      refreshToken?: string;
+      expiresIn?: number;
+    }>('/auth/change-password', {
+      method: 'POST',
+      body: { newPassword, confirmPassword },
+      headers: { Authorization: `Bearer ${changePasswordToken}` },
+    });
   }
 
   /** Request a password-reset link via email or WhatsApp (`POST /auth/forgot-password`). */
-  forgotPassword(identifier: string, mode: 'email' | 'whatsapp'): Promise<IForgotPasswordResponse> {
+  forgotPassword(
+    identifier: string,
+    mode: 'email' | 'whatsapp'
+  ): Promise<IForgotPasswordResponse> {
     return this.request<IForgotPasswordResponse>('/auth/forgot-password', {
       method: 'POST',
       body: { identifier, method: mode },
@@ -255,14 +324,21 @@ export class IAuthService {
 
   /** Validate a reset token before showing the reset form (`GET /auth/reset-password/validate`). */
   validateResetToken(token: string): Promise<IValidateResetTokenResponse> {
-    return this.request<IValidateResetTokenResponse>('/auth/reset-password/validate', {
-      method: 'GET',
-      params: { token },
-    });
+    return this.request<IValidateResetTokenResponse>(
+      '/auth/reset-password/validate',
+      {
+        method: 'GET',
+        params: { token },
+      }
+    );
   }
 
   /** Submit a new password using the reset token (`POST /auth/reset-password`). */
-  resetPassword(token: string, newPassword: string, confirmPassword: string): Promise<IResetPasswordResponse> {
+  resetPassword(
+    token: string,
+    newPassword: string,
+    confirmPassword: string
+  ): Promise<IResetPasswordResponse> {
     return this.request<IResetPasswordResponse>('/auth/reset-password', {
       method: 'POST',
       body: { token, newPassword, confirmPassword },
@@ -278,8 +354,13 @@ export class IAuthService {
   } {
     try {
       const raw = sessionStorage.getItem(`${LOCK_STORAGE_KEY}_${username}`);
-      const data = raw ? JSON.parse(raw) : { attempts: 0, lockedUntil: null, lastAttemptAt: null };
-      if (data.lastAttemptAt && Date.now() - data.lastAttemptAt >= IDLE_RESET_MS) {
+      const data = raw
+        ? JSON.parse(raw)
+        : { attempts: 0, lockedUntil: null, lastAttemptAt: null };
+      if (
+        data.lastAttemptAt &&
+        Date.now() - data.lastAttemptAt >= IDLE_RESET_MS
+      ) {
         return { attempts: 0, lockedUntil: null, lastAttemptAt: null };
       }
       return data;
@@ -296,7 +377,10 @@ export class IAuthService {
       data.lockedUntil = Date.now() + LOCKOUT_DURATION_MS;
       data.attempts = 0;
     }
-    sessionStorage.setItem(`${LOCK_STORAGE_KEY}_${username}`, JSON.stringify(data));
+    sessionStorage.setItem(
+      `${LOCK_STORAGE_KEY}_${username}`,
+      JSON.stringify(data)
+    );
   }
 
   private resetLockout(username: string): void {
