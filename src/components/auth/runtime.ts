@@ -1,6 +1,7 @@
 import { normalizeApiError } from '../api/api-error';
 import { createApiClient } from '../api/api.client';
 import { ICsrfService } from '../csrf/csrf';
+import { IImpersonationStateService } from '../impersonation/impersonation-state';
 import {
   extractProblemDetailsErrorCode,
   ISessionExpiredService,
@@ -20,6 +21,7 @@ import type { IAuthContext } from './insight-auth-context';
 
 /** Application-scoped services and lifecycle exposed by the React auth runtime. */
 export type IRuntime = IAuthContext & {
+  impersonation: IImpersonationStateService;
   /** Current runtime lifecycle state. */
   readonly status: 'idle' | 'initializing' | 'ready' | 'disposed';
   /** Whether initial session restoration has completed. */
@@ -89,6 +91,7 @@ export function createIRuntime(overrides: IAuthConfigOverrides): IRuntime {
       }
     },
   });
+  const impersonation = new IImpersonationStateService(config, session, api);
   const currentUserService = new ICurrentUserService(config, api);
   const userMenuService = new IUserMenuService(config, api);
   const userMenuStore = new IUserMenuStore(
@@ -112,6 +115,7 @@ export function createIRuntime(overrides: IAuthConfigOverrides): IRuntime {
     sessionExpired,
     api,
     userMenuStore,
+    impersonation,
     get status() {
       return status;
     },
@@ -124,6 +128,7 @@ export function createIRuntime(overrides: IAuthConfigOverrides): IRuntime {
       status = 'disposed';
       controller.abort();
       unsubscribe();
+      impersonation.dispose();
       session.dispose();
       csrf.dispose();
       userMenuStore.dispose();

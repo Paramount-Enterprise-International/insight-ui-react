@@ -33,6 +33,7 @@ export type IHSidebarProps = {
   user?: IUser | null;
   menus: IMenu[];
   visible?: boolean;
+  impersonating?: boolean;
   footerText?: string;
   /** Enable collapsible module headers (chevron + click-to-collapse). */
   collapsible?: boolean;
@@ -51,6 +52,7 @@ export function IHSidebar(props: IHSidebarProps) {
     user,
     menus,
     visible = true,
+    impersonating = false,
     footerText = 'Insight Local',
     collapsible = false,
     favoriteMode = false,
@@ -338,7 +340,10 @@ export function IHSidebar(props: IHSidebarProps) {
 
               <span className="user-info">
                 <small className="text-subtle">{user.employeeCode}</small>
-                <h6>{user.fullName}</h6>
+                <h6>
+                  {impersonating ? 'Acting As: ' : ''}
+                  {user.fullName}
+                </h6>
               </span>
 
               <i

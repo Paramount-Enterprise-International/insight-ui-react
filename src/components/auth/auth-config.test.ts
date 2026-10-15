@@ -27,7 +27,10 @@ describe('insight auth config', () => {
 
   it('deep-merges api/tokenLifespan/endpoints overrides over defaults', () => {
     const config = resolveIAuthConfig({
-      api: { identity: 'https://app.example.com/api', product: 'https://product.example.com/api' },
+      api: {
+        identity: 'https://app.example.com/api',
+        product: 'https://product.example.com/api',
+      },
       signinUrl: 'https://app.example.com/api/auth/login',
       endpoints: { refresh: '/v1/session/refresh' },
     });
@@ -45,5 +48,8 @@ describe('insight auth config', () => {
     });
     expect(getAuthEndpointPath(config, 'csrf')).toBe('/auth/csrf');
     expect(getAuthEndpointPath(config, 'refresh')).toBe('/auth/refresh');
+    expect(getAuthEndpointPath(config, 'impersonationEnd')).toBe(
+      '/auth/impersonation/end'
+    );
   });
 });

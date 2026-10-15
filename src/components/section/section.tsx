@@ -142,6 +142,8 @@ export type ISectionTabProps = {
   title?: string;
   opened?: boolean;
   badge?: ISectionTabBadge;
+  className?: string;
+  contentClassName?: string;
 
   header?: React.ReactNode;
   children?: React.ReactNode;
@@ -158,6 +160,7 @@ type NormalizedTab = {
   opened: boolean;
   badgeEnabled: boolean;
   badgeValue: number | null;
+  contentClassName: string;
   headerNode: React.ReactNode;
   contentNode: React.ReactNode;
 };
@@ -221,6 +224,7 @@ function normalizeTab(
     opened,
     badgeEnabled: parsed.enabled,
     badgeValue: parsed.value,
+    contentClassName: props.contentClassName ?? props.className ?? '',
     headerNode,
     contentNode: props.children ?? null,
   };
@@ -485,6 +489,7 @@ export function ISectionTabs(props: ISectionTabsProps) {
       <div
         className={[
           'i-section-tabs-content',
+          activeTab?.contentClassName,
           isFixedHeight ? 'scroll' : null,
           isFixedHeight ? 'scroll-y' : null,
         ]
