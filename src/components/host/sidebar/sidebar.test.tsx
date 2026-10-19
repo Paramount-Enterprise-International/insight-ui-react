@@ -20,7 +20,7 @@ function sidebar(props: Partial<IHSidebarProps> = {}) {
   return (
     <StrictMode>
       <MemoryRouter>
-        <IHSidebar menus={menus} {...props} />
+        <IHSidebar menus={menus} menuStateStorageKey={null} {...props} />
       </MemoryRouter>
     </StrictMode>
   );

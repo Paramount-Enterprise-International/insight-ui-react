@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useOptionalIConfirm } from '../../dialog/dialog';
 import type { IMenu, IMenuFavoriteToggleEvent } from '../host-api.types';
 import { SIDEBAR_FAVORITES_GROUP_ID } from '../host.constants';
+import { getSidebarMenuKey, type MenuExpansionChange } from '../sidebar/sidebar-menu-state';
 import {
   getMenuChildren,
   getMenuKey,
@@ -34,6 +35,7 @@ type IHMenuProps = {
   filter: string;
   selectedMenuId: string | number | null;
   onToggleGroup: (menuId: string | number) => void;
+  onExpansionChange?: (event: MenuExpansionChange) => void;
   collapsible?: boolean;
   favoriteMode?: boolean;
   /** Render leaf rows draggable (used by the Favorites section for reorder). */
@@ -53,6 +55,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     filter,
     selectedMenuId,
     onToggleGroup,
+    onExpansionChange,
     collapsible,
     favoriteMode,
     dragEnabled,
@@ -121,9 +124,14 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
   const clickGroup = useCallback(() => {
     if (!menu) return;
+    if (menu.visibility === 'no-child') return;
+    if (onExpansionChange) {
+      onExpansionChange({ menu, expanded: menu.visibility === 'collapsed' });
+      return;
+    }
     if (menuKey === null) return;
     if (menu.visibility !== 'no-child') onToggleGroup(menuKey);
-  }, [menu, menuKey, onToggleGroup]);
+  }, [menu, menuKey, onToggleGroup, onExpansionChange]);
 
   const renderIndent = () => {
     // First-level children of a group render flush-left (0); deeper levels
@@ -183,6 +191,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   if (!menu) return null;
 
   const menuDragProps = {
+    'data-sidebar-menu-key': getSidebarMenuKey(menu),
     'data-menu-id':
       dragEnabled && menuKey != null ? String(menuKey) : undefined,
   };
@@ -336,11 +345,12 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
             }>
             {menuChildren.map((m) => (
               <IHMenu
-                key={String(getMenuKey(m))}
+                key={getSidebarMenuKey(m) ?? String(getMenuKey(m))}
                 menu={m}
                 filter={filter}
                 selectedMenuId={selectedMenuId}
                 onToggleGroup={onToggleGroup}
+                onExpansionChange={onExpansionChange}
                 collapsible={collapsible}
                 favoriteMode={favoriteMode}
                 dragEnabled={dragEnabled}

@@ -523,3 +523,44 @@ until enabled. Disabling an already initialized sidebar retains its last width.
 Changing bounds clamps the current width without emitting or saving. Bounds must
 be positive finite numbers; invalid values fall back to 220/480, and a maximum
 below the minimum is raised to the minimum.
+
+## Sidebar menu state
+
+`IHSidebar` persists explicit expand/collapse choices for groups, legacy modules
+and Favorites in localStorage per browser origin. The `menuStateStorageKey` prop
+defaults to `'insight.sidebar.menu-state'`; use a custom key to isolate consumers
+or `null` to keep choices in memory only. This does not enable `collapsible`.
+
+```tsx
+<IHSidebar
+  user={user}
+  menus={menus}
+  collapsible
+  menuStateStorageKey="my-app.sidebar.menu-state"
+/>
+```
+
+Choices are keyed by modern `id` or legacy `menuId`; Favorites has its own
+namespace. ID-less groups work in memory but do not persist across mounts.
+Versioned storage ignores invalid entries and missing IDs. Blocked/full storage
+does not prevent menu interaction. Changing the storage key loads its preferences;
+temporary empty emissions and replacement menu arrays do not erase choices.
+Consumer menu objects are not mutated.
+
+Once initial routing has completed and menus are available, the sidebar opens
+the ancestors of the current internal menu and positions that row 16px below the
+top of the sidebar scroll area, including when it is already visible. The offset
+is limited by the container's minimum and maximum scroll positions.
+Exact routes and the longest segment-aligned prefix support detail URLs; query,
+fragment and router base path do not change the match. The main tree takes
+priority over a duplicate favorite, with Favorites as a fallback. Unmatched
+routes do not scroll. Scrolling affects only the sidebar container, without
+animation, keyboard focus changes or active-menu highlight styling.
+If Favorites arrives first, a later main-tree match takes priority while initial
+restoration is still undisturbed by user toggles or page navigation.
+
+Restoration runs once per mount. Automatic ancestor expansion does not overwrite
+saved choices, and users may collapse those groups again until the next refresh.
+Subsequent page navigation cancels any pending restoration. Hidden sidebars and
+search filters that hide the target defer scrolling until it is visible; search
+text and URL filters remain intact. Temporary search expansion is not persisted.
