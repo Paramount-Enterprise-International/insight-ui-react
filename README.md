@@ -465,6 +465,11 @@ Notification overlays reuse `IDialogContainer` through a body portal, with focus
 and scroll management matching Angular. Higher Insight dialogs retain focus and
 Escape priority over an open notification drawer.
 
+Toggling slides the drawer from the right over 240ms and fades its backdrop.
+Closing retains the modal and scroll lock until the exit finishes; reopening
+reverses the transition. Reduced-motion preferences disable animation. Removing
+state or unmounting the component cleans up immediately.
+
 ## Resizable sidebar
 
 `IHSidebar` enables pointer and keyboard resizing by default. Load the matching
@@ -475,13 +480,13 @@ sidebar instance and do not change the root CSS token.
 The initial width is applied without animation, including after a tab refresh;
 the visibility toggle retains its transition.
 
-| Prop | Default | Contract |
-| --- | --- | --- |
-| `resizable` | `true` | Enable the right-edge resize handle. |
-| `minWidth` | `220` | Minimum width in pixels. |
-| `maxWidth` | `480` | Maximum width in pixels. |
-| `widthStorageKey` | `'insight.sidebar.width'` | localStorage key; `null` disables persistence. |
-| `onWidthChange` | Optional callback | Receive the final width in pixels after a changed pointer or keyboard interaction. |
+| Prop              | Default                   | Contract                                                                           |
+| ----------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| `resizable`       | `true`                    | Enable the right-edge resize handle.                                               |
+| `minWidth`        | `220`                     | Minimum width in pixels.                                                           |
+| `maxWidth`        | `480`                     | Maximum width in pixels.                                                           |
+| `widthStorageKey` | `'insight.sidebar.width'` | localStorage key; `null` disables persistence.                                     |
+| `onWidthChange`   | Optional callback         | Receive the final width in pixels after a changed pointer or keyboard interaction. |
 
 ```tsx
 <IHSidebar

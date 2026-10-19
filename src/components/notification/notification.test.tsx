@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, useState } from 'react';
@@ -278,7 +279,7 @@ describe('Notification modal parity', () => {
     fireEvent.click(
       document.querySelector('.i-notification-overlay .i-dialog-backdrop')!
     );
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(
       screen.getByRole('button', { name: 'Notifications, 4 unread' })
     );
@@ -303,6 +304,42 @@ describe('Notification modal parity', () => {
     expect(action).toHaveBeenCalledWith({ type: 'open-all' });
     fireEvent.click(document.querySelector('i-notification-item button')!);
     expect(action).toHaveBeenCalledWith({ type: 'open-item', item });
+  });
+  it('retains the modal and scroll lock through exit, cancels exit on reopen and restores focus after transition end', () => {
+    const { rerender } = render(<INotification state={{ unreadCount: 1 }} />);
+    const bell = screen.getByRole('button', {
+      name: 'Notifications, 1 unread',
+    });
+    bell.focus();
+    rerender(<INotification state={{ unreadCount: 1, open: true }} />);
+    const modal = screen.getByRole('dialog');
+    const panel = modal.querySelector<HTMLElement>('.i-dialog-panel')!;
+    panel.style.transitionDuration = '240ms';
+    const end = () => {
+      const event = new Event('transitionend', { bubbles: true });
+      Object.defineProperty(event, 'propertyName', { value: 'transform' });
+      fireEvent(panel, event);
+    };
+    rerender(<INotification state={{ unreadCount: 1, open: false }} />);
+    expect(modal.classList.contains('i-notification-closing')).toBe(true);
+    expect(document.body.style.overflow).toBe('hidden');
+    rerender(<INotification state={{ unreadCount: 1, open: true }} />);
+    end();
+    expect(screen.getByRole('dialog')).toBe(modal);
+    expect(modal.classList.contains('i-notification-closing')).toBe(false);
+    rerender(<INotification state={{ unreadCount: 1, open: false }} />);
+    end();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.body.style.overflow).not.toBe('hidden');
+    expect(document.activeElement).toBe(bell);
+    rerender(<INotification state={{ unreadCount: 1, open: true }} />);
+    document.querySelector<HTMLElement>(
+      '.i-dialog-panel'
+    )!.style.transitionDuration = '240ms';
+    rerender(<INotification state={{ unreadCount: 1, open: false }} />);
+    rerender(<INotification state={null} />);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.body.style.overflow).not.toBe('hidden');
   });
   it('yields keyboard and focus handling to a higher Insight dialog', () => {
     const action = vi.fn();

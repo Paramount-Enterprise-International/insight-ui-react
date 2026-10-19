@@ -1,3 +1,4 @@
+import { useLayoutEffect, useState } from 'react';
 import { INotificationBell } from './notification-bell';
 import { INotificationDrawer } from './notification-drawer';
 import { NotificationOverlay } from './notification-overlay';
@@ -14,6 +15,11 @@ export type INotificationProps = {
 
 /** Controlled notification UI; consumers own data, navigation and timers. */
 export function INotification({ state, onAction }: INotificationProps) {
+  const [retained, setRetained] = useState(state?.open ?? false);
+  useLayoutEffect(() => {
+    if (state?.open) setRetained(true);
+    else if (!state) setRetained(false);
+  }, [state]);
   if (!state) return null;
   return (
     <i-notification>
@@ -22,8 +28,11 @@ export function INotification({ state, onAction }: INotificationProps) {
         expanded={state.open}
         onToggleRequested={() => onAction?.({ type: 'toggle' })}
       />
-      {state.open && typeof document !== 'undefined' && (
-        <NotificationOverlay onClose={() => onAction?.({ type: 'close' })}>
+      {(state.open || retained) && typeof document !== 'undefined' && (
+        <NotificationOverlay
+          open={state.open ?? false}
+          onExited={() => setRetained(false)}
+          onClose={() => onAction?.({ type: 'close' })}>
           <INotificationDrawer
             {...state}
             onCloseRequested={() => onAction?.({ type: 'close' })}
