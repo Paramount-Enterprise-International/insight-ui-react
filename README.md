@@ -421,3 +421,46 @@ Breadcrumb URLs support text-only groups, resolved parameters and the router
 basename without double-prefixing. Link hrefs preserve query strings and
 fragments, and modified clicks use native browser behavior. The last level stays
 non-clickable.
+
+## Controlled notifications
+
+```tsx
+<IHContent notification={notificationState} onNotificationAction={handleNotificationAction} />
+// IHContentLayout also forwards these props.
+// Outside IHContent, for example a profile header:
+<INotification state={notificationState} onAction={handleNotificationAction} />
+```
+
+`notification` is optional. Omit it or pass `null` to hide the bell and clean up
+its overlay. `{ unreadCount: 0 }` shows the bell without a badge. The header places
+it after the title at the far right. Supply it only on the owning shell; remote
+pages should not render a second notification instance.
+
+`INotificationState` requires only `unreadCount`. Optional fields are `open`,
+`items`, `loading`, `hasLoaded`, `loadingMore`, `readingId`, `hasMore`, `error`,
+`loadMoreError`, `actionError`, and `snackbar`. Lists default to empty, flags to
+false, and errors/snackbar to null. Set `hasLoaded` after the first successful
+list response, including an empty response, to distinguish refresh from initial
+loading. Replace state references when updating data.
+
+`INotificationAction` is a discriminated union using `type`: `toggle`, `close`,
+`open-all`, `open-item` (with `item`), `load-more`, `retry`, `retry-read`, and
+`dismiss-snackbar`. The consumer updates controlled `open` state in response to
+toggle/close. Opening a snackbar item emits `open-item` as well.
+
+`INotificationEntry` retains notification/module ids, module name, title,
+description, nullable link, `isDismissable`, group count, latest date, and optional
+visual metadata. `INotificationSnackbarMessage` contains key/title, optional
+module name and item. The separate bell, drawer, item, snackbar components and
+presentation helpers are also exported.
+
+Load the matching `insight-ui-css` stylesheet, which owns all notification layout
+and visuals. The drawer provides modal focus, backdrop, Escape, scroll locking,
+and focus restoration. Refresh keeps list entries mounted and interactive;
+load-more requests occur at 80% scroll and are suppressed while busy or failed.
+The library emits events only: API, session, SSE, routing, read operations, resolved
+error messages, snackbar duration and deduplication remain consumer-owned.
+
+Notification overlays reuse `IDialogContainer` through a body portal, with focus
+and scroll management matching Angular. Higher Insight dialogs retain focus and
+Escape priority over an open notification drawer.
