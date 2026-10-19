@@ -15,7 +15,7 @@ export function INotificationBell({
     <i-notification-bell>
       <button
         type="button"
-        className="notification-icon-action flex align-center justify-center p-2xs border-none bg-transparent text-gray-700 radius-sm"
+        className="notification-icon-action flex align-center justify-center p-2xs border-none bg-transparent text-gray-600 radius-sm"
         aria-label={`Notifications, ${unreadCount} unread`}
         aria-expanded={expanded}
         aria-haspopup="dialog"
