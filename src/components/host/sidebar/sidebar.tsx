@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -27,12 +28,24 @@ import {
 import { IHMenu } from '../menu/menu';
 import { appendMenuFilterToUrl } from '../menu/menu.utils';
 import { FavoritesSection } from './favorites-section';
+import {
+  SidebarResizeController,
+  type SidebarResizeState,
+} from './sidebar-resize';
 import { filterMenuTree, flattenNavigableMenus } from './sidebar.utils';
 
 export type IHSidebarProps = {
   user?: IUser | null;
   menus: IMenu[];
   visible?: boolean;
+  /** Enable pointer and keyboard resizing with a persistent width preference. */
+  resizable?: boolean;
+  minWidth?: number;
+  maxWidth?: number;
+  /** Set to null to keep the width in memory only. */
+  widthStorageKey?: string | null;
+  /** Called after a completed pointer or keyboard width change, in pixels. */
+  onWidthChange?: (width: number) => void;
   impersonating?: boolean;
   footerText?: string;
   /** Enable collapsible module headers (chevron + click-to-collapse). */
@@ -52,6 +65,11 @@ export function IHSidebar(props: IHSidebarProps) {
     user,
     menus,
     visible = true,
+    resizable = true,
+    minWidth = 220,
+    maxWidth = 480,
+    widthStorageKey = 'insight.sidebar.width',
+    onWidthChange,
     impersonating = false,
     footerText = 'Insight Local',
     collapsible = false,
@@ -68,6 +86,40 @@ export function IHSidebar(props: IHSidebarProps) {
   const auth = useContext(IAuthContext);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const resizeHandleRef = useRef<HTMLDivElement | null>(null);
+  const resizeController = useRef<SidebarResizeController | null>(null);
+  const onWidthChangeRef = useRef(onWidthChange);
+  const initialResizeOptions = useRef({
+    resizable, visible, minWidth, maxWidth, widthStorageKey,
+  });
+  const [resizeState, setResizeState] = useState<SidebarResizeState>({
+    width: 260,
+    minWidth: 220,
+    maxWidth: 480,
+  });
+
+  useLayoutEffect(() => {
+    const controller = new SidebarResizeController(
+      sidebarRef.current!,
+      resizeHandleRef.current!,
+      initialResizeOptions.current,
+      setResizeState,
+      (width) => onWidthChangeRef.current?.(width)
+    );
+    resizeController.current = controller;
+    return () => {
+      controller.destroy();
+      resizeController.current = null;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    onWidthChangeRef.current = onWidthChange;
+    resizeController.current?.configure({
+      resizable, visible, minWidth, maxWidth, widthStorageKey,
+    });
+  }, [resizable, visible, minWidth, maxWidth, widthStorageKey, onWidthChange]);
 
   const profileUrl =
     (personalProfileUrl ?? '').trim() || DEFAULT_PERSONAL_PROFILE_URL;
@@ -320,7 +372,7 @@ export function IHSidebar(props: IHSidebarProps) {
   }, []);
 
   return (
-    <ih-sidebar class={!visible ? 'hidden' : undefined}>
+    <ih-sidebar ref={sidebarRef} class={!visible ? 'hidden' : undefined}>
       <div className="ih-sidebar-header" ref={headerRef}>
         {user ? (
           <>
@@ -418,6 +470,18 @@ export function IHSidebar(props: IHSidebarProps) {
       <div className="ih-sidebar-footer">
         <small>{footerText}</small>
       </div>
+      <div
+        ref={resizeHandleRef}
+        className="ih-sidebar-resize-handle"
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={resizeState.minWidth}
+        aria-valuemax={resizeState.maxWidth}
+        aria-valuenow={resizeState.width}
+        tabIndex={resizable && visible ? 0 : -1}
+        hidden={!resizable || !visible}
+      />
     </ih-sidebar>
   );
 }
