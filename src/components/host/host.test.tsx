@@ -1,9 +1,41 @@
 import { fireEvent, render } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { IHSidebar, IHContent } from './host';
+import { vi } from 'vitest';
+import { IHContent, IHSidebar } from './host';
 import type { IMenu, IMenuFavoriteToggleEvent } from './host-api.types';
 
 describe('IHContent', () => {
+  it('hides absent notification and forwards header actions with a single right-hand bell', () => {
+    const action = vi.fn();
+    const view = (notification?: { unreadCount: number } | null) => (
+      <MemoryRouter>
+        <IHContent
+          title="Dashboard"
+          notification={notification}
+          onNotificationAction={action}
+        />
+      </MemoryRouter>
+    );
+    const { container, rerender } = render(view());
+    expect(container.querySelector('i-notification')).toBeNull();
+    rerender(view({ unreadCount: 0 }));
+    const actions = container.querySelector('.ih-content-header-actions')!;
+    expect(actions.parentElement).toBe(
+      container.querySelector('.ih-content-header')
+    );
+    expect(actions.previousElementSibling?.tagName).toBe('H1');
+    expect(actions.querySelectorAll('i-notification-bell').length).toBe(1);
+    expect(actions.querySelector('.notification-badge')).toBeNull();
+    fireEvent.click(actions.querySelector('button')!);
+    expect(action).toHaveBeenCalledWith({ type: 'toggle' });
+    rerender(view({ unreadCount: 100 }));
+    expect(actions.querySelector('.notification-badge')?.textContent).toBe(
+      '99+'
+    );
+    rerender(view(null));
+    expect(container.querySelector('.ih-content-header-actions')).toBeNull();
+  });
+
   it('renders host and title', () => {
     const { container } = render(
       <MemoryRouter initialEntries={['/']}>
@@ -28,11 +60,32 @@ describe('IHSidebar empty groups', () => {
       it(`renders empty groups as headers with route=${route} and collapsible=${collapsible}`, () => {
         const toggles: IMenuFavoriteToggleEvent[] = [];
         const menus: IMenu[] = [
-          { id: 'empty-root', name: 'Docs Empty', type: 'group', route, children: [] },
           {
-            id: 'docs', name: 'Docs', type: 'group', children: [
-              { id: 'empty-nested', name: 'Docs Section', type: 'group', route, children: [] },
-              { id: 'page', name: 'Docs Page', type: 'item', route: '/page', children: [] },
+            id: 'empty-root',
+            name: 'Docs Empty',
+            type: 'group',
+            route,
+            children: [],
+          },
+          {
+            id: 'docs',
+            name: 'Docs',
+            type: 'group',
+            children: [
+              {
+                id: 'empty-nested',
+                name: 'Docs Section',
+                type: 'group',
+                route,
+                children: [],
+              },
+              {
+                id: 'page',
+                name: 'Docs Page',
+                type: 'item',
+                route: '/page',
+                children: [],
+              },
             ],
           },
         ];
@@ -53,15 +106,22 @@ describe('IHSidebar empty groups', () => {
         expect(headers[2].textContent).toContain('Docs Section');
         expect(container.querySelectorAll('a.is-spa').length).toBe(1);
         expect(container.querySelectorAll('.ih-menu-favorite').length).toBe(1);
-        expect(headers[0].querySelector('.ih-menu-chevron') !== null).toBe(collapsible);
+        expect(headers[0].querySelector('.ih-menu-chevron') !== null).toBe(
+          collapsible
+        );
         fireEvent.click(container.querySelector('.ih-menu-favorite')!);
         expect(toggles).toEqual([{ id: 'page', isFavorite: true }]);
 
-        const search = container.querySelector<HTMLInputElement>('.ih-sidebar-search input')!;
+        const search = container.querySelector<HTMLInputElement>(
+          '.ih-sidebar-search input'
+        )!;
         fireEvent.change(search, { target: { value: 'Docs' } });
-        container.querySelector<HTMLElement>('a.is-spa')!.scrollIntoView = () => {};
+        container.querySelector<HTMLElement>('a.is-spa')!.scrollIntoView =
+          () => {};
         fireEvent.keyDown(search, { key: 'ArrowDown' });
-        expect(container.querySelector('a.is-selected')?.textContent).toContain('Docs Page');
+        expect(container.querySelector('a.is-selected')?.textContent).toContain(
+          'Docs Page'
+        );
       });
     }
   }
@@ -73,7 +133,11 @@ describe('IHSidebar account menu', () => {
       <MemoryRouter>
         <IHSidebar
           menus={[]}
-          user={{ employeeCode: 'PL1378', fullName: 'Dylan', userImagePath: '' }}
+          user={{
+            employeeCode: 'PL1378',
+            fullName: 'Dylan',
+            userImagePath: '',
+          }}
         />
       </MemoryRouter>
     );
@@ -85,7 +149,9 @@ describe('IHSidebar account menu', () => {
       const chip = container.querySelector<HTMLButtonElement>('.ih-user-chip')!;
       fireEvent.click(chip);
       chip.focus();
-      const items = container.querySelectorAll<HTMLElement>('.ih-user-dropdown-item');
+      const items = container.querySelectorAll<HTMLElement>(
+        '.ih-user-dropdown-item'
+      );
       const first = key === 'ArrowDown' ? 0 : 1;
 
       for (const index of [first, 1 - first, first]) {
@@ -107,7 +173,9 @@ describe('IHSidebar account menu', () => {
     chip.focus();
     expect(fireEvent.keyDown(chip, { key: 'Tab' })).toBe(true);
 
-    const search = container.querySelector<HTMLInputElement>('.ih-sidebar-search input')!;
+    const search = container.querySelector<HTMLInputElement>(
+      '.ih-sidebar-search input'
+    )!;
     search.focus();
     expect(fireEvent.keyDown(search, { key: 'ArrowDown' })).toBe(true);
     expect(document.activeElement).toBe(search);
@@ -119,7 +187,9 @@ describe('IHSidebar account menu', () => {
   it('closes the account menu when Personal Profile is activated', () => {
     const { container } = renderSidebar();
     fireEvent.click(container.querySelector('.ih-user-chip')!);
-    const profile = container.querySelector<HTMLAnchorElement>('.ih-user-dropdown a')!;
+    const profile = container.querySelector<HTMLAnchorElement>(
+      '.ih-user-dropdown a'
+    )!;
     expect(profile.target).toBe('_blank');
     profile.addEventListener('click', (event) => event.preventDefault());
     fireEvent.click(profile);
@@ -139,7 +209,12 @@ describe('IHSidebar favorites', () => {
           name: 'sso',
           type: 'group',
           children: [
-            { id: 'leaf-index', name: 'index', type: 'item', route: '/docs/sso/index' },
+            {
+              id: 'leaf-index',
+              name: 'index',
+              type: 'item',
+              route: '/docs/sso/index',
+            },
           ],
         },
       ],
@@ -151,13 +226,22 @@ describe('IHSidebar favorites', () => {
       <MemoryRouter>
         <IHSidebar
           menus={TREE}
-          favorites={[{ id: 'leaf-index', name: 'index', type: 'item', route: '/docs/sso/index' }]}
+          favorites={[
+            {
+              id: 'leaf-index',
+              name: 'index',
+              type: 'item',
+              route: '/docs/sso/index',
+            },
+          ]}
           favoriteMode
         />
       </MemoryRouter>
     );
 
-    const subtitle = container.querySelector('.ih-sidebar-favorites .ih-menu-application');
+    const subtitle = container.querySelector(
+      '.ih-sidebar-favorites .ih-menu-application'
+    );
 
     expect(subtitle?.textContent).toBe('docs > sso');
   });
@@ -171,13 +255,22 @@ describe('IHSidebar favorites', () => {
       isFavorite: true,
     };
     const menus: IMenu[] = [
-      { id: 'group-admin', name: 'Administration', type: 'group', children: [favoritesLeaf] },
+      {
+        id: 'group-admin',
+        name: 'Administration',
+        type: 'group',
+        children: [favoritesLeaf],
+      },
     ];
     const toggles: IMenuFavoriteToggleEvent[] = [];
 
     const { container } = render(
       <MemoryRouter>
-        <IHSidebar menus={menus} favoriteMode onFavoriteToggle={(e) => toggles.push(e)} />
+        <IHSidebar
+          menus={menus}
+          favoriteMode
+          onFavoriteToggle={(e) => toggles.push(e)}
+        />
       </MemoryRouter>
     );
 

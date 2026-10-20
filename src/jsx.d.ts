@@ -13,6 +13,30 @@ declare module 'react' {
 
   namespace JSX {
     interface IntrinsicElements {
+      'i-notification': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+      'i-notification-bell': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+      'i-notification-drawer': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+      'i-notification-item': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+      'i-notification-snackbar': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+      'i-notification-error': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
       'i-loading': import('react').DetailedHTMLProps<
         import('react').HTMLAttributes<HTMLElement>,
         HTMLElement

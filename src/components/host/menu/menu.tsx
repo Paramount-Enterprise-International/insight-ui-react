@@ -10,6 +10,11 @@ import { useOptionalIConfirm } from '../../dialog/dialog';
 import type { IMenu, IMenuFavoriteToggleEvent } from '../host-api.types';
 import { SIDEBAR_FAVORITES_GROUP_ID } from '../host.constants';
 import {
+  getSidebarMenuKey,
+  isSidebarMenuActive,
+  type MenuExpansionChange,
+} from '../sidebar/sidebar-menu-state';
+import {
   getMenuChildren,
   getMenuKey,
   getMenuLabel,
@@ -34,6 +39,7 @@ type IHMenuProps = {
   filter: string;
   selectedMenuId: string | number | null;
   onToggleGroup: (menuId: string | number) => void;
+  onExpansionChange?: (event: MenuExpansionChange) => void;
   collapsible?: boolean;
   favoriteMode?: boolean;
   /** Render leaf rows draggable (used by the Favorites section for reorder). */
@@ -53,6 +59,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     filter,
     selectedMenuId,
     onToggleGroup,
+    onExpansionChange,
     collapsible,
     favoriteMode,
     dragEnabled,
@@ -77,6 +84,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   const isNewTab = isNewTabMenu(menu);
   const isReload = isReloadMenu(menu);
   const isSpa = isSpaMenu(menu);
+  const isActive = isSidebarMenuActive(menu);
   const menuIsFavorite = !!menu?.isFavorite;
   const confirm = useOptionalIConfirm();
 
@@ -109,6 +117,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     if (!matchesId) return false;
     return isLeaf;
   }, [menu, menuKey, selectedMenuId, isLeaf]);
+  const leafStateClass = `${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}`;
 
   useLayoutEffect(() => {
     if (isSelected && menuItemRef.current) {
@@ -121,9 +130,14 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
 
   const clickGroup = useCallback(() => {
     if (!menu) return;
+    if (menu.visibility === 'no-child') return;
+    if (onExpansionChange) {
+      onExpansionChange({ menu, expanded: menu.visibility === 'collapsed' });
+      return;
+    }
     if (menuKey === null) return;
     if (menu.visibility !== 'no-child') onToggleGroup(menuKey);
-  }, [menu, menuKey, onToggleGroup]);
+  }, [menu, menuKey, onToggleGroup, onExpansionChange]);
 
   const renderIndent = () => {
     // First-level children of a group render flush-left (0); deeper levels
@@ -183,6 +197,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   if (!menu) return null;
 
   const menuDragProps = {
+    'data-sidebar-menu-key': getSidebarMenuKey(menu),
     'data-menu-id':
       dragEnabled && menuKey != null ? String(menuKey) : undefined,
   };
@@ -295,7 +310,8 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
           <>
             {isNewTab && menuRoute ? (
               <a
-                className={isSelected ? 'is-new-tab is-selected' : 'is-new-tab'}
+                className={`is-new-tab${leafStateClass}`}
+                aria-current={isActive ? 'page' : undefined}
                 rel="noopener noreferrer"
                 target="_blank"
                 href={href}
@@ -304,7 +320,8 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
               </a>
             ) : isReload && menuRoute ? (
               <a
-                className={isSelected ? 'is-reload is-selected' : 'is-reload'}
+                className={`is-reload${leafStateClass}`}
+                aria-current={isActive ? 'page' : undefined}
                 target="_self"
                 href={href}
                 {...menuDragProps}>
@@ -315,7 +332,8 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
                 ref={(el) => {
                   menuItemRef.current = el as unknown as HTMLElement | null;
                 }}
-                className={isSelected ? 'is-spa is-selected' : 'is-spa'}
+                className={`is-spa${leafStateClass}`}
+                aria-current={isActive ? 'page' : undefined}
                 href={href}
                 onClick={onLeafClick}
                 {...menuDragProps}>
@@ -336,11 +354,12 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
             }>
             {menuChildren.map((m) => (
               <IHMenu
-                key={String(getMenuKey(m))}
+                key={getSidebarMenuKey(m) ?? String(getMenuKey(m))}
                 menu={m}
                 filter={filter}
                 selectedMenuId={selectedMenuId}
                 onToggleGroup={onToggleGroup}
+                onExpansionChange={onExpansionChange}
                 collapsible={collapsible}
                 favoriteMode={favoriteMode}
                 dragEnabled={dragEnabled}

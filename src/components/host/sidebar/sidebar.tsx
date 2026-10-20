@@ -2,11 +2,13 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useHref, useLocation, useNavigate } from 'react-router-dom';
 import { IAuthContext } from '../../auth/insight-auth-context';
 import { IAvatar } from '../../avatar';
 import type {
@@ -27,12 +29,35 @@ import {
 import { IHMenu } from '../menu/menu';
 import { appendMenuFilterToUrl } from '../menu/menu.utils';
 import { FavoritesSection } from './favorites-section';
+import {
+  SidebarResizeController,
+  type SidebarResizeState,
+} from './sidebar-resize';
 import { filterMenuTree, flattenNavigableMenus } from './sidebar.utils';
+import {
+  createFavoritesMenu,
+  getSidebarMenuKey,
+  resolveSidebarActiveMenu,
+  SidebarMenuState,
+  type MenuExpansionChange,
+} from './sidebar-menu-state';
+
+const EMPTY_FAVORITES: IMenu[] = [];
 
 export type IHSidebarProps = {
   user?: IUser | null;
   menus: IMenu[];
   visible?: boolean;
+  /** Enable pointer and keyboard resizing with a persistent width preference. */
+  resizable?: boolean;
+  minWidth?: number;
+  maxWidth?: number;
+  /** Set to null to keep the width in memory only. */
+  widthStorageKey?: string | null;
+  /** Expansion preferences are shared per origin; null disables persistence. */
+  menuStateStorageKey?: string | null;
+  /** Called after a completed pointer or keyboard width change, in pixels. */
+  onWidthChange?: (width: number) => void;
   impersonating?: boolean;
   footerText?: string;
   /** Enable collapsible module headers (chevron + click-to-collapse). */
@@ -52,11 +77,17 @@ export function IHSidebar(props: IHSidebarProps) {
     user,
     menus,
     visible = true,
+    resizable = true,
+    minWidth = 220,
+    maxWidth = 480,
+    widthStorageKey = 'insight.sidebar.width',
+    menuStateStorageKey = 'insight.sidebar.menu-state',
+    onWidthChange,
     impersonating = false,
     footerText = 'Insight Local',
     collapsible = false,
     favoriteMode = false,
-    favorites = [],
+    favorites = EMPTY_FAVORITES,
     personalProfileUrl,
     onFavoriteToggle,
     onFavoriteReorder,
@@ -64,10 +95,45 @@ export function IHSidebar(props: IHSidebarProps) {
 
   const location = useLocation();
   const navigate = useNavigate();
+  const baseHref = useHref('/');
 
   const auth = useContext(IAuthContext);
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement | null>(null);
+  const resizeHandleRef = useRef<HTMLDivElement | null>(null);
+  const resizeController = useRef<SidebarResizeController | null>(null);
+  const onWidthChangeRef = useRef(onWidthChange);
+  const initialResizeOptions = useRef({
+    resizable, visible, minWidth, maxWidth, widthStorageKey,
+  });
+  const [resizeState, setResizeState] = useState<SidebarResizeState>({
+    width: 260,
+    minWidth: 220,
+    maxWidth: 480,
+  });
+
+  useLayoutEffect(() => {
+    const controller = new SidebarResizeController(
+      sidebarRef.current!,
+      resizeHandleRef.current!,
+      initialResizeOptions.current,
+      setResizeState,
+      (width) => onWidthChangeRef.current?.(width)
+    );
+    resizeController.current = controller;
+    return () => {
+      controller.destroy();
+      resizeController.current = null;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    onWidthChangeRef.current = onWidthChange;
+    resizeController.current?.configure({
+      resizable, visible, minWidth, maxWidth, widthStorageKey,
+    });
+  }, [resizable, visible, minWidth, maxWidth, widthStorageKey, onWidthChange]);
 
   const profileUrl =
     (personalProfileUrl ?? '').trim() || DEFAULT_PERSONAL_PROFILE_URL;
@@ -140,19 +206,60 @@ export function IHSidebar(props: IHSidebarProps) {
     null
   );
 
-  // Normalize modern (contract-aligned) menu nodes into the legacy shape IHMenu renders.
-  const [menuTree, setMenuTree] = useState<IMenu[]>(() =>
-    normalizeMenuTree(menus)
+  const [menuState] = useState(() => new SidebarMenuState(menuStateStorageKey));
+  const [menuRevision, refreshMenus] = useReducer((value: number) => value + 1, 0);
+  const sourceMenus = useMemo(() => normalizeMenuTree(menus), [menus]);
+  const sourceFavorites = useMemo(
+    () => createFavoritesMenu(normalizeMenuTree(favorites)), [favorites]
   );
+  const activeMenu = useMemo(
+    () =>
+      resolveSidebarActiveMenu(
+        sourceMenus,
+        favoriteMode ? sourceFavorites : [],
+        location.pathname,
+        baseHref
+      ),
+    [sourceMenus, sourceFavorites, favoriteMode, location.pathname, baseHref]
+  );
+  const menuSnapshot = useMemo(
+    () => ({
+      revision: menuRevision,
+      menus: menuState.project(sourceMenus, 'main', activeMenu),
+      favoriteGroup: menuState.project(sourceFavorites, 'favorites', activeMenu)[0],
+    }),
+    [menuState, sourceMenus, sourceFavorites, menuRevision, activeMenu]
+  );
+  const { menus: menuTree, favoriteGroup } = menuSnapshot;
 
+  useLayoutEffect(() => {
+    if (menuState.configureStorage(menuStateStorageKey)) refreshMenus();
+  }, [menuState, menuStateStorageKey]);
+
+  useLayoutEffect(() => {
+    if (menuState.hasLocation) menuState.observeLocation(location.pathname, baseHref);
+  }, [menuState, location.pathname, baseHref]);
+
+  // Allow initial router redirects to settle before choosing the restoration route.
   useEffect(() => {
-    setMenuTree(normalizeMenuTree(menus));
-  }, [menus]);
+    const frame = requestAnimationFrame(() => {
+      menuState.observeLocation(location.pathname, baseHref);
+      if (menuState.restore(sourceMenus, favoriteMode ? sourceFavorites : [])) refreshMenus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [menuState, sourceMenus, sourceFavorites, favoriteMode, location.pathname, baseHref]);
 
   const filteredMenus = useMemo(
     () => filterMenuTree(menuTree, menuFilter),
     [menuTree, menuFilter]
   );
+
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (sidebarRef.current) menuState.scrollToActive(sidebarRef.current, visible);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [menuState, filteredMenus, favoriteGroup, visible, menuRevision, location.pathname]);
 
   const navigableMenus = useMemo(
     () => flattenNavigableMenus(filteredMenus),
@@ -295,32 +402,13 @@ export function IHSidebar(props: IHSidebarProps) {
     ]
   );
 
-  const onToggleGroup = useCallback((menuId: string | number) => {
-    const update = (list: IMenu[]): IMenu[] =>
-      list.map((m) => {
-        if (getMenuKey(m) === menuId) {
-          if (m.visibility !== 'no-child') {
-            // Treat unset visibility as expanded so a default (flat) group
-            // collapses on the first click (matches Angular).
-            const isExpanded = m.visibility !== 'collapsed';
-            const nextVis = isExpanded ? 'collapsed' : 'expanded';
-
-            return { ...m, visibility: nextVis };
-          }
-
-          return m;
-        }
-
-        if (m.child?.length) return { ...m, child: update(m.child) };
-
-        return m;
-      });
-
-    setMenuTree((prev) => update(prev));
-  }, []);
+  const onExpansionChange = useCallback((event: MenuExpansionChange) => {
+    menuState.setExpanded(event);
+    refreshMenus();
+  }, [menuState]);
 
   return (
-    <ih-sidebar class={!visible ? 'hidden' : undefined}>
+    <ih-sidebar ref={sidebarRef} class={!visible ? 'hidden' : undefined}>
       <div className="ih-sidebar-header" ref={headerRef}>
         {user ? (
           <>
@@ -391,7 +479,9 @@ export function IHSidebar(props: IHSidebarProps) {
       <div className="ih-sidebar-body scroll scroll-y">
         {favoriteMode ? (
           <FavoritesSection
-            favorites={favorites}
+            favorites={favoriteGroup?.children ?? EMPTY_FAVORITES}
+            stateGroup={favoriteGroup}
+            onExpansionChange={onExpansionChange}
             menus={menuTree}
             collapsible={collapsible}
             onFavoriteToggle={onFavoriteToggle}
@@ -402,11 +492,12 @@ export function IHSidebar(props: IHSidebarProps) {
         <ul>
           {filteredMenus.map((m) => (
             <IHMenu
-              key={String(getMenuKey(m))}
+              key={getSidebarMenuKey(m) ?? String(getMenuKey(m))}
               menu={m}
               filter={menuFilter}
               selectedMenuId={selectedMenuId}
-              onToggleGroup={onToggleGroup}
+              onToggleGroup={() => undefined}
+              onExpansionChange={onExpansionChange}
               collapsible={collapsible}
               favoriteMode={favoriteMode}
               onFavoriteToggle={onFavoriteToggle}
@@ -418,6 +509,18 @@ export function IHSidebar(props: IHSidebarProps) {
       <div className="ih-sidebar-footer">
         <small>{footerText}</small>
       </div>
+      <div
+        ref={resizeHandleRef}
+        className="ih-sidebar-resize-handle"
+        role="separator"
+        aria-label="Resize sidebar"
+        aria-orientation="vertical"
+        aria-valuemin={resizeState.minWidth}
+        aria-valuemax={resizeState.maxWidth}
+        aria-valuenow={resizeState.width}
+        tabIndex={resizable && visible ? 0 : -1}
+        hidden={!resizable || !visible}
+      />
     </ih-sidebar>
   );
 }

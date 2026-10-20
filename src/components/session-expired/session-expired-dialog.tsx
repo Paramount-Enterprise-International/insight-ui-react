@@ -66,7 +66,7 @@ export function ISessionExpiredDialog() {
         ]}
         onCustomAction={onConfirm}>
         <div className="flex flex-col align-center text-center gap-lg">
-          <IIcon className="text-warning" icon={iconClass} size="2xl" />
+          <IIcon className="text-warning" icon={iconClass} size="xl" />
           <h4 className="font-semibold">{TITLES[reason ?? 'default']}</h4>
           <p className="m-0 text-md leading-normal text-subtle">{message}</p>
         </div>

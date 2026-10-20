@@ -4,6 +4,11 @@ import {
   useISession,
   useIUserMenuStore,
 } from '../../auth/insight-auth-context';
+import {
+  INotification,
+  type INotificationAction,
+  type INotificationState,
+} from '../../notification';
 import { useHostApiOptional } from '../host-api.context';
 import type { IBreadcrumbItem } from '../host-api.types';
 import { useHostUi } from '../host-ui.context';
@@ -42,6 +47,8 @@ function BreadcrumbLink(props: {
 }
 
 export function IHContent(props: {
+  notification?: INotificationState | null;
+  onNotificationAction?: (action: INotificationAction) => void;
   title?: string | null;
   breadcrumbs?: IBreadcrumbItem[] | null;
   onSidebarToggled?: (visible: boolean) => void;
@@ -123,6 +130,14 @@ export function IHContent(props: {
         </a>
 
         <h1>{title || 'Insight'}</h1>
+        {props.notification && (
+          <div className="ih-content-header-actions">
+            <INotification
+              state={props.notification}
+              onAction={props.onNotificationAction}
+            />
+          </div>
+        )}
       </div>
 
       <div className="ih-content-breadcrumbs">
@@ -186,6 +201,8 @@ export function IHContent(props: {
  * otherwise IHContent falls back to react-router navigate()
  */
 export function IHContentLayout(props: {
+  notification?: INotificationState | null;
+  onNotificationAction?: (action: INotificationAction) => void;
   onLoadingChange?: (loading: boolean) => void;
 }) {
   const ui = useHostUi();
@@ -195,6 +212,8 @@ export function IHContentLayout(props: {
 
   return (
     <IHContent
+      notification={props.notification}
+      onNotificationAction={props.onNotificationAction}
       title={ui.title}
       breadcrumbs={ui.breadcrumbs}
       loading={session.initializing || store.initializing}

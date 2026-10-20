@@ -13,6 +13,7 @@ import type {
 import { SIDEBAR_FAVORITES_GROUP_ID } from '../host.constants';
 import { buildFavoritePathMap, getMenuKey, normalizeMenuTree } from '../menu';
 import { IHMenu } from '../menu/menu';
+import type { MenuExpansionChange } from './sidebar-menu-state';
 
 export function FavoritesSection({
   favorites,
@@ -20,6 +21,8 @@ export function FavoritesSection({
   collapsible,
   onFavoriteToggle,
   onFavoriteReorder,
+  stateGroup,
+  onExpansionChange,
 }: {
   favorites: IMenu[];
   /** Full (unfiltered) normalized menu tree - source for favorite ancestor paths. */
@@ -27,6 +30,8 @@ export function FavoritesSection({
   collapsible?: boolean;
   onFavoriteToggle?: (event: IMenuFavoriteToggleEvent) => void;
   onFavoriteReorder?: (event: IMenuFavoriteReorderEvent) => void;
+  stateGroup?: IMenu;
+  onExpansionChange?: (event: MenuExpansionChange) => void;
 }) {
   // Local collapsed state for the synthetic Favorites group (it is not part of
   // the sidebar's menuTree, so IHSidebar's onToggleGroup cannot manage it).
@@ -66,6 +71,7 @@ export function FavoritesSection({
   // the exact same styling as the Angular sidebar (ih-menu classes + star).
   const group = useMemo<IMenu | null>(() => {
     if (!favoriteItems?.length) return null;
+    if (stateGroup) return { ...stateGroup, child: favoriteItems, children: undefined };
     const node: IMenu = {
       id: SIDEBAR_FAVORITES_GROUP_ID,
       name: 'Favorites',
@@ -75,7 +81,7 @@ export function FavoritesSection({
       children: favoriteItems,
     };
     return normalizeMenuTree([node])[0] ?? null;
-  }, [favoriteItems, favoritesCollapsed]);
+  }, [favoriteItems, favoritesCollapsed, stateGroup]);
 
   const computeDropIndex = useCallback((clientY: number): number => {
     const host = listRef.current;
@@ -216,6 +222,7 @@ export function FavoritesSection({
         filter=""
         selectedMenuId={null}
         onToggleGroup={() => setFavoritesCollapsed((c) => !c)}
+        onExpansionChange={onExpansionChange}
         collapsible={collapsible}
         favoriteMode
         pathByKey={pathByKey}
