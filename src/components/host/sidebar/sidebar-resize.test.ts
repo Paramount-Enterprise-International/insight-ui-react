@@ -1,7 +1,6 @@
 import {
   SidebarResizeController,
   type SidebarResizeOptions,
-  type SidebarResizeState,
 } from './sidebar-resize';
 
 const defaults: SidebarResizeOptions = {
@@ -36,12 +35,24 @@ describe('Sidebar resize interaction parity', () => {
   let host: HTMLElement;
   let handle: HTMLElement;
   let controller: SidebarResizeController;
-  let state: SidebarResizeState;
   let commits: number[];
   let storageDescriptor: PropertyDescriptor | undefined;
   let savedPreference: string | null;
   let savedOther: string | null;
   let captures: Set<number>;
+  let frames: Map<number, FrameRequestCallback>;
+  let requestFrame: typeof window.requestAnimationFrame;
+  let cancelFrame: typeof window.cancelAnimationFrame;
+
+  function width(): number {
+    return Number(handle.getAttribute('aria-valuenow'));
+  }
+
+  function flushFrames(): void {
+    const callbacks = [...frames.values()];
+    frames.clear();
+    for (const callback of callbacks) callback(0);
+  }
 
   function mount(options: Partial<SidebarResizeOptions> = {}, cssWidth = '260px'): void {
     host = document.createElement('ih-sidebar');
@@ -63,15 +74,23 @@ describe('Sidebar resize interaction parity', () => {
       handle,
       { ...defaults, ...options },
       (value) => {
-        state = value;
-      },
-      (value) => {
         commits.push(value);
       },
     );
   }
 
   beforeEach(() => {
+    requestFrame = window.requestAnimationFrame;
+    cancelFrame = window.cancelAnimationFrame;
+    frames = new Map();
+    let frameId = 0;
+    window.requestAnimationFrame = (callback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    };
+    window.cancelAnimationFrame = (id) => {
+      frames.delete(id);
+    };
     storageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage');
     savedPreference = localStorage.getItem(defaults.widthStorageKey!);
     savedOther = localStorage.getItem('sidebar-resize-test');
@@ -83,6 +102,8 @@ describe('Sidebar resize interaction parity', () => {
   afterEach(() => {
     controller?.destroy();
     host?.remove();
+    window.requestAnimationFrame = requestFrame;
+    window.cancelAnimationFrame = cancelFrame;
     if (storageDescriptor) Object.defineProperty(window, 'localStorage', storageDescriptor);
     for (const [name, value] of [
       [defaults.widthStorageKey!, savedPreference],
@@ -96,7 +117,7 @@ describe('Sidebar resize interaction parity', () => {
   it('uses the CSS width and never changes the root token', () => {
     const rootWidth = document.documentElement.style.getPropertyValue('--i-sidebar-width');
     mount({}, '300px');
-    expect(state.width).toBe(300);
+    expect(width()).toBe(300);
     key(handle, 'ArrowRight');
     expect(host.style.getPropertyValue('--i-sidebar-width')).toBe('310px');
     expect(document.documentElement.style.getPropertyValue('--i-sidebar-width')).toBe(rootWidth);
@@ -111,7 +132,7 @@ describe('Sidebar resize interaction parity', () => {
     expect(host.style.getPropertyValue('--i-sidebar-width')).toBe('280px');
     expect(captures.size).toBe(0);
     controller.configure(defaults);
-    expect(state.width).toBe(400);
+    expect(width()).toBe(400);
     expect(commits).toEqual([]);
   });
 
@@ -120,13 +141,17 @@ describe('Sidebar resize interaction parity', () => {
     pointer(handle, 'pointerdown', 500);
     expect(captures.has(1)).toBe(true);
     pointer(document, 'pointermove', 488);
-    expect(state.width).toBe(300);
+    flushFrames();
+    expect(width()).toBe(300);
     pointer(document, 'pointermove', 487);
-    expect(state.width).toBe(287);
+    flushFrames();
+    expect(width()).toBe(287);
     pointer(document, 'pointermove', 512);
-    expect(state.width).toBe(300);
+    flushFrames();
+    expect(width()).toBe(300);
     pointer(document, 'pointermove', 513);
-    expect(state.width).toBe(313);
+    flushFrames();
+    expect(width()).toBe(313);
     expect(localStorage.getItem(defaults.widthStorageKey!)).toBeNull();
     expect(commits).toEqual([]);
     pointer(document, 'pointerup', 513);
@@ -140,9 +165,11 @@ describe('Sidebar resize interaction parity', () => {
     mount({ minWidth: 300, maxWidth: 400 }, '290px');
     pointer(handle, 'pointerdown', 0);
     pointer(document, 'pointermove', 1000);
-    expect(state.width).toBe(400);
+    flushFrames();
+    expect(width()).toBe(400);
     pointer(document, 'pointermove', -1000);
-    expect(state.width).toBe(300);
+    flushFrames();
+    expect(width()).toBe(300);
     pointer(document, 'pointerup');
     expect(commits).toEqual([]);
   });
@@ -150,16 +177,94 @@ describe('Sidebar resize interaction parity', () => {
   it('supports keyboard steps, bounds and ordinary Tab without pointer snapping', () => {
     mount();
     expect(key(handle, 'ArrowRight').defaultPrevented).toBe(true);
-    expect(state.width).toBe(270);
+    expect(width()).toBe(270);
     key(handle, 'ArrowLeft', true);
-    expect(state.width).toBe(220);
+    expect(width()).toBe(220);
     key(handle, 'End');
-    expect(state.width).toBe(480);
+    expect(width()).toBe(480);
     key(handle, 'ArrowRight');
     key(handle, 'Home');
-    expect(state.width).toBe(220);
+    expect(width()).toBe(220);
     expect(commits).toEqual([270, 220, 480, 220]);
     expect(key(handle, 'Tab').defaultPrevented).toBe(false);
+  });
+
+  it('applies only the latest pointer width once per animation frame', () => {
+    mount();
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(host, { attributes: true, attributeFilter: ['style'] });
+    try {
+      pointer(handle, 'pointerdown', 0);
+      for (const x of [40, 60, 100]) pointer(document, 'pointermove', x);
+      expect(frames.size).toBe(1);
+      expect(width()).toBe(260);
+      expect(observer.takeRecords().length).toBe(0);
+      flushFrames();
+      expect(width()).toBe(360);
+      expect(host.style.getPropertyValue('--i-sidebar-width')).toBe('360px');
+      expect(observer.takeRecords().length).toBe(1);
+      expect(commits).toEqual([]);
+      expect(localStorage.getItem(defaults.widthStorageKey!)).toBeNull();
+      pointer(document, 'pointerup', 100);
+      expect(observer.takeRecords().length).toBe(0);
+      expect(commits).toEqual([360]);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('flushes the pending width on release and commits exactly once', () => {
+    mount();
+    pointer(handle, 'pointerdown', 0);
+    pointer(document, 'pointermove', 100);
+    expect(width()).toBe(260);
+    pointer(document, 'pointerup', 100);
+    expect(width()).toBe(360);
+    expect(frames.size).toBe(0);
+    expect(commits).toEqual([360]);
+    expect(localStorage.getItem(defaults.widthStorageKey!)).toBe('360');
+    flushFrames();
+    pointer(document, 'pointerup', 100);
+    expect(commits).toEqual([360]);
+  });
+
+  it('skips DOM writes and commits when snapped or clamped width does not change', () => {
+    mount();
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(host, { attributes: true, subtree: true });
+    try {
+      pointer(handle, 'pointerdown', 0);
+      observer.takeRecords();
+      pointer(document, 'pointermove', 10);
+      flushFrames();
+      expect(observer.takeRecords().length).toBe(0);
+      pointer(document, 'pointerup', 10);
+      expect(commits).toEqual([]);
+      expect(localStorage.getItem(defaults.widthStorageKey!)).toBeNull();
+
+      key(handle, 'End');
+      pointer(handle, 'pointerdown', 0);
+      observer.takeRecords();
+      pointer(document, 'pointermove', 100);
+      flushFrames();
+      expect(observer.takeRecords().length).toBe(0);
+      pointer(document, 'pointerup', 100);
+      expect(commits).toEqual([480]);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
+  it('discards an unrendered pointer width on cancellation', () => {
+    mount();
+    pointer(handle, 'pointerdown', 0);
+    pointer(document, 'pointermove', 100);
+    key(document, 'Escape');
+    expect(frames.size).toBe(0);
+    flushFrames();
+    expect(width()).toBe(260);
+    expect(commits).toEqual([]);
+    expect(localStorage.getItem(defaults.widthStorageKey!)).toBeNull();
   });
 
   it('restores a committed preference after remount', () => {
@@ -168,20 +273,20 @@ describe('Sidebar resize interaction parity', () => {
     controller.destroy();
     host.remove();
     mount();
-    expect(state.width).toBe(480);
+    expect(width()).toBe(480);
     expect(commits).toEqual([480]);
   });
 
   it('loads a custom key, clamps saved values and switches keys without emitting', () => {
     localStorage.setItem('sidebar-resize-test', '999');
     mount({ widthStorageKey: 'sidebar-resize-test' });
-    expect(state.width).toBe(480);
+    expect(width()).toBe(480);
     key(handle, 'ArrowLeft');
     expect(localStorage.getItem('sidebar-resize-test')).toBe('470');
     expect(localStorage.getItem(defaults.widthStorageKey!)).toBeNull();
     localStorage.setItem(defaults.widthStorageKey!, '330');
     controller.configure(defaults);
-    expect(state.width).toBe(330);
+    expect(width()).toBe(330);
     expect(commits).toEqual([470]);
   });
 
@@ -189,14 +294,14 @@ describe('Sidebar resize interaction parity', () => {
     it(`ignores an invalid saved preference: ${JSON.stringify(raw)}`, () => {
       localStorage.setItem(defaults.widthStorageKey!, raw);
       mount();
-      expect(state.width).toBe(260);
+      expect(width()).toBe(260);
     });
   }
 
   it('keeps null-key preferences in memory only', () => {
     localStorage.setItem(defaults.widthStorageKey!, '400');
     mount({ widthStorageKey: null });
-    expect(state.width).toBe(260);
+    expect(width()).toBe(260);
     key(handle, 'End');
     expect(localStorage.getItem(defaults.widthStorageKey!)).toBe('400');
     expect(commits).toEqual([480]);
@@ -207,9 +312,9 @@ describe('Sidebar resize interaction parity', () => {
     key(handle, 'End');
     localStorage.setItem('sidebar-resize-test', '320');
     controller.configure({ ...defaults, resizable: false, widthStorageKey: 'sidebar-resize-test' });
-    expect(state.width).toBe(480);
+    expect(width()).toBe(480);
     controller.configure({ ...defaults, widthStorageKey: 'sidebar-resize-test' });
-    expect(state.width).toBe(320);
+    expect(width()).toBe(320);
     expect(commits).toEqual([480]);
   });
 
@@ -222,7 +327,7 @@ describe('Sidebar resize interaction parity', () => {
     });
     mount();
     key(handle, 'End');
-    expect(state.width).toBe(480);
+    expect(width()).toBe(480);
     expect(commits).toEqual([480]);
   });
 
@@ -249,17 +354,26 @@ describe('Sidebar resize interaction parity', () => {
     'blur',
     'hidden',
     'disabled',
+    'bounds',
+    'storage-key',
     'destroy',
   ]) {
     it(`restores the previous width without saving on ${reason}`, () => {
       mount();
       pointer(handle, 'pointerdown', 0);
       pointer(document, 'pointermove', 100);
-      expect(state.width).toBe(360);
+      flushFrames();
+      expect(width()).toBe(360);
+      pointer(document, 'pointermove', 150);
+      expect(frames.size).toBe(1);
       if (reason === 'Escape') key(document, 'Escape');
       else if (reason === 'blur') window.dispatchEvent(new Event('blur'));
       else if (reason === 'hidden') controller.configure({ ...defaults, visible: false });
       else if (reason === 'disabled') controller.configure({ ...defaults, resizable: false });
+      else if (reason === 'bounds') controller.configure({ ...defaults, maxWidth: 350 });
+      else if (reason === 'storage-key') {
+        controller.configure({ ...defaults, widthStorageKey: 'sidebar-resize-test' });
+      }
       else if (reason === 'destroy') controller.destroy();
       else pointer(reason === 'lostpointercapture' ? handle : document, reason);
       expect(host.style.getPropertyValue('--i-sidebar-width')).toBe('260px');
@@ -268,6 +382,9 @@ describe('Sidebar resize interaction parity', () => {
       expect(captures.size).toBe(0);
       expect(host.classList.contains('is-resizing')).toBe(false);
       expect(document.documentElement.classList.contains('ih-sidebar-resizing')).toBe(false);
+      expect(frames.size).toBe(0);
+      flushFrames();
+      expect(width()).toBe(260);
       pointer(document, 'pointermove', 200);
       pointer(document, 'pointerup', 200);
       expect(commits).toEqual([]);
@@ -279,11 +396,11 @@ describe('Sidebar resize interaction parity', () => {
     key(handle, 'End');
     controller.configure({ ...defaults, visible: false });
     key(handle, 'Home');
-    expect(state.width).toBe(480);
+    expect(width()).toBe(480);
     controller.configure(defaults);
-    expect(state.width).toBe(480);
+    expect(width()).toBe(480);
     controller.configure({ ...defaults, maxWidth: 350 });
-    expect(state.width).toBe(350);
+    expect(width()).toBe(350);
     expect(commits).toEqual([480]);
   });
 
@@ -295,7 +412,7 @@ describe('Sidebar resize interaction parity', () => {
     pointer(document, 'pointermove', 100, 2);
     pointer(document, 'pointercancel', 100, 2);
     pointer(document, 'pointerup', 100, 2);
-    expect(state.width).toBe(260);
+    expect(width()).toBe(260);
     expect(captures.has(1)).toBe(true);
   });
 
@@ -309,7 +426,6 @@ describe('Sidebar resize interaction parity', () => {
       otherHost,
       otherHandle,
       { ...defaults, widthStorageKey: null },
-      () => undefined,
       () => undefined,
     );
     try {

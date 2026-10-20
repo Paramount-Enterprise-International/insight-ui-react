@@ -6,17 +6,10 @@ export type SidebarResizeOptions = {
   widthStorageKey: string | null;
 };
 
-export type SidebarResizeState = {
-  width: number;
-  minWidth: number;
-  maxWidth: number;
-};
-
 /** Framework-independent sidebar interaction; kept identical in both libraries. */
 export class SidebarResizeController {
   private readonly host: HTMLElement;
   private readonly handle: HTMLElement;
-  private readonly changed: (state: SidebarResizeState) => void;
   private readonly committed: (width: number) => void;
   private readonly document: Document;
   private readonly view: Window;
@@ -27,18 +20,19 @@ export class SidebarResizeController {
   private initialized = false;
   private loadedStorageKey: string | null | undefined;
   private width: number;
+  private renderedWidth: number | null = null;
+  private resizeFrame: number | null = null;
+  private pendingWidth: number | null = null;
   private drag: { pointerId: number; x: number; width: number } | null = null;
 
   constructor(
     host: HTMLElement,
     handle: HTMLElement,
     options: SidebarResizeOptions,
-    changed: (state: SidebarResizeState) => void,
     committed: (width: number) => void,
   ) {
     this.host = host;
     this.handle = handle;
-    this.changed = changed;
     this.committed = committed;
     this.document = host.ownerDocument;
     this.view = this.document.defaultView!;
@@ -129,7 +123,10 @@ export class SidebarResizeController {
   private render(width: number, immediate = false): void {
     this.width = this.clamp(width);
     if (immediate) this.host.classList.add('is-width-initializing');
-    this.host.style.setProperty('--i-sidebar-width', `${this.width}px`);
+    if (this.renderedWidth !== this.width) {
+      this.host.style.setProperty('--i-sidebar-width', `${this.width}px`);
+      this.renderedWidth = this.width;
+    }
     if (immediate) {
       // Resolve the initial width before restoring hide/show transitions.
       this.host.getBoundingClientRect();
@@ -139,11 +136,14 @@ export class SidebarResizeController {
   }
 
   private publish(): void {
-    this.changed({
-      width: this.width,
-      minWidth: this.options.minWidth,
-      maxWidth: this.options.maxWidth,
-    });
+    for (const [name, value] of [
+      ['aria-valuenow', this.width],
+      ['aria-valuemin', this.options.minWidth],
+      ['aria-valuemax', this.options.maxWidth],
+    ] as const) {
+      const text = String(value);
+      if (this.handle.getAttribute(name) !== text) this.handle.setAttribute(name, text);
+    }
   }
 
   private commit(previousWidth: number): void {
@@ -196,12 +196,19 @@ export class SidebarResizeController {
     ) {
       width = this.defaultWidth;
     }
-    this.render(width);
+    this.pendingWidth = width;
+    if (this.resizeFrame === null) {
+      this.resizeFrame = this.view.requestAnimationFrame(() => {
+        this.resizeFrame = null;
+        this.flushPendingWidth();
+      });
+    }
   };
 
   private readonly onPointerUp = (event: PointerEvent): void => {
     if (!this.drag || this.drag.pointerId !== event.pointerId) return;
     const previousWidth = this.drag.width;
+    this.flushPendingWidth(true);
     this.cleanupDrag();
     this.commit(previousWidth);
   };
@@ -250,10 +257,13 @@ export class SidebarResizeController {
     if (!this.drag) return;
     const width = this.drag.width;
     this.cleanupDrag();
-    this.render(width);
+    this.render(width, width !== this.width);
   }
 
   private cleanupDrag(): void {
+    if (this.resizeFrame !== null) this.view.cancelAnimationFrame(this.resizeFrame);
+    this.resizeFrame = null;
+    this.pendingWidth = null;
     const pointerId = this.drag?.pointerId;
     this.drag = null;
     this.document.removeEventListener('pointermove', this.onPointerMove);
@@ -273,5 +283,13 @@ export class SidebarResizeController {
         // The browser may already have released capture after cancellation.
       }
     }
+  }
+
+  private flushPendingWidth(immediate = false): void {
+    if (this.resizeFrame !== null) this.view.cancelAnimationFrame(this.resizeFrame);
+    this.resizeFrame = null;
+    const width = this.pendingWidth;
+    this.pendingWidth = null;
+    if (width !== null) this.render(width, immediate && width !== this.width);
   }
 }

@@ -146,7 +146,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     if (!indentLevel) return null;
 
     return Array.from({ length: indentLevel }).map((_, i) => (
-      <span key={i} className={`indent-${depth}`}></span>
+      <span key={i} className={`ih-menu-indent indent-${depth}`}></span>
     ));
   };
 

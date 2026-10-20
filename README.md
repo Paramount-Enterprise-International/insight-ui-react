@@ -472,6 +472,14 @@ state or unmounting the component cleans up immediately.
 
 ## Resizable sidebar
 
+When resizing is enabled, a 4px lane inside the sidebar separates the resize
+handle from the menu scrollbar. The total sidebar width stays unchanged; only
+the menu body reserves this space. Disabling resizing removes the lane.
+
+Pointer resizing updates the sidebar and content live, at most once per
+animation frame, without triggering React renders on pointer movement.
+Menu indentation stays fixed while long labels truncate with an ellipsis.
+
 `IHSidebar` enables pointer and keyboard resizing by default. Load the matching
 `insight-ui-css` stylesheet before mounting the sidebar; it owns the resize handle
 and interaction styles. The initial width comes from `--i-sidebar-width` (260px
