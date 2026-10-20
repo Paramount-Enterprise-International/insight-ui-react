@@ -37,3 +37,5 @@ export * from './guards';
 export * from './permission';
 
 export * from './impersonation';
+
+export * from './notification';
