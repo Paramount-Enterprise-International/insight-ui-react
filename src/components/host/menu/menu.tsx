@@ -9,7 +9,11 @@ import { useNavigate } from 'react-router-dom';
 import { useOptionalIConfirm } from '../../dialog/dialog';
 import type { IMenu, IMenuFavoriteToggleEvent } from '../host-api.types';
 import { SIDEBAR_FAVORITES_GROUP_ID } from '../host.constants';
-import { getSidebarMenuKey, type MenuExpansionChange } from '../sidebar/sidebar-menu-state';
+import {
+  getSidebarMenuKey,
+  isSidebarMenuActive,
+  type MenuExpansionChange,
+} from '../sidebar/sidebar-menu-state';
 import {
   getMenuChildren,
   getMenuKey,
@@ -80,6 +84,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
   const isNewTab = isNewTabMenu(menu);
   const isReload = isReloadMenu(menu);
   const isSpa = isSpaMenu(menu);
+  const isActive = isSidebarMenuActive(menu);
   const menuIsFavorite = !!menu?.isFavorite;
   const confirm = useOptionalIConfirm();
 
@@ -112,6 +117,7 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
     if (!matchesId) return false;
     return isLeaf;
   }, [menu, menuKey, selectedMenuId, isLeaf]);
+  const leafStateClass = `${isSelected ? ' is-selected' : ''}${isActive ? ' is-active' : ''}`;
 
   useLayoutEffect(() => {
     if (isSelected && menuItemRef.current) {
@@ -304,7 +310,8 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
           <>
             {isNewTab && menuRoute ? (
               <a
-                className={isSelected ? 'is-new-tab is-selected' : 'is-new-tab'}
+                className={`is-new-tab${leafStateClass}`}
+                aria-current={isActive ? 'page' : undefined}
                 rel="noopener noreferrer"
                 target="_blank"
                 href={href}
@@ -313,7 +320,8 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
               </a>
             ) : isReload && menuRoute ? (
               <a
-                className={isSelected ? 'is-reload is-selected' : 'is-reload'}
+                className={`is-reload${leafStateClass}`}
+                aria-current={isActive ? 'page' : undefined}
                 target="_self"
                 href={href}
                 {...menuDragProps}>
@@ -324,7 +332,8 @@ export const IHMenu = memo(function IHMenu(props: IHMenuProps) {
                 ref={(el) => {
                   menuItemRef.current = el as unknown as HTMLElement | null;
                 }}
-                className={isSelected ? 'is-spa is-selected' : 'is-spa'}
+                className={`is-spa${leafStateClass}`}
+                aria-current={isActive ? 'page' : undefined}
                 href={href}
                 onClick={onLeafClick}
                 {...menuDragProps}>

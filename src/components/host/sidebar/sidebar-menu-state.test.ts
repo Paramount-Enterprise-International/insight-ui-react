@@ -2,6 +2,8 @@ import type { IMenu } from '../host-api.types';
 import {
   createFavoritesMenu,
   getSidebarMenuKey,
+  isSidebarMenuActive,
+  resolveSidebarActiveMenu,
   SidebarMenuState,
 } from './sidebar-menu-state';
 
@@ -248,6 +250,138 @@ describe('Sidebar menu state parity', () => {
     const home = state();
     home.observeLocation('/');
     expect(home.restore(nodes)).toBe(true);
+  });
+
+  describe('active route highlighting', () => {
+    const routes: IMenu[] = [
+      { id: 'home', route: '/' },
+      { id: 'people', route: '/people' },
+      { id: 'details', route: '/-/people/details/?view=all#name' },
+      { id: 'duplicate', route: '/people/details' },
+      { id: 'group', type: 'group', route: '/group', children: [] },
+      { id: 'module', menuTypeId: 2, route: '/module' },
+      { id: 'external', route: 'https://example.com/external' },
+      { id: 'protocol-relative', route: '//example.com/external' },
+      { id: 'query', route: '?view=all' },
+      { id: 'fragment', route: '#name' },
+    ];
+
+    for (const [path, expected] of [
+      ['/people', 'people'],
+      ['/people/123', 'people'],
+      ['/people/', 'people'],
+      ['/people?view=all#name', 'people'],
+      ['/-/people/123', 'people'],
+      ['/-/people/details/123?tab=edit#name', 'details'],
+      ['/people-other', undefined],
+      ['/', 'home'],
+      ['/-/', 'home'],
+      ['/unknown', undefined],
+      ['/group', undefined],
+      ['/module', undefined],
+      ['/external', undefined],
+    ] as const) {
+      it(`matches ${path} to ${expected ?? 'no active menu'}`, () => {
+        expect(resolveSidebarActiveMenu(routes, [], path, '/-/')?.id).toBe(
+          expected
+        );
+      });
+    }
+
+    it('prefers the main match and marks its favorite copy by identity', () => {
+      const favorite = { ...routes[1] };
+      const favorites = createFavoritesMenu([
+        favorite,
+        { id: 'favorite-detail', route: '/people/details/123' },
+      ]);
+      const active = resolveSidebarActiveMenu(
+        routes,
+        favorites,
+        '/people/details/123',
+        '/-/'
+      );
+      expect(active?.id).toBe('details');
+      const instance = state();
+      const main = instance.project(routes, 'main', active);
+      const pinned = child(instance.project(favorites, 'favorites', active)[0]);
+      expect(main.filter(isSidebarMenuActive).map((menu) => menu.id)).toEqual([
+        'details',
+      ]);
+      expect(pinned.filter(isSidebarMenuActive)).toEqual([]);
+      const people = resolveSidebarActiveMenu(routes, favorites, '/people');
+      expect(
+        isSidebarMenuActive(instance.project(routes, 'main', people)[1])
+      ).toBe(true);
+      expect(
+        isSidebarMenuActive(
+          child(instance.project(favorites, 'favorites', people)[0])[0]
+        )
+      ).toBe(true);
+      expect(isSidebarMenuActive(favorite)).toBe(false);
+      expect(isSidebarMenuActive(routes[1])).toBe(false);
+      expect(stored.get(key)).toBeUndefined();
+    });
+
+    it('resolves favorites first during hydration and replaces them with the main match', () => {
+      const favorites = createFavoritesMenu([
+        { id: 'favorite-detail', route: '/people/details' },
+      ]);
+      expect(
+        resolveSidebarActiveMenu([], favorites, '/people/details')?.id
+      ).toBe('favorite-detail');
+      expect(
+        resolveSidebarActiveMenu(routes, favorites, '/people/details', '/-/')
+          ?.id
+      ).toBe('details');
+      expect(
+        resolveSidebarActiveMenu([], [], '/people/details')
+      ).toBeUndefined();
+    });
+
+    it('marks legacy copies, ID-less leaves and no-child nodes without marking groups', () => {
+      const leaf: IMenu = {
+        menuId: 7,
+        menuTypeId: 3,
+        route: '/legacy',
+        visibility: 'no-child',
+      };
+      const nodes: IMenu[] = [
+        { menuId: 7, type: 'group', children: [leaf] },
+        { route: '/anonymous' },
+      ];
+      const instance = state();
+      const active = resolveSidebarActiveMenu(nodes, [], '/legacy/123');
+      const projected = instance.project(nodes, 'main', active);
+      expect(isSidebarMenuActive(projected[0])).toBe(false);
+      expect(isSidebarMenuActive(child(projected[0])[0])).toBe(true);
+      const favorites = createFavoritesMenu([{ ...leaf }]);
+      expect(
+        isSidebarMenuActive(
+          child(instance.project(favorites, 'favorites', active)[0])[0]
+        )
+      ).toBe(true);
+      const anonymous = resolveSidebarActiveMenu(nodes, [], '/anonymous');
+      expect(
+        isSidebarMenuActive(instance.project(nodes, 'main', anonymous)[1])
+      ).toBe(true);
+    });
+
+    it('updates after restoration is canceled and clears old projection metadata', () => {
+      const instance = state();
+      instance.observeLocation('/people');
+      instance.restore(tree);
+      choose(instance, 'root', false);
+      instance.observeLocation('/other');
+      expect(instance.restore(tree)).toBe(false);
+      const before = stored.get(key);
+      const active = resolveSidebarActiveMenu(tree, [], '/other');
+      const projected = instance.project(tree, 'main', active);
+      expect(isSidebarMenuActive(child(projected[1])[0])).toBe(true);
+      expect(projected[0].visibility).toBe('collapsed');
+      expect(stored.get(key)).toBe(before);
+      const cleared = instance.project(projected);
+      expect(isSidebarMenuActive(child(cleared[1])[0])).toBe(false);
+    });
   });
 
   function viewport(

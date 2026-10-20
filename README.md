@@ -555,7 +555,7 @@ Exact routes and the longest segment-aligned prefix support detail URLs; query,
 fragment and router base path do not change the match. The main tree takes
 priority over a duplicate favorite, with Favorites as a fallback. Unmatched
 routes do not scroll. Scrolling affects only the sidebar container, without
-animation, keyboard focus changes or active-menu highlight styling.
+animation or keyboard focus changes.
 If Favorites arrives first, a later main-tree match takes priority while initial
 restoration is still undisturbed by user toggles or page navigation.
 
@@ -564,3 +564,26 @@ saved choices, and users may collapse those groups again until the next refresh.
 Subsequent page navigation cancels any pending restoration. Hidden sidebars and
 search filters that hide the target defer scrolling until it is visible; search
 text and URL filters remain intact. Temporary search expansion is not persisted.
+
+
+### Active route highlighting
+
+The current internal leaf menu has `is-active` and `aria-current="page"`.
+Highlighting follows completed navigation, redirects and browser history, and
+updates when menus or Favorites arrive. It is independent of keyboard search
+selection (`is-selected`), expansion preferences and one-time scroll restoration.
+Navigation updates the highlight without automatically reopening groups.
+
+Matching uses the full menu tree before search filtering. Exact paths and the
+longest segment-aligned prefix support detail URLs; query, fragment, trailing
+slash and router base path do not change the match. The root route matches only
+the root. Equal matches use the first menu in tree order. Absolute URLs,
+protocol-relative URLs and query-only or fragment-only links are excluded.
+The main tree takes priority, with Favorites as a fallback. Copies with the same
+`id` (or legacy `menuId`) are highlighted in both sections. Unmatched routes clear
+the highlight; filtering cannot transfer it to another menu.
+
+Load the matching `insight-ui-css` stylesheet for the gray active background,
+darker left accent, label and icon colors, semibold label and stronger hover
+backgrounds. Favorite star colors and actions keep their existing styles. No
+additional sidebar properties or menu contract fields are required.

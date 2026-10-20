@@ -1,8 +1,9 @@
 import type { IMenu } from '../host-api.types';
 
 const STATE_KEY = Symbol('sidebarMenuStateKey');
+const ACTIVE_KEY = Symbol('sidebarMenuActive');
 const ACTIVE_MENU_SCROLL_OFFSET = 16;
-type StateMenu = IMenu & { [STATE_KEY]?: string };
+type StateMenu = IMenu & { [STATE_KEY]?: string; [ACTIVE_KEY]?: boolean };
 type MenuScope = 'main' | 'favorites';
 
 export type MenuExpansionChange = { menu: IMenu; expanded: boolean };
@@ -10,6 +11,10 @@ export type MenuExpansionChange = { menu: IMenu; expanded: boolean };
 /** Identifies rendered menu rows independently of search selection and drag IDs. */
 export function getSidebarMenuKey(menu: IMenu | undefined): string | undefined {
   return (menu as StateMenu | undefined)?.[STATE_KEY];
+}
+
+export function isSidebarMenuActive(menu: IMenu | undefined): boolean {
+  return (menu as StateMenu | undefined)?.[ACTIVE_KEY] === true;
 }
 
 export function createFavoritesMenu(favorites: IMenu[]): IMenu[] {
@@ -53,6 +58,60 @@ function normalizePath(value: string, baseHref: string): string {
     path = path.slice(base.length) || '/';
   }
   return path;
+}
+
+function isRouteLeaf(menu: IMenu): boolean {
+  return (
+    menu.type !== 'group' &&
+    Number(menu.menuTypeId) !== 2 &&
+    (!children(menu).length || menu.visibility === 'no-child')
+  );
+}
+
+function findRouteChain(
+  nodes: IMenu[],
+  target: string,
+  baseHref: string
+): IMenu[] {
+  let best: IMenu[] = [];
+  let length = -1;
+  const visit = (items: IMenu[], ancestors: IMenu[]): void => {
+    for (const menu of items) {
+      const chain = [...ancestors, menu];
+      const route = menu.route?.trim();
+      if (
+        isRouteLeaf(menu) &&
+        route &&
+        !/^(?:[a-z][a-z\d+.-]*:|\/\/|[?#])/i.test(route)
+      ) {
+        const candidate = normalizePath(route, baseHref);
+        if (
+          (target === candidate ||
+            (candidate !== '/' && target.startsWith(candidate + '/'))) &&
+          candidate.length > length
+        ) {
+          best = chain;
+          length = candidate.length;
+        }
+      }
+      visit(children(menu), chain);
+    }
+  };
+  visit(nodes, []);
+  return best;
+}
+
+/** Resolves the current menu independently of one-time expansion and scrolling. */
+export function resolveSidebarActiveMenu(
+  menus: IMenu[],
+  favorites: IMenu[],
+  path: string,
+  baseHref = '/'
+): IMenu | undefined {
+  const target = normalizePath(path, baseHref);
+  let chain = findRouteChain(menus, target, baseHref);
+  if (!chain.length) chain = findRouteChain(favorites, target, baseHref);
+  return chain[chain.length - 1];
 }
 
 /** Sidebar-owned expansion preferences and one-time active-route restoration. */
@@ -106,12 +165,26 @@ export class SidebarMenuState {
     return true;
   }
 
-  project(menus: IMenu[], scope: MenuScope = 'main'): IMenu[] {
+  project(
+    menus: IMenu[],
+    scope: MenuScope = 'main',
+    activeMenu?: IMenu
+  ): IMenu[] {
+    const activeId = activeMenu?.id ?? activeMenu?.menuId;
     const visit = (nodes: IMenu[], prefix: string): IMenu[] =>
       nodes.map((menu, index) => {
         const path = prefix ? `${prefix}.${index}` : String(index);
         const key = stateKey(menu, scope, path);
-        const copy: StateMenu = { ...menu, [STATE_KEY]: key };
+        const copy: StateMenu = {
+          ...menu,
+          [STATE_KEY]: key,
+          [ACTIVE_KEY]:
+            isRouteLeaf(menu) &&
+            (menu === activeMenu ||
+              (activeId !== undefined &&
+                activeId !== null &&
+                (menu.id ?? menu.menuId) === activeId)),
+        };
         if (menu.children !== undefined)
           copy.children = visit(menu.children, path);
         if (menu.child !== undefined) copy.child = visit(menu.child, path);
@@ -171,44 +244,19 @@ export class SidebarMenuState {
       (this.target && (this.target.scope === 'main' || this.interacted))
     )
       return false;
-    const find = (nodes: IMenu[]): IMenu[] => {
-      let best: IMenu[] = [];
-      let length = -1;
-      const visit = (items: IMenu[], ancestors: IMenu[]): void => {
-        for (const menu of items) {
-          const chain = [...ancestors, menu];
-          const route = menu.route?.trim();
-          const leaf =
-            menu.type !== 'group' &&
-            Number(menu.menuTypeId) !== 2 &&
-            (!children(menu).length || menu.visibility === 'no-child');
-          if (
-            leaf &&
-            route &&
-            !/^(?:[a-z][a-z\d+.-]*:|\/\/|[?#])/i.test(route)
-          ) {
-            const candidate = normalizePath(route, this.baseHref);
-            if (
-              (this.initialPath === candidate ||
-                (candidate !== '/' &&
-                  this.initialPath!.startsWith(candidate + '/'))) &&
-              candidate.length > length
-            ) {
-              best = chain;
-              length = candidate.length;
-            }
-          }
-          visit(children(menu), chain);
-        }
-      };
-      visit(nodes, []);
-      return best;
-    };
-    let chain = find(this.project(menus));
+    let chain = findRouteChain(
+      this.project(menus),
+      this.initialPath,
+      this.baseHref
+    );
     let scope: MenuScope = 'main';
     if (!chain.length) {
       if (this.target) return false;
-      chain = find(this.project(favorites, 'favorites'));
+      chain = findRouteChain(
+        this.project(favorites, 'favorites'),
+        this.initialPath,
+        this.baseHref
+      );
       scope = 'favorites';
     }
     if (!chain.length) return false;

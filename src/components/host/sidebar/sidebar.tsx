@@ -34,7 +34,13 @@ import {
   type SidebarResizeState,
 } from './sidebar-resize';
 import { filterMenuTree, flattenNavigableMenus } from './sidebar.utils';
-import { createFavoritesMenu, getSidebarMenuKey, SidebarMenuState, type MenuExpansionChange } from './sidebar-menu-state';
+import {
+  createFavoritesMenu,
+  getSidebarMenuKey,
+  resolveSidebarActiveMenu,
+  SidebarMenuState,
+  type MenuExpansionChange,
+} from './sidebar-menu-state';
 
 const EMPTY_FAVORITES: IMenu[] = [];
 
@@ -206,13 +212,23 @@ export function IHSidebar(props: IHSidebarProps) {
   const sourceFavorites = useMemo(
     () => createFavoritesMenu(normalizeMenuTree(favorites)), [favorites]
   );
+  const activeMenu = useMemo(
+    () =>
+      resolveSidebarActiveMenu(
+        sourceMenus,
+        favoriteMode ? sourceFavorites : [],
+        location.pathname,
+        baseHref
+      ),
+    [sourceMenus, sourceFavorites, favoriteMode, location.pathname, baseHref]
+  );
   const menuSnapshot = useMemo(
     () => ({
       revision: menuRevision,
-      menus: menuState.project(sourceMenus),
-      favoriteGroup: menuState.project(sourceFavorites, 'favorites')[0],
+      menus: menuState.project(sourceMenus, 'main', activeMenu),
+      favoriteGroup: menuState.project(sourceFavorites, 'favorites', activeMenu)[0],
     }),
-    [menuState, sourceMenus, sourceFavorites, menuRevision]
+    [menuState, sourceMenus, sourceFavorites, menuRevision, activeMenu]
   );
   const { menus: menuTree, favoriteGroup } = menuSnapshot;
 

@@ -46,6 +46,7 @@ function Tools() {
     <>
       <button onClick={() => navigate('/other')}>Navigate</button>
       <button onClick={() => navigate(-1)}>Back</button>
+      <button onClick={() => navigate(1)}>Forward</button>
       <output data-testid="location">
         {location.pathname}
         {location.search}
@@ -86,6 +87,12 @@ function collapsed(container: HTMLElement, name: string): boolean {
   return header(container, name)
     .parentElement!.querySelector('ul')!
     .classList.contains('collapsed');
+}
+
+function activeKeys(container: HTMLElement): (string | null)[] {
+  return [
+    ...container.querySelectorAll('a.is-active[aria-current="page"]'),
+  ].map((row) => row.getAttribute('data-sidebar-menu-key'));
 }
 
 describe('IHSidebar menu persistence and restoration', () => {
@@ -136,6 +143,7 @@ describe('IHSidebar menu persistence and restoration', () => {
     expect(collapsed(container, 'Other')).toBe(true);
     expect(document.activeElement).toBe(search);
     expect(container.querySelector('.is-selected')).toBeNull();
+    expect(activeKeys(container)).toEqual(['main:id:active']);
     expect(localStorage.getItem(key)).toBe(before);
     expect(menus[0].visibility).toBeUndefined();
   });
@@ -170,8 +178,17 @@ describe('IHSidebar menu persistence and restoration', () => {
     expect(collapsed(container, 'Root')).toBe(true);
     fireEvent.click(getByText('Navigate'));
     await waitFor(() => expect(collapsed(container, 'Other')).toBe(true));
+    expect(activeKeys(container)).toEqual(['main:id:other-page']);
     fireEvent.click(getByText('Back'));
+    await waitFor(() =>
+      expect(activeKeys(container)).toEqual(['main:id:active'])
+    );
     expect(collapsed(container, 'Root')).toBe(true);
+    fireEvent.click(getByText('Forward'));
+    await waitFor(() =>
+      expect(activeKeys(container)).toEqual(['main:id:other-page'])
+    );
+    expect(collapsed(container, 'Other')).toBe(true);
   });
 
   it('preserves a hiding search filter and reveals the active menu only after clearing it', async () => {
@@ -183,6 +200,7 @@ describe('IHSidebar menu persistence and restoration', () => {
     expect(
       container.querySelector('a[data-sidebar-menu-key="main:id:active"]')
     ).toBeNull();
+    expect(activeKeys(container)).toEqual([]);
     expect(container.querySelector('.ih-sidebar-body')!.scrollTop).toBe(0);
     expect(getByTestId('location')).toHaveTextContent('menu-filter=Other');
     search.focus();
@@ -195,6 +213,28 @@ describe('IHSidebar menu persistence and restoration', () => {
     expect(document.activeElement).toBe(search);
     expect(getByTestId('location')).toHaveTextContent('tab=edit');
     expect(collapsed(container, 'Root')).toBe(false);
+    expect(activeKeys(container)).toEqual(['main:id:active']);
+  });
+
+  it('keeps route highlighting independent of keyboard search selection', async () => {
+    const { container, getByPlaceholderText } = render(view());
+    const search = getByPlaceholderText('Search Menu..');
+    container.querySelectorAll<HTMLElement>('a').forEach((row) => {
+      row.scrollIntoView = vi.fn();
+    });
+    fireEvent.change(search, { target: { value: 'page' } });
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(container.querySelector('a.is-active.is-selected')).not.toBeNull();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(
+      container
+        .querySelector('a.is-selected')
+        ?.getAttribute('data-sidebar-menu-key')
+    ).toBe('main:id:other-page');
+    expect(activeKeys(container)).toEqual(['main:id:active']);
+    expect(
+      container.querySelector('a.is-selected')?.hasAttribute('aria-current')
+    ).toBe(false);
   });
 
   it('waits for visibility and then keeps subsequent user scroll positions', async () => {
@@ -227,12 +267,17 @@ describe('IHSidebar menu persistence and restoration', () => {
     second.rerender(view());
     await waitFor(() => expect(collapsed(second.container, 'Root')).toBe(true));
     expect(collapsed(second.container, 'Other')).toBe(true);
+    expect(activeKeys(second.container)).toEqual(['main:id:other-page']);
   });
 
   it('persists Favorites separately, prefers the main tree and falls back to Favorites', async () => {
     const first = render(view({ favoriteMode: true, favorites: [favorite] }));
     await waitFor(() => expect(collapsed(first.container, 'Root')).toBe(false));
     expect(collapsed(first.container, 'Favorites')).toBe(true);
+    expect(activeKeys(first.container)).toEqual([
+      'favorites:id:active',
+      'main:id:active',
+    ]);
     fireEvent.click(header(first.container, 'Favorites'));
     expect(
       JSON.parse(localStorage.getItem(key)!).expanded['favorites:group']
@@ -247,7 +292,56 @@ describe('IHSidebar menu persistence and restoration', () => {
       ).toBeGreaterThan(0)
     );
     expect(collapsed(second.container, 'Favorites')).toBe(false);
+    expect(activeKeys(second.container)).toEqual(['favorites:id:active']);
   });
+
+  it('updates active Favorites as both sources hydrate and clears unmatched routes', async () => {
+    const { container, rerender } = render(
+      view({ menus: [], favoriteMode: true })
+    );
+    expect(activeKeys(container)).toEqual([]);
+    rerender(
+      view({
+        menus: [],
+        favoriteMode: true,
+        favorites: [{ ...favorite, id: 'pin' }],
+      })
+    );
+    await waitFor(() =>
+      expect(activeKeys(container)).toEqual(['favorites:id:pin'])
+    );
+    rerender(
+      view({ favoriteMode: true, favorites: [{ ...favorite, id: 'pin' }] })
+    );
+    await waitFor(() =>
+      expect(activeKeys(container)).toEqual(['main:id:active'])
+    );
+    rerender(view({ favoriteMode: true, favorites: [{ ...favorite }] }));
+    await waitFor(() =>
+      expect(activeKeys(container)).toEqual([
+        'favorites:id:active',
+        'main:id:active',
+      ])
+    );
+    rerender(view({ menus: [], favoriteMode: true, favorites: [] }));
+    expect(activeKeys(container)).toEqual([]);
+    expect(container.querySelector('[aria-current]')).toBeNull();
+  });
+
+  for (const [navigation, options] of [
+    ['is-spa', {}],
+    ['is-reload', { reload: true }],
+    ['is-new-tab', { openIn: 'NEW_TAB' }],
+  ] as const) {
+    it(`marks active ${navigation} anchors`, () => {
+      const { container } = render(
+        view({ menus: [{ ...favorite, ...options }] }, '/people')
+      );
+      const row = container.querySelector(`a.${navigation}`)!;
+      expect(row).toHaveClass('is-active');
+      expect(row).toHaveAttribute('aria-current', 'page');
+    });
+  }
 
   it('uses custom/null storage keys and applies a changed storage key', () => {
     const { container, rerender } = render(
@@ -275,6 +369,9 @@ describe('IHSidebar menu persistence and restoration', () => {
     const { container, getByTestId } = render(view({}, '/start', true));
     await waitFor(() =>
       expect(getByTestId('location')).toHaveTextContent('/people')
+    );
+    await waitFor(() =>
+      expect(activeKeys(container)).toEqual(['main:id:active'])
     );
     await waitFor(() => expect(collapsed(container, 'Root')).toBe(false));
     expect(container.querySelector('.is-selected')).toBeNull();
