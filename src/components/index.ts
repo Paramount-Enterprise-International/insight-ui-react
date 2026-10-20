@@ -13,6 +13,7 @@ export * from './loading';
 export * from './pill';
 export * from './section';
 export * from './select';
+export * from './select-company';
 export * from './shared';
 export * from './textarea';
 export * from './toggle';

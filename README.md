@@ -1,5 +1,65 @@
 # React + TypeScript + Vite
 
+## Company selects
+
+`ISelectCompany` and `IFCSelectCompany` read company options reactively from the
+current `IUserMenuStore` through `useIUserMenuStore()`. Render them under
+`IAuthProvider` (or the runtime's provider) and load the store at application level;
+the components never fetch data themselves. See
+[authorization data](#authorization-codes-and-navigation) for the store's company scope contract.
+
+```tsx
+import { useState } from 'react';
+import { IFCSelectCompany, ISelectCompany, type IMenuCompanyDto } from '@insight/ui-react';
+
+export function CompanyFilter() {
+  const [company, setCompany] = useState<IMenuCompanyDto | null>(null);
+  return (
+    <>
+      <ISelectCompany value={company} onChange={({ value }) => setCompany(value)} />
+      <ISelectCompany
+        menuCode="sales"
+        value={company}
+        onChange={({ value }) => setCompany(value)}
+      />
+      <IFCSelectCompany
+        label="Company"
+        menuCode="sales"
+        value={company}
+        onChange={({ value }) => setCompany(value)}
+        errors={company ? null : { required: true }}
+        touched
+      />
+    </>
+  );
+}
+```
+
+Omitting `menuCode`, or passing a blank value, shows all `store.companies`.
+A nonblank code is trimmed and restricts options through
+`store.menuCompanies[menuCode]`. An unknown menu shows no options. Store ordering
+and deduplication are preserved.
+
+Values are company objects (`id`, `code`, `name`) or `null`. Both components support
+controlled `value` and uncontrolled `defaultValue`. Labels default to `name`;
+search matches `name` and `code` without case sensitivity. `displayWith`,
+`filterPredicate`, option renderers, dropdown settings, `invalid`, `disabled`,
+and refs with `ISelectHandle.focus()` follow the regular select. Exported prop
+types are `ISelectCompanyProps` and `IFCSelectCompanyProps`; options are store-owned,
+so neither accepts `options` or `options$`.
+
+Selection invokes `onChange`, `onChanged`, and `onOptionSelected` with
+`ISelectChange<IMenuCompanyDto>`. No company is selected automatically. Refresh
+matches a selected option by `id` without emitting events or replacing the
+consumer's value. If a menu change, refresh, or reset removes the selected company
+from the options, its value remains until the consumer resets it.
+
+`IFCSelectCompany` adds `label`, `errors`, `errorMessage`, `submitted`, `touched`,
+and `dirty` with the same validation timing as `IFCSelect`: when `submitted` is
+provided it controls error visibility; otherwise touched or dirty enables errors.
+Load matching Insight CSS for the `i-select-company` and `i-fc-select-company` hosts,
+which share the regular select styles.
+
 ## Datepicker formatting
 
 `IDatepicker` and `IFCDatepicker` use `format` for numeric date entry and

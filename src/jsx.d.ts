@@ -153,6 +153,16 @@ declare module 'react' {
         HTMLElement
       >;
 
+      'i-select-company': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+
+      'i-fc-select-company': import('react').DetailedHTMLProps<
+        import('react').HTMLAttributes<HTMLElement>,
+        HTMLElement
+      >;
+
       'i-select': import('react').DetailedHTMLProps<
         import('react').HTMLAttributes<HTMLElement>,
         HTMLElement
