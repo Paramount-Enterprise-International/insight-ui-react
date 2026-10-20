@@ -40,7 +40,7 @@ afterEach(cleanup);
 describe('Notification presentation parity', () => {
   it('hides absent state and the zero badge, then shows 99 and caps 100 with accessible actual counts', () => {
     const { container, rerender } = render(<INotification />);
-    expect(container.querySelector('button')).toBeNull();
+    expect(container.querySelector('i-notification-bell')).toBeNull();
     rerender(<INotificationBell />);
     expect(container.querySelector('.notification-badge')).toBeNull();
     rerender(<INotificationBell unreadCount={99} />);

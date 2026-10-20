@@ -44,13 +44,15 @@ export function INotificationDrawer({
     : 'Loading notifications...';
   return (
     <i-notification-drawer>
-      <header className="px-lg py-md border-b border-subtle">
-        <div className="flex align-center justify-between gap-sm">
-          <h2 className="text-xl font-semibold m-0">Notifications</h2>
+      <header className="border-b">
+        <div className="notification-header-main flex align-center justify-between gap-sm px-lg">
+          <h2 className="text-xl leading-snug font-semibold m-0 truncate">
+            Notifications
+          </h2>
           <div className="flex align-center gap-xs shrink-0">
             <button
               type="button"
-              className="notification-icon-action flex align-center justify-center p-2xs border-none bg-transparent text-gray-600 radius-sm"
+              className="i-clickable notification-icon-action border-none text-gray-600"
               aria-label="Open all notifications in a new tab"
               title="Open All Notifications"
               onClick={onOpenAllRequested}>
@@ -61,7 +63,7 @@ export function INotificationDrawer({
             </button>
             <button
               type="button"
-              className="notification-icon-action flex align-center justify-center p-2xs border-none bg-transparent text-gray-600 radius-sm"
+              className="i-clickable notification-icon-action border-none text-gray-600"
               aria-label="Close notifications"
               title="Close notifications"
               onClick={onCloseRequested}>
@@ -69,8 +71,8 @@ export function INotificationDrawer({
             </button>
           </div>
         </div>
-        <div className="flex align-center gap-sm mt-2xs text-sm text-subtle">
-          <p className="m-0" aria-live="polite">
+        <div className="notification-header-summary flex align-center gap-sm px-lg text-sm">
+          <p className="m-0 truncate" aria-live="polite">
             You have {unreadCount} unread notifications
           </p>
           <div

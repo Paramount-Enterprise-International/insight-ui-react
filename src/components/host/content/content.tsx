@@ -70,11 +70,6 @@ export function IHContent(props: {
     onLoadingChange?.(loading ?? false);
   }, [loading, onLoadingChange]);
 
-  // Asset base from the consumer app's Vite `base` (e.g. "/-/atlas-react/"),
-  // so bundled assets like /svgs/* resolve under the app's base path instead
-  // of the origin root. Falls back to "/" when not under Vite.
-  const assetBase = import.meta.env.BASE_URL ?? '/';
-
   const crumbs = useMemo(
     () => normalizeCrumbs(props.breadcrumbs),
     [props.breadcrumbs]
@@ -118,15 +113,14 @@ export function IHContent(props: {
   return (
     <ih-content>
       <div className="ih-content-header">
-        <a className="i-clickable" onClick={toggleSidebar}>
-          {sidebarVisibility ? (
-            <img alt="sidebar-left" src={`${assetBase}svgs/sidebar-left.svg`} />
-          ) : (
-            <img
-              alt="sidebar-right"
-              src={`${assetBase}svgs/sidebar-right.svg`}
-            />
-          )}
+        <a
+          className="i-clickable"
+          aria-label={sidebarVisibility ? 'Collapse sidebar' : 'Expand sidebar'}
+          onClick={toggleSidebar}>
+          <span
+            aria-hidden="true"
+            className={`ih-sidebar-toggle-icon ih-sidebar-toggle-icon--${sidebarVisibility ? 'left' : 'right'}`}
+          />
         </a>
 
         <h1>{title || 'Insight'}</h1>

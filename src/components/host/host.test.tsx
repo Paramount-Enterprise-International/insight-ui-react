@@ -26,7 +26,9 @@ describe('IHContent', () => {
     expect(actions.previousElementSibling?.tagName).toBe('H1');
     expect(actions.querySelectorAll('i-notification-bell').length).toBe(1);
     expect(actions.querySelector('.notification-badge')).toBeNull();
-    fireEvent.click(actions.querySelector('button')!);
+    fireEvent.click(
+      actions.querySelector('i-notification-bell a.i-clickable')!
+    );
     expect(action).toHaveBeenCalledWith({ type: 'toggle' });
     rerender(view({ unreadCount: 100 }));
     expect(actions.querySelector('.notification-badge')?.textContent).toBe(
