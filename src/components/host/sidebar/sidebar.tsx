@@ -29,10 +29,7 @@ import {
 import { IHMenu } from '../menu/menu';
 import { appendMenuFilterToUrl } from '../menu/menu.utils';
 import { FavoritesSection } from './favorites-section';
-import {
-  SidebarResizeController,
-  type SidebarResizeState,
-} from './sidebar-resize';
+import { SidebarResizeController } from './sidebar-resize';
 import { filterMenuTree, flattenNavigableMenus } from './sidebar.utils';
 import {
   createFavoritesMenu,
@@ -107,18 +104,12 @@ export function IHSidebar(props: IHSidebarProps) {
   const initialResizeOptions = useRef({
     resizable, visible, minWidth, maxWidth, widthStorageKey,
   });
-  const [resizeState, setResizeState] = useState<SidebarResizeState>({
-    width: 260,
-    minWidth: 220,
-    maxWidth: 480,
-  });
 
   useLayoutEffect(() => {
     const controller = new SidebarResizeController(
       sidebarRef.current!,
       resizeHandleRef.current!,
       initialResizeOptions.current,
-      setResizeState,
       (width) => onWidthChangeRef.current?.(width)
     );
     resizeController.current = controller;
@@ -408,7 +399,13 @@ export function IHSidebar(props: IHSidebarProps) {
   }, [menuState]);
 
   return (
-    <ih-sidebar ref={sidebarRef} class={!visible ? 'hidden' : undefined}>
+    <ih-sidebar
+      ref={sidebarRef}
+      class={
+        [!visible ? 'hidden' : '', resizable ? 'is-resizable' : '']
+          .filter(Boolean)
+          .join(' ') || undefined
+      }>
       <div className="ih-sidebar-header" ref={headerRef}>
         {user ? (
           <>
@@ -515,9 +512,6 @@ export function IHSidebar(props: IHSidebarProps) {
         role="separator"
         aria-label="Resize sidebar"
         aria-orientation="vertical"
-        aria-valuemin={resizeState.minWidth}
-        aria-valuemax={resizeState.maxWidth}
-        aria-valuenow={resizeState.width}
         tabIndex={resizable && visible ? 0 : -1}
         hidden={!resizable || !visible}
       />
