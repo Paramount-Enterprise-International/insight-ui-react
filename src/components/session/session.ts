@@ -3,6 +3,7 @@ import { requestCancellation, waitForRequest } from '../api/request-scope';
 import { IAuthService, type IAuthUser } from '../auth/auth';
 import type { IAuthConfig } from '../auth/auth-config';
 import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
+import { getSessionReturnUrl } from '../auth/session-return-url';
 import type { ICsrfService } from '../csrf/csrf';
 import {
   impersonationContextKey,
@@ -196,7 +197,7 @@ export class ISessionService {
             const apiError = normalizeApiError(error);
             const code = extractProblemDetailsErrorCode(apiError);
             this.sessionExpiredService.show(
-              window.location.pathname + window.location.search,
+              getSessionReturnUrl(),
               toSessionExpiredReason(code),
               code,
               apiError.detail,
@@ -206,7 +207,7 @@ export class ISessionService {
           } else
             window.location.href = buildExternalSigninUrl(
               this.config,
-              window.location.pathname + window.location.search
+              getSessionReturnUrl()
             );
         }
         throw error;
@@ -586,6 +587,7 @@ export class ISessionService {
     this.assertActive();
     if (this.restoreInFlight) return this.restoreInFlight;
     const pathname = window.location.pathname ?? '';
+    const returnUrl = getSessionReturnUrl();
     const isSigninPage = /^\/auth\/signin$|^\/signin$/i.test(pathname);
     const isOtherAuthPage =
       /^\/auth(\/|$)|^\/forgot-password|^\/reset-password/i.test(pathname) &&
@@ -613,7 +615,7 @@ export class ISessionService {
         if (wasActive && !isAuthPage && isSessionExpiredError(err)) {
           const apiError = normalizeApiError(err);
           this.sessionExpiredService.show(
-            pathname,
+            returnUrl,
             reason ?? 'TOKEN_EXPIRED',
             rawErrorCode,
             apiError.detail,

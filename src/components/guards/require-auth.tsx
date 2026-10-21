@@ -1,8 +1,13 @@
 import { useEffect, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useHref, useLocation } from 'react-router-dom';
 
 import { buildExternalSigninUrl } from '../auth/build-signin-redirect-url';
-import { useIAuthContext, useISession, useISessionExpired } from '../auth/insight-auth-context';
+import {
+  useIAuthContext,
+  useISession,
+  useISessionExpired,
+} from '../auth/insight-auth-context';
+import { getSessionReturnUrl } from '../auth/session-return-url';
 
 /**
  * Cross-domain auth guard for @insight/ui consumer apps — the React analog of
@@ -39,6 +44,7 @@ export function IRequireAuth({
   const { config } = useIAuthContext();
   const sessionExpired = useISessionExpired();
   const location = useLocation();
+  const targetPath = getSessionReturnUrl(useHref(location));
 
   const isInitializing = session.initializing;
   const isAuth = session.isAuth();
@@ -49,18 +55,20 @@ export function IRequireAuth({
     if (isInitializing) return;
     if (isAuth) return;
 
-    const targetPath = location.pathname + location.search;
     window.location.href = buildExternalSigninUrl(config, targetPath);
-  }, [overlayVisible, isInitializing, isAuth, config, location.pathname, location.search]);
+  }, [overlayVisible, isInitializing, isAuth, config, targetPath]);
 
   if (overlayVisible) {
-    // The dialog covers the UI; render children behind it (interaction is
-    // blocked by the overlay). "Login again" redirects to signin.
-    return <>{children}</>;
+    // The application-level session dialog owns recovery while protected content is hidden.
+    return null;
   }
 
   if (isInitializing) {
-    return (loading as ReactNode) ?? <div className="ih-route-loading">Loading session...</div>;
+    return (
+      (loading as ReactNode) ?? (
+        <div className="ih-route-loading">Loading session...</div>
+      )
+    );
   }
 
   if (!isAuth) {

@@ -225,6 +225,35 @@ No compatibility aliases or manual code override are provided.
 </IHasMn>
 ```
 
+## Session and access route preservation
+
+`IRequireAccess` and `IRequireRouteAccess` display the existing Insight forbidden
+page at the requested URL, including its query and fragment. Denied content does
+not mount. The host receives denial metadata, which is cleared when the denial
+unmounts. Their legacy `unauthorizedPath` prop is deprecated and ignored; the
+`UNAUTHORIZED_ACCESS_PATH` export remains available for explicit application routes.
+
+Session expiry uses the application-level `ISessionExpiredDialog` by default.
+Mount that dialog outside `IRequireAuth` and access guards: protected content is
+hidden while the overlay owns recovery, and guards do not start access loading
+beneath it. API 403 responses remain available to their owning page without
+clearing the session or navigating. A first visit without a session may still
+redirect to sign-in automatically. Explicit `onUnauthorized` and legacy
+`unauthorizedHandling: 'redirect'` configuration keep their existing behavior.
+
+Session restore, API expiry, failed impersonation-session termination and the
+auth guard retain the full browser destination for relogin. Ordinary query and
+fragment values survive; `at` handoff fields are removed from the fragment before
+building the sign-in return URL. The helper does not alter the visible page URL.
+
+`IAuthCallback` normalizes captured browser paths against the actual React Router
+basename before calling `navigate`, preventing duplicate mount prefixes. Trusted
+same-origin absolute destinations use router navigation; existing external-origin
+allowlists still apply. The callback consumes a handoff once under StrictMode.
+A callback without a token can continue an authenticated cookie session; without
+a session it shows the recovery dialog at the callback URL and retains the
+intended destination until the user chooses to log in again.
+
 ## Application runtime and API access
 
 Create one runtime in an application-owned module. The factory validates config
