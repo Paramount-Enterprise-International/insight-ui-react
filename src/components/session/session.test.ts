@@ -64,6 +64,7 @@ describe('ISessionService.logout', () => {
 });
 
 describe('ISessionService refresh and restore', () => {
+  const initialUrl = window.location.href;
   const config = {
     api: { identity: 'http://localhost:3001/api' },
     appId: 'iam-test',
@@ -75,6 +76,7 @@ describe('ISessionService refresh and restore', () => {
   } as IAuthConfig;
 
   afterEach(() => {
+    history.replaceState(null, '', initialUrl);
     vi.useRealTimers();
     sessionStorage.clear();
   });
@@ -140,6 +142,7 @@ describe('ISessionService refresh and restore', () => {
   });
 
   it('does not log out the server after a revoked restore', async () => {
+    history.replaceState(null, '', '/app/reports/42?tab=roles#details');
     const logout = vi.fn(async () => undefined);
     const refresh = vi.fn(async () => {
       throw { status: 401, error: { errorCode: 'AUTH_SESSION_REVOKED' } };
@@ -157,6 +160,10 @@ describe('ISessionService refresh and restore', () => {
     const result = await session.tryRestoreSession();
     expect(result.reason).toBe('SESSION_REVOKED');
     expect(expired.visible).toBe(true);
+    expect(expired.returnUrl).toBe('/app/reports/42?tab=roles#details');
+    expect(
+      window.location.pathname + window.location.search + window.location.hash
+    ).toBe('/app/reports/42?tab=roles#details');
     expect(logout).not.toHaveBeenCalled();
   });
 
@@ -178,6 +185,11 @@ describe('ISessionService refresh and restore', () => {
 });
 
 describe('ISessionService.endImpersonation', () => {
+  const initialUrl = window.location.href;
+  afterEach(() => {
+    history.replaceState(null, '', initialUrl);
+    sessionStorage.clear();
+  });
   function setup() {
     const auth = {
       endImpersonation: vi.fn(async (): Promise<unknown> => undefined),
@@ -190,14 +202,15 @@ describe('ISessionService.endImpersonation', () => {
       api: { identity: 'https://bff.test/api' },
       tokenLifespan: { accessTokenSeconds: 3600 },
     } as IAuthConfig;
+    const expired = new ISessionExpiredService();
     const session = new ISessionService(
       config,
       auth as unknown as IAuthService,
       csrf as unknown as ICsrfService,
-      {} as never
+      expired
     );
     session.setAccessToken(TOKEN);
-    return { auth, csrf, session };
+    return { auth, csrf, session, expired };
   }
   it('clears state on success and preserves redirect data', async () => {
     const { session, auth } = setup();
@@ -235,5 +248,24 @@ describe('ISessionService.endImpersonation', () => {
     finish(undefined);
     await expect(first).rejects.toBeDefined();
     expect(session.getAccessToken()).toBe(nextToken);
+  });
+
+  it('keeps a failed impersonation session at its URL with a complete, token-free return URL', async () => {
+    history.replaceState(
+      null,
+      '',
+      '/app/reports/42?tab=roles#details&at=handoff-token'
+    );
+    const { session, auth, expired } = setup();
+    auth.endImpersonation.mockRejectedValue({
+      status: 401,
+      errorCode: 'IMPERSONATION_SESSION_INVALID',
+    });
+    await expect(session.endImpersonation()).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(expired.visible).toBe(true);
+    expect(expired.returnUrl).toBe('/app/reports/42?tab=roles#details');
+    expect(window.location.pathname).toBe('/app/reports/42');
   });
 });

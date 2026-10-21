@@ -18,6 +18,7 @@ import {
 } from './auth-config';
 import { buildExternalSigninUrl } from './build-signin-redirect-url';
 import type { IAuthContext } from './insight-auth-context';
+import { getSessionReturnUrl } from './session-return-url';
 
 /** Application-scoped services and lifecycle exposed by the React auth runtime. */
 export type IRuntime = IAuthContext & {
@@ -76,7 +77,7 @@ export function createIRuntime(overrides: IAuthConfigOverrides): IRuntime {
       const apiError = normalizeApiError(error);
       const errorCode = extractProblemDetailsErrorCode(apiError);
       const reason = toSessionExpiredReason(errorCode);
-      const targetPath = window.location.pathname + window.location.search;
+      const targetPath = getSessionReturnUrl();
       if ((config.unauthorizedHandling ?? 'dialog') === 'dialog') {
         sessionExpired.show(
           targetPath,
