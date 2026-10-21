@@ -1,14 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
 
 import {
   useISession,
   useISessionExpired,
   useIUserMenuStore,
 } from '../auth/insight-auth-context';
+import { IRouteAccessDenied } from '../permission/route-access-denied';
 import type { IPermissionSource } from '../permission/use-permission';
 
-/** Route that renders the "account lacks the required access/role" (403) page. */
+/** Legacy denial route constant retained for applications that register an explicit error page. */
 export const UNAUTHORIZED_ACCESS_PATH = '/unauthorized-access';
 
 export type IRequireAccessProps = {
@@ -16,7 +16,7 @@ export type IRequireAccessProps = {
   value: string | string[];
   /** Source of the access check. Defaults to `menuCode` (effective authorization codes). */
   source?: IPermissionSource;
-  /** Where to redirect users who lack access. */
+  /** @deprecated Access denial is rendered at the current URL; this value is ignored. */
   unauthorizedPath?: string;
   /** Custom loading placeholder while the session/authorizations are still loading. */
   loading?: ReactNode;
@@ -25,8 +25,7 @@ export type IRequireAccessProps = {
 
 /**
  * React analog of the Angular `requireAccess` guard — wraps a route element and
- * denies navigation to users who lack a required menu code/role by
- * rendering `<Navigate>` to `unauthorizedPath`:
+ * renders access denial at the requested URL for a missing menu code or role:
  *
  * ```tsx
  * <Route
@@ -50,7 +49,6 @@ export type IRequireAccessProps = {
 export function IRequireAccess({
   value,
   source = 'menuCode',
-  unauthorizedPath = UNAUTHORIZED_ACCESS_PATH,
   loading,
   children,
 }: IRequireAccessProps) {
@@ -61,20 +59,21 @@ export function IRequireAccess({
   const isInitializing = session.initializing;
   const isAuth = session.isAuth();
   const accessSettled = store.initialized;
+  const overlayVisible = sessionExpired.visible;
 
   // Start in the loading state when mounting on a cold start — authorizations not yet
   // fetched and no store load in flight. The effect below triggers that load,
   // but the first render happens BEFORE the effect runs, so without this the
-  // guard would flash a redirect to the unauthorized page before the authorizations
+  // guard would flash access denial before the authorizations
   // arrive (a cold-start deep link must never be denied early).
   const [accessLoading, setAccessLoading] = useState(
-    () => source === 'menuCode' && !store.initializing && !accessSettled,
+    () => source === 'menuCode' && !store.initializing && !accessSettled
   );
 
   // Code checks need authorizations loaded. When they have not been fetched yet
   // (cold-start deep link before the shell's boot load), trigger the load once.
   useEffect(() => {
-    if (source !== 'menuCode' || !isAuth || isInitializing) {
+    if (source !== 'menuCode' || !isAuth || isInitializing || overlayVisible) {
       return;
     }
     if (store.initializing) {
@@ -85,16 +84,19 @@ export function IRequireAccess({
     }
     setAccessLoading(true);
     void store.load().finally(() => setAccessLoading(false));
-  }, [source, isAuth, isInitializing, store, accessSettled]);
+  }, [source, isAuth, isInitializing, overlayVisible, store, accessSettled]);
 
-  // The session-expired overlay owns the UX while visible — render the content
-  // behind it (mirrors IRequireAuth).
-  if (sessionExpired.visible) {
-    return <>{children}</>;
+  // The application-level session dialog owns recovery.
+  if (overlayVisible) {
+    return null;
   }
 
   if (isInitializing) {
-    return (loading as ReactNode) ?? <div className="ih-route-loading">Loading session...</div>;
+    return (
+      (loading as ReactNode) ?? (
+        <div className="ih-route-loading">Loading session...</div>
+      )
+    );
   }
 
   if (!isAuth) {
@@ -105,17 +107,22 @@ export function IRequireAccess({
   // While the authorizations have not settled (loaded or failed) we must not judge:
   // keep showing the loading placeholder whether the store load is in flight
   // (`store.initializing`) or our own cold-start load is running/queued.
-  if (source === 'menuCode' && (store.initializing || !accessSettled || accessLoading)) {
-    return (loading as ReactNode) ?? <div className="ih-route-loading">Loading access...</div>;
+  if (
+    source === 'menuCode' &&
+    (store.initializing || !accessSettled || accessLoading)
+  ) {
+    return (
+      (loading as ReactNode) ?? (
+        <div className="ih-route-loading">Loading access...</div>
+      )
+    );
   }
 
   const allowed =
-    source === 'role'
-      ? session.hasRole(value)
-      : store.hasMenuCode(value);
+    source === 'role' ? session.hasRole(value) : store.hasMenuCode(value);
 
   if (!allowed) {
-    return <Navigate to={unauthorizedPath} replace />;
+    return <IRouteAccessDenied />;
   }
 
   return <>{children}</>;

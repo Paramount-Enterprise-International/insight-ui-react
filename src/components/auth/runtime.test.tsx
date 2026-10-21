@@ -16,6 +16,7 @@ const config = (name = 'a') => ({
   appId: name,
 });
 const runtimes: IRuntime[] = [];
+const initialUrl = window.location.href;
 const create = (name = 'a') => {
   const runtime = createIRuntime(config(name));
   runtimes.push(runtime);
@@ -29,6 +30,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 afterEach(async () => {
+  history.replaceState(null, '', initialUrl);
   cleanup();
   runtimes.forEach((runtime) => runtime.dispose());
   runtimes.length = 0;
@@ -310,6 +312,65 @@ describe('application runtime lifecycle', () => {
   });
 });
 describe('runtime refresh concurrency', () => {
+  it('keeps a revoked session on its route and captures query and fragment without the handoff token', async () => {
+    history.replaceState(
+      null,
+      '',
+      '/app/reports/42?tab=roles#details&at=handoff-token'
+    );
+    const runtime = create();
+    runtime.session.setAccessToken('active');
+    await runtime.initialize();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 401 }))
+    );
+    vi.spyOn(runtime.auth, 'refresh').mockRejectedValue({
+      status: 401,
+      errorCode: 'AUTH_SESSION_REVOKED',
+    });
+    await expect(runtime.api.get('/private')).rejects.toMatchObject({
+      status: 401,
+    });
+    expect(runtime.sessionExpired.visible).toBe(true);
+    expect(runtime.sessionExpired.returnUrl).toBe(
+      '/app/reports/42?tab=roles#details'
+    );
+    expect(
+      window.location.pathname + window.location.search + window.location.hash
+    ).toBe('/app/reports/42?tab=roles#details&at=handoff-token');
+  });
+
+  it.each(['ADMIN_ACCESS_FORBIDDEN', 'ADMIN_MENU_ACCESS_FORBIDDEN'])(
+    'keeps API 403 %s available for local handling without changing the route',
+    async (errorCode) => {
+      history.replaceState(null, '', '/app/reports/42?tab=roles#details');
+      const runtime = create();
+      runtime.session.setAccessToken('active');
+      await runtime.initialize();
+      const refresh = vi.spyOn(runtime.auth, 'refresh');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          Response.json(
+            { errorCode, message: 'Access denied.' },
+            { status: 403 }
+          )
+        )
+      );
+      await expect(runtime.api.get('/private')).rejects.toMatchObject({
+        status: 403,
+        errorCode,
+      });
+      expect(runtime.sessionExpired.visible).toBe(false);
+      expect(runtime.session.getAccessToken()).toBe('active');
+      expect(refresh).not.toHaveBeenCalled();
+      expect(
+        window.location.pathname + window.location.search + window.location.hash
+      ).toBe('/app/reports/42?tab=roles#details');
+    }
+  );
+
   it('shares refresh across consumers and lets another caller continue after one aborts', async () => {
     const runtime = create();
     runtime.session.setAccessToken('old');

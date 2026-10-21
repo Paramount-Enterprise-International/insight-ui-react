@@ -1,9 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useEffect, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { useHref, useLocation, useNavigate } from 'react-router-dom';
 
-import { sanitizeReturnUrl } from './sanitize-return-url';
 import { useIAuthContext } from './insight-auth-context';
+import { sanitizeReturnUrl } from './sanitize-return-url';
+import { getSessionReturnUrl, toRouterReturnUrl } from './session-return-url';
 
 /**
  * Extract the access token appended by the sign-in host after a successful
@@ -38,47 +39,79 @@ export function extractAccessTokenFromHash(hash?: string): string | null {
  *     rules as the sign-in page.
  */
 export function IAuthCallback(): ReactNode {
-  const { config, session } = useIAuthContext();
+  const { config, session, sessionExpired } = useIAuthContext();
   const location = useLocation();
   const navigate = useNavigate();
-  const [handled, setHandled] = useState(false);
+  const handled = useRef(false);
+  const basename = useHref('/');
+  const rawReturnUrl =
+    new URLSearchParams(location.search).get('returnUrl') || '/';
+  const sanitized = sanitizeReturnUrl(
+    rawReturnUrl,
+    config.allowedReturnOrigins
+  );
+  const isExternal =
+    sanitized.isExternal &&
+    new URL(sanitized.returnUrl).origin !== window.location.origin;
+  const returnUrl = isExternal
+    ? sanitized.returnUrl
+    : toRouterReturnUrl(sanitized.returnUrl, basename);
+  const callbackPath = toRouterReturnUrl(
+    config.callbackPath ?? '/auth/callback',
+    basename
+  )
+    .split(/[?#]/)[0]
+    .replace(/\/+$/, '');
+  const destinationPath = returnUrl.split(/[?#]/)[0].replace(/\/+$/, '');
+  const safeReturnUrl =
+    !isExternal &&
+    (destinationPath === callbackPath ||
+      destinationPath.startsWith(`${callbackPath}/`))
+      ? '/'
+      : returnUrl;
+  const destinationHref = useHref(isExternal ? '/' : safeReturnUrl);
 
   useEffect(() => {
-    if (handled) return;
-    setHandled(true);
+    if (handled.current) return;
+    handled.current = true;
 
-    const accessToken = extractAccessTokenFromHash(window.location.hash);
+    const accessToken = extractAccessTokenFromHash(location.hash);
 
     // Clear the fragment immediately regardless of outcome — the token must
     // never remain visible in the URL / browser history.
     if (window.location.hash) {
-      history.replaceState(null, '', window.location.pathname + window.location.search);
+      history.replaceState(
+        null,
+        '',
+        window.location.pathname + window.location.search
+      );
     }
 
-    if (!accessToken) {
-      window.location.href = config.signinUrl;
+    if (!accessToken && !session.isAuth()) {
+      sessionExpired.show(
+        isExternal ? safeReturnUrl : getSessionReturnUrl(destinationHref),
+        'TOKEN_EXPIRED',
+        'AUTH_NO_SESSION'
+      );
       return;
     }
 
-    session.setAccessToken(accessToken);
-
-    const rawReturnUrl = new URLSearchParams(window.location.search).get('returnUrl') || '/';
-    const { returnUrl, isExternal } = sanitizeReturnUrl(
-      rawReturnUrl,
-      config.allowedReturnOrigins,
-    );
-
-    // Self-redirect loop guard — a relative returnUrl must never point back at
-    // this app's own callback route.
-    const callbackPath = config.callbackPath ?? '/auth/callback';
-    const safeReturnUrl = !isExternal && returnUrl.startsWith(callbackPath) ? '/' : returnUrl;
+    if (accessToken) session.setAccessToken(accessToken);
 
     if (isExternal) {
-      window.location.href = returnUrl;
+      window.location.href = safeReturnUrl;
     } else {
       void navigate(safeReturnUrl, { replace: true });
     }
-  }, [handled, config, session, navigate, location]);
+  }, [
+    session,
+    sessionExpired,
+    navigate,
+    location.hash,
+    isExternal,
+    safeReturnUrl,
+    destinationHref,
+  ]);
 
   return null;
 }
