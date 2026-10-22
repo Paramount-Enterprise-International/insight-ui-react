@@ -84,6 +84,7 @@ declare module 'react' {
         HTMLElement
       > & {
         light?: '' | 'true';
+        mode?: import('./components/loading').ILoadingMode;
       };
 
       'i-icon': import('react').DetailedHTMLProps<

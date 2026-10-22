@@ -23,7 +23,8 @@ const observable = {
 function renderGuard(
   props: Omit<IRequireRouteAccessProps, 'children'>,
   hasMenuCode: boolean,
-  overlayVisible = false
+  overlayVisible = false,
+  initializing = false
 ) {
   const store = {
     ...observable,
@@ -35,7 +36,7 @@ function renderGuard(
   } as unknown as IUserMenuStore;
   const session = {
     ...observable,
-    initializing: false,
+    initializing,
     isAuth: () => true,
   } as unknown as ISessionService;
   const sessionExpired = {
@@ -84,6 +85,25 @@ function renderGuard(
 }
 
 describe('IRequireRouteAccess', () => {
+  it('renders the centered default while the session restores', () => {
+    renderGuard({ menuCode: 'read' }, true, false, true);
+    expect(screen.getByText('Loading session...')).toHaveAttribute(
+      'mode',
+      'container'
+    );
+    expect(screen.getByText('Loading session...')).toHaveAttribute(
+      'role',
+      'status'
+    );
+    expect(screen.queryByText('protected-content')).toBeNull();
+  });
+
+  it('preserves a custom fallback while the session restores', () => {
+    renderGuard({ loading: <p>Custom route progress</p> }, true, false, true);
+    expect(screen.getByText('Custom route progress')).toBeTruthy();
+    expect(screen.queryByText('Loading session...')).toBeNull();
+  });
+
   it('allows a granted static menu code', async () => {
     const store = renderGuard({ menuCode: 'atlas.overview' }, true);
 

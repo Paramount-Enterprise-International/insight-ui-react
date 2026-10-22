@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,6 +26,13 @@ function setup({
   initializing = false,
   overlayVisible = false,
   hash = '#details',
+  loading,
+}: {
+  active?: boolean;
+  initializing?: boolean;
+  overlayVisible?: boolean;
+  hash?: string;
+  loading?: ReactNode;
 } = {}) {
   const expired = new ISessionExpiredService();
   if (overlayVisible)
@@ -57,7 +65,7 @@ function setup({
       <MemoryRouter
         basename="/app"
         initialEntries={['/app/reports/42?tab=roles' + hash]}>
-        <IRequireAuth>
+        <IRequireAuth loading={loading}>
           <Page />
         </IRequireAuth>
       </MemoryRouter>
@@ -96,7 +104,14 @@ describe('IRequireAuth return URL and recovery', () => {
   it('waits for restoration without redirecting', () => {
     setup({ initializing: true });
     expect(screen.getByText('Loading session...')).toBeTruthy();
+    expect(screen.getByRole('status')).toHaveAttribute('mode', 'container');
     expect(buildExternalSigninUrl).not.toHaveBeenCalled();
+  });
+
+  it('preserves the custom restoration fallback', () => {
+    setup({ initializing: true, loading: <p>Custom session progress</p> });
+    expect(screen.getByText('Custom session progress')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('renders an authenticated destination without redirecting', () => {
