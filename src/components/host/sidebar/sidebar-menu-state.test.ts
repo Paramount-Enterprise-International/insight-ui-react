@@ -81,7 +81,7 @@ describe('Sidebar menu state parity', () => {
   it('restores manual group choices after remount without mutating consumer data', () => {
     const instance = state();
     choose(instance, 'root', false);
-    choose(instance, 'nested', false);
+    choose(instance, 'nested', true);
     const restored = state().project(tree);
     expect(restored[0].visibility).toBe('collapsed');
     expect(child(restored[0])[0].visibility).toBe('collapsed');
@@ -173,7 +173,105 @@ describe('Sidebar menu state parity', () => {
     );
     const projected = state().project(tree);
     expect(projected[0].visibility).toBe('collapsed');
-    expect(child(projected[0])[0].visibility).toBeUndefined();
+    expect(child(projected[0])[0].visibility).toBe('collapsed');
+  });
+
+  it('defaults nested containers to collapsed using tree depth instead of payload levels', () => {
+    const nodes: IMenu[] = [
+      {
+        id: 'module',
+        menuTypeId: 2,
+        level: 9,
+        child: [
+          {
+            menuId: 8,
+            menuTypeId: 3,
+            level: 0,
+            visibility: 'expanded',
+            child: [{ menuId: 9, menuTypeId: 3, route: '/legacy' }],
+          },
+        ],
+      },
+    ];
+    const projected = state().project(nodes);
+    expect(projected[0].visibility).toBeUndefined();
+    expect(child(projected[0])[0].visibility).toBe('collapsed');
+    expect(child(child(projected[0])[0])[0].visibility).toBeUndefined();
+    expect(child(nodes[0])[0].visibility).toBe('expanded');
+    expect(state().project(tree)[0].visibility).toBeUndefined();
+    expect(child(state().project(tree)[0])[0].visibility).toBe('collapsed');
+  });
+
+  it('ignores old nested preferences and writes only known roots from both scopes', () => {
+    const raw = JSON.stringify({
+      version: 1,
+      expanded: {
+        'main:id:root': false,
+        'main:id:nested': true,
+        'main:id:missing': true,
+        'favorites:group': false,
+      },
+    });
+    stored.set(key, raw);
+    const instance = state();
+    const favorites = createFavoritesMenu([tree[0].children![0].children![0]]);
+    instance.project(favorites, 'favorites');
+    expect(child(instance.project(tree)[0])[0].visibility).toBe('collapsed');
+    expect(stored.get(key)).toBe(raw);
+    instance.project([]);
+    choose(instance, 'nested', true);
+    expect(child(instance.project(tree)[0])[0].visibility).toBe('expanded');
+    expect(JSON.parse(stored.get(key)!).expanded).toEqual({
+      'main:id:root': false,
+      'favorites:group': false,
+    });
+    choose(instance, 'other', false);
+    expect(JSON.parse(stored.get(key)!).expanded).toEqual({
+      'main:id:root': false,
+      'main:id:other': false,
+      'favorites:group': false,
+    });
+    expect(child(state().project(tree)[0])[0].visibility).toBe('collapsed');
+  });
+
+  it('keeps nested choices in memory through empty emissions and replacement arrays', () => {
+    const instance = state();
+    choose(instance, 'nested', true);
+    instance.project([]);
+    const replacement = structuredClone([...tree].reverse());
+    expect(child(instance.project(replacement)[1])[0].visibility).toBe(
+      'expanded'
+    );
+    expect(child(state().project(replacement)[1])[0].visibility).toBe(
+      'collapsed'
+    );
+    expect(JSON.parse(stored.get(key)!).expanded).toEqual({});
+  });
+
+  it('persists only root legacy IDs while keeping nested legacy choices in memory', () => {
+    const nodes: IMenu[] = [
+      {
+        menuId: 1,
+        menuTypeId: 2,
+        child: [
+          {
+            menuId: 2,
+            menuTypeId: 3,
+            child: [{ menuId: 3, menuTypeId: 3, route: '/legacy' }],
+          },
+        ],
+      },
+    ];
+    const instance = state();
+    const projected = instance.project(nodes);
+    instance.setExpanded({ menu: projected[0], expanded: false });
+    instance.setExpanded({ menu: child(projected[0])[0], expanded: true });
+    expect(JSON.parse(stored.get(key)!).expanded).toEqual({
+      'main:menuId:1': false,
+    });
+    expect(child(instance.project(nodes)[0])[0].visibility).toBe('expanded');
+    expect(state().project(nodes)[0].visibility).toBe('collapsed');
+    expect(child(state().project(nodes)[0])[0].visibility).toBe('collapsed');
   });
 
   it('continues in memory when reads or writes are blocked', () => {

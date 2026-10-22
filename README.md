@@ -630,10 +630,11 @@ below the minimum is raised to the minimum.
 
 ## Sidebar menu state
 
-`IHSidebar` persists explicit expand/collapse choices for groups, legacy modules
-and Favorites in localStorage per browser origin. The `menuStateStorageKey` prop
-defaults to `'insight.sidebar.menu-state'`; use a custom key to isolate consumers
-or `null` to keep choices in memory only. This does not enable `collapsible`.
+`IHSidebar` persists explicit expand/collapse choices only for top-level headers,
+including legacy modules and Favorites, in localStorage per browser origin.
+The `menuStateStorageKey` prop defaults to `'insight.sidebar.menu-state'`;
+use a custom key to isolate consumers or `null` to keep choices in memory only.
+This does not enable `collapsible`.
 
 ```tsx
 <IHSidebar
@@ -646,6 +647,15 @@ or `null` to keep choices in memory only. This does not enable `collapsible`.
 
 Choices are keyed by modern `id` or legacy `menuId`; Favorites has its own
 namespace. ID-less groups work in memory but do not persist across mounts.
+In collapsible mode, nested containers start collapsed on each mount, even when
+their payload or an older stored preference marks them expanded. Their manual
+choices remain in memory across navigation, replacement arrays and temporary empty
+emissions, and reset on remount. Root headers retain their existing default
+visibility unless a saved or manual choice overrides it. Nesting is determined
+from the tree, independently of payload `level` values.
+The version 1 storage format is unchanged; old nested entries are ignored and
+the next toggle saves only preferences for known top-level headers from both
+the main and Favorites sections.
 Versioned storage ignores invalid entries and missing IDs. Blocked/full storage
 does not prevent menu interaction. Changing the storage key loads its preferences;
 temporary empty emissions and replacement menu arrays do not erase choices.
@@ -668,6 +678,10 @@ saved choices, and users may collapse those groups again until the next refresh.
 Subsequent page navigation cancels any pending restoration. Hidden sidebars and
 search filters that hide the target defer scrolling until it is visible; search
 text and URL filters remain intact. Temporary search expansion is not persisted.
+Search opens every ancestor of a match, including collapsed legacy modules.
+Matching a container displays and opens its entire descendant branch. Clearing
+the search restores the previous expansion state. Flat mode
+(`collapsible=false`) continues to display every level.
 
 ### Active route highlighting
 

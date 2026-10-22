@@ -119,6 +119,8 @@ export class SidebarMenuState {
   private storageKey: string | null | undefined;
   private readonly storage: () => Storage;
   private choices = new Map<string, boolean>();
+  private savedChoices = new Map<string, boolean>();
+  private rootKeys = new Set<string>();
   private forcedExpanded = new Set<string>();
   private initialPath: string | undefined;
   private baseHref = '/';
@@ -141,6 +143,7 @@ export class SidebarMenuState {
     if (key === this.storageKey) return false;
     this.storageKey = key;
     this.choices = new Map();
+    this.savedChoices = new Map();
     if (key === null) return true;
     try {
       const raw: unknown = JSON.parse(this.storage().getItem(key) ?? 'null');
@@ -157,7 +160,7 @@ export class SidebarMenuState {
         return true;
       for (const [id, expanded] of Object.entries(raw.expanded)) {
         if (persistentKey(id) && typeof expanded === 'boolean')
-          this.choices.set(id, expanded);
+          this.savedChoices.set(id, expanded);
       }
     } catch {
       // Invalid or inaccessible storage leaves preferences in memory.
@@ -193,9 +196,13 @@ export class SidebarMenuState {
           Number(menu.menuTypeId) === 2 ||
           children(menu).length > 0;
         if (group && menu.visibility !== 'no-child') {
+          const root = prefix === '';
+          if (root && persistentKey(key)) this.rootKeys.add(key);
+          else this.rootKeys.delete(key);
           const expanded = this.forcedExpanded.has(key)
             ? true
-            : this.choices.get(key);
+            : (this.choices.get(key) ??
+              (root ? this.savedChoices.get(key) : false));
           if (expanded !== undefined)
             copy.visibility = expanded ? 'expanded' : 'collapsed';
         }
@@ -214,7 +221,9 @@ export class SidebarMenuState {
     if (this.storageKey === null || this.storageKey === undefined) return;
     try {
       const stored = Object.fromEntries(
-        [...this.choices].filter(([id]) => persistentKey(id))
+        [...this.rootKeys]
+          .map((id) => [id, this.choices.get(id) ?? this.savedChoices.get(id)])
+          .filter(([, value]) => typeof value === 'boolean')
       );
       this.storage().setItem(
         this.storageKey,

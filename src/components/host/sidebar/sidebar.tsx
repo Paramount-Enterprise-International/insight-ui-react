@@ -51,7 +51,7 @@ export type IHSidebarProps = {
   maxWidth?: number;
   /** Set to null to keep the width in memory only. */
   widthStorageKey?: string | null;
-  /** Expansion preferences are shared per origin; null disables persistence. */
+  /** Root expansion preferences are shared per origin; null disables persistence. */
   menuStateStorageKey?: string | null;
   /** Called after a completed pointer or keyboard width change, in pixels. */
   onWidthChange?: (width: number) => void;
