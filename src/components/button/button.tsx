@@ -1,5 +1,6 @@
 // button.tsx
 import type React from 'react';
+import { IActionPlaceholder } from '../action-placeholder';
 import { IIcon, type IIconInput } from '../icon/icon';
 import { ILoading } from '../loading/loading';
 import type { IUISize, IUIVariant } from '../shared/form.types';
@@ -20,6 +21,7 @@ export type IButtonProps = Omit<
   React.HTMLAttributes<HTMLElement>,
   'children' | 'onClick'
 > & {
+  placeholder?: boolean;
   disabled?: boolean;
   loading?: boolean;
 
@@ -88,6 +90,7 @@ function buildUrl(
 
 export function IButton(props: IButtonProps) {
   const {
+    placeholder = false,
     disabled = false,
     loading = false,
     type = 'button',
@@ -126,7 +129,7 @@ export function IButton(props: IButtonProps) {
   const url = buildUrl(routerLink ?? href, queryParams, fragment);
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
-    if (isDisabled) {
+    if (placeholder || isDisabled) {
       event.preventDefault();
       event.stopPropagation();
       (
@@ -163,6 +166,9 @@ export function IButton(props: IButtonProps) {
       {children}
     </>
   );
+
+  if (placeholder)
+    return <IActionPlaceholder size={size} className={className} />;
 
   return (
     <i-button

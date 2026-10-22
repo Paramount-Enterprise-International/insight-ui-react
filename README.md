@@ -10,13 +10,20 @@ the components never fetch data themselves. See
 
 ```tsx
 import { useState } from 'react';
-import { IFCSelectCompany, ISelectCompany, type IMenuCompanyDto } from '@insight/ui-react';
+import {
+  IFCSelectCompany,
+  ISelectCompany,
+  type IMenuCompanyDto,
+} from '@insight/ui-react';
 
 export function CompanyFilter() {
   const [company, setCompany] = useState<IMenuCompanyDto | null>(null);
   return (
     <>
-      <ISelectCompany value={company} onChange={({ value }) => setCompany(value)} />
+      <ISelectCompany
+        value={company}
+        onChange={({ value }) => setCompany(value)}
+      />
       <ISelectCompany
         menuCode="sales"
         value={company}
@@ -662,7 +669,6 @@ Subsequent page navigation cancels any pending restoration. Hidden sidebars and
 search filters that hide the target defer scrolling until it is visible; search
 text and URL filters remain intact. Temporary search expansion is not persisted.
 
-
 ### Active route highlighting
 
 The current internal leaf menu has `is-active` and `aria-current="page"`.
@@ -684,3 +690,102 @@ Load the matching `insight-ui-css` stylesheet for the gray active background,
 darker left accent, label and icon colors, semibold label and stronger hover
 backgrounds. Favorite star colors and actions keep their existing styles. No
 additional sidebar properties or menu contract fields are required.
+
+## Shared presentation components
+
+The React package exports `IActionPlaceholder`, `IBanner`, `IEmptyState`,
+`IHighlightSearch`, `ILoadError`, `ILoadingRegion`, and `IImageCropper`.
+Load the matching insight-ui-css build; these components share its tokens and surface rules.
+
+- `IButton.placeholder` defaults to false. When true, it renders only an inert,
+  decorative placeholder using the button's current `size`. No button/link, icon,
+  spinner, children, submit/reset, or navigation is rendered. `IActionPlaceholder`
+  is also available independently; its default size matches IButton (`md`).
+- `IBanner` accepts `message` and projected content/children, plus `prefixIcon`
+  and `suffixIcon`. Content renders after the message. Variants are `neutral`,
+  `primary`, `success`, `info` (default), `warning`, and `danger`.
+  Neutral is unaccented gray. Primary follows --i-color-primary; info follows
+  --i-color-info (cyan in the default theme). Messages are text;
+  rich content is supplied as framework children, never an HTML string.
+- `closable` defaults to false. Without `open`, banner state starts at
+  `defaultOpen` (true) and Close immediately dismisses it. With `open`, visibility
+  is controlled by the parent. Angular exposes `openChange` for `[(open)]`;
+  React exposes `onOpenChange`. Both expose `onClose` and `closeLabel` (default
+  `Close`). Changing content does not reopen a dismissed instance.
+- `IEmptyState` supports `empty`, `search`, `filter`, `search-filter`, and
+  `prerequisite`, with title/description/icon overrides, density, and children/CTA.
+- `IGrid.emptyState` configures the built-in empty state. Angular provides an
+  `ng-template iGridEmptyDef` slot; React provides `renderEmptyState`. The slot
+  receives the resolved config. Keep business prerequisites outside the grid.
+  Initial empty data hides grid chrome. Search/filter no-result keeps headers
+  and pagination, reserving pageSize times `--i-grid-empty-row-height`
+  (default `--i-size-md`) inside the scrolling viewport. Tree/non-paginated
+  empty states use the shared default state height. Keep the grid mounted when search returns no rows.
+  `IGridDataSource.filteredLength` exposes the total before local pagination;
+  `length` retains its existing raw/server meaning. Server-owned search state
+  and copy must follow the successful response that populated the displayed rows.
+- `IHighlightSearch` accepts `value` (string/number/null/undefined) and `search`.
+  It renders plain text and highlights literal, case-insensitive matches. The
+  Angular `IHighlightSearchPipe` remains available with its existing contract.
+- `ILoadError` accepts message/title, `density` (`default`, `compact`, `inline`),
+  retryDisabled/retryLoading, and `onRetry`. The application owns recovery requests.
+- `ILoadingRegion` retains DOM and measured height during refresh, sets aria-busy,
+  and blocks content with inert. Its inputs/props include loading, error, label,
+  contextKey, initialMinHeight, height, containerClass, contentClass, and layout.
+  Angular exposes `hasLoaded`; React also accepts children as `({hasLoaded}) => ...`.
+  Owners retain data and reject stale responses when context changes.
+- `IImageCropper` supplies zoom/pan and keyboard repositioning without a dialog,
+  picker, or upload. Inputs/props include src, disabled, viewportSize (240), shape
+  (`square`/`circle`), minZoom (1), maxZoom (3), alt, zoomLabel, and panLabel.
+  `onReady`/`onError` report image state. Angular component references and the React
+  `IImageCropperHandle` ref expose `exportImage({mimeType, quality})`, returning
+  a Promise with blob/dataUrl/mimeType/width/height. Exports preserve source crop
+  resolution without upscaling; circle is a preview mask and output stays square.
+  Source changes/destruction invalidate pending exports. Remote images must permit
+  canvas export; export failures reject the Promise. File limits remain app-owned.
+
+### Automatic surface layout
+
+Section body and loading region default to `layout="auto"`, with `padded` and
+`flush` overrides. Section owns padding and corner radii. A sole child marked
+`data-i-surface="delegate"` receives the padding responsibility; a sole `flush`
+child takes the full area. Loading regions delegate and grids are flush.
+Nested wrappers consume padding once. Content, grid, and overlays share per-corner
+surface radii, while form focus rings and dropdowns retain their normal overflow.
+App wrappers can implement the same marker contract or use an explicit override.
+
+The shared --i-state-min-height token defaults to min(40vh, 240px).
+Initial loading and default-density empty presentations reserve the same height.
+An explicit initialMinHeight on a loading region also applies to its empty content.
+Padding is counted once, including standalone prerequisites inside a region.
+Compact empty states retain natural height. Paginated search/filter no-result still
+uses pageSize times the nominal row height; bounded grids can shrink to their viewport.
+Content larger than the baseline can expand normally.
+
+### Migration from local IAM components
+
+Use the exported components instead of the removed IAM presentation wrappers.
+Replace `iam-error-banner` with `i-banner variant="danger"`; map icon to prefixIcon.
+Replace `iam-load-error` retry bindings with `onRetry`. Remove `seamlessGrid` and
+IAM-specific surface CSS when switching to ILoadingRegion.
+
+**Breaking removal:** `IInfoNotice`, `IInfoNoticeProps`, `i-info-notice`, and its
+CSS tokens have been removed. Use IBanner with variant info and prefixIcon info.
+Preserve a notice title as a strong element in projected content/children.
+The session-specific IHImpersonationBanner API remains available.
+
+Component playground pages are independent:
+
+- `/demos/action-placeholder`: Action Placeholder.
+- `/demos/banner`: Banner.
+- `/demos/empty-state`: Empty State.
+- `/demos/highlight-search`: Highlight Search.
+- `/demos/load-error`: Load Error.
+- `/demos/loading-region`: Loading Region.
+- `/demos/image-cropper`: Image Cropper.
+
+The former `/demos/shared-ui` route redirects to `/demos/action-placeholder`.
+These library playground routes require no IAM menu or access code.
+
+**Banner rename:** use `neutral` instead of the former `default` variant.
+Omitting variant still selects info.
