@@ -156,10 +156,26 @@ describe('IHSidebar menu persistence and restoration', () => {
     );
   });
 
-  it('persists nested choices through remount, new references and empty hydration', async () => {
+  it('keeps nested choices during navigation and hydration but resets them on remount', async () => {
     const first = render(view({}, '/unknown'));
     fireEvent.click(header(first.container, 'Root'));
     fireEvent.click(header(first.container, 'Nested'));
+    expect(collapsed(first.container, 'Nested')).toBe(false);
+    expect(
+      JSON.parse(localStorage.getItem(key)!).expanded['main:id:nested']
+    ).toBeUndefined();
+    const search = first.getByPlaceholderText('Search Menu..');
+    fireEvent.change(search, { target: { value: 'Root' } });
+    fireEvent.change(search, { target: { value: '' } });
+    expect(collapsed(first.container, 'Nested')).toBe(false);
+    fireEvent.click(first.getByText('Navigate'));
+    await waitFor(() =>
+      expect(first.getByTestId('location')).toHaveTextContent('/other')
+    );
+    fireEvent.click(first.getByText('Back'));
+    await waitFor(() =>
+      expect(first.getByTestId('location')).toHaveTextContent('/unknown')
+    );
     expect(collapsed(first.container, 'Nested')).toBe(false);
     first.rerender(view({ menus: [] }, '/unknown'));
     first.rerender(view({ menus: structuredClone(menus) }, '/unknown'));
@@ -167,7 +183,100 @@ describe('IHSidebar menu persistence and restoration', () => {
     first.unmount();
     const second = render(view({}, '/unknown'));
     expect(collapsed(second.container, 'Root')).toBe(false);
-    expect(collapsed(second.container, 'Nested')).toBe(false);
+    expect(collapsed(second.container, 'Nested')).toBe(true);
+  });
+
+  it('opens root headers by default and ignores old nested expansion on initial load', () => {
+    localStorage.setItem(
+      key,
+      JSON.stringify({ version: 1, expanded: { 'main:id:nested': true } })
+    );
+    const nodes = structuredClone(menus);
+    nodes[0].children![0].visibility = 'expanded';
+    const { container } = render(view({ menus: nodes }, '/unknown'));
+    expect(collapsed(container, 'Root')).toBe(false);
+    expect(collapsed(container, 'Other')).toBe(false);
+    expect(collapsed(container, 'Nested')).toBe(true);
+  });
+
+  for (const term of ['Active page', 'Root']) {
+    it(`temporarily opens the complete search branch for ${term}`, () => {
+      const before = localStorage.getItem(key);
+      const { container, getByPlaceholderText } = render(view({}, '/unknown'));
+      const search = getByPlaceholderText('Search Menu..');
+      fireEvent.change(search, { target: { value: term } });
+      expect(collapsed(container, 'Root')).toBe(false);
+      expect(collapsed(container, 'Nested')).toBe(false);
+      const row = container.querySelector(
+        'a[data-sidebar-menu-key="main:id:active"]'
+      )!;
+      expect(row.closest('ul.collapsed')).toBeNull();
+      expect(localStorage.getItem(key)).toBe(before);
+      fireEvent.change(search, { target: { value: '' } });
+      expect(collapsed(container, 'Root')).toBe(true);
+      expect(collapsed(container, 'Nested')).toBe(true);
+      expect(localStorage.getItem(key)).toBe(before);
+    });
+  }
+
+  for (const term of ['Legacy page', 'Legacy module']) {
+    it(`opens a saved collapsed legacy module and its descendants for ${term}`, () => {
+      const nodes: IHSidebarProps['menus'] = [
+        {
+          menuId: 1,
+          menuName: 'Legacy module',
+          menuTypeId: 2,
+          visibility: 'collapsed',
+          child: [
+            {
+              menuId: 2,
+              menuName: 'Legacy group',
+              menuTypeId: 3,
+              child: [
+                {
+                  menuId: 3,
+                  menuName: 'Legacy page',
+                  menuTypeId: 3,
+                  route: '/legacy',
+                },
+              ],
+            },
+          ],
+        },
+      ];
+      const before = localStorage.getItem(key);
+      const { container, getByPlaceholderText } = render(
+        view({ menus: nodes }, '/unknown')
+      );
+      const search = getByPlaceholderText('Search Menu..');
+      const module = () =>
+        container
+          .querySelector('.ih-menu-module')!
+          .parentElement!.querySelector('ul')!;
+      expect(module()).toHaveClass('collapsed');
+      fireEvent.change(search, { target: { value: term } });
+      expect(module()).toHaveClass('expanded');
+      expect(collapsed(container, 'Legacy group')).toBe(false);
+      const row = container.querySelector(
+        'a[data-sidebar-menu-key="main:menuId:3"]'
+      )!;
+      expect(row.closest('ul.collapsed')).toBeNull();
+      fireEvent.change(search, { target: { value: '' } });
+      expect(module()).toHaveClass('collapsed');
+      expect(collapsed(container, 'Legacy group')).toBe(true);
+      expect(localStorage.getItem(key)).toBe(before);
+      expect(nodes[0].visibility).toBe('collapsed');
+      expect(nodes[0].child![0].visibility).toBeUndefined();
+    });
+  }
+
+  it('renders every level expanded in flat mode despite collapsed preferences', () => {
+    const { container } = render(view({ collapsible: false }, '/unknown'));
+    expect(container.querySelector('ul.collapsed')).toBeNull();
+    expect(container.querySelector('.ih-menu-chevron')).toBeNull();
+    expect(
+      container.querySelector('a[data-sidebar-menu-key="main:id:active"]')
+    ).not.toBeNull();
   });
 
   it('allows manual collapse after restoration and does not reopen on navigation or Back', async () => {

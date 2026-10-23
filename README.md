@@ -1,5 +1,64 @@
 # React + TypeScript + Vite
 
+## Host shared state
+
+`IHStateOwner` is created once by the host. Namespaces use `session` by default;
+`temporary` survives navigation until refresh, and `local` explicitly uses
+persistent browser storage. Additional adapters implement synchronous `getItem`,
+`setItem`, and `removeItem`; register them in the owner constructor.
+
+Register namespace configuration before first use; conflicting storage settings
+throw. State values are detached, frozen JSON-compatible snapshots. Update through
+the API instead of mutating returned objects. `get` fallbacks are not persisted.
+Read/write/remove failures are exposed by `getError(namespace)` without changing
+storage. No asynchronous adapters or live cross-tab broadcasting are included.
+
+Scope the owner prefix to the application, synchronize `setIdentity` after session
+restoration, and clear it with `setIdentity(null)` on logout. The identity must
+include the subject and impersonation context, and stay stable during token refresh.
+Identity changes discard the previous and replacement contexts. Hosted remotes
+reuse the owner; standalone selectors do not create a persistent owner implicitly.
+
+The host passes the owner as `hostApi.state`. Every mount/breadcrumb/remote
+bridge must preserve this property. A React host may pass it to
+`<HostShell state={owner}>`; a hosted remote must never create another owner.
+
+```tsx
+const { value, set, update, reset, error } = useIHState('shared.filters', 'count', 0);
+// update(count => count + 1); reset() removes the key, restoring the fallback.
+const { controller, value: selection } = useIHSelection();
+```
+
+The hook handles subscription cleanup and requires a host bridge. The underlying
+API also provides `registerNamespace`, `get`, `set`, `update`, `remove`,
+`clearNamespace`, `getError`, and `subscribe`.
+
+Hosted company selectors automatically use the shared company/project context.
+Initial consumer values do not replace host candidates. Add `stateScope="local"`
+for independent record fields. Company options are scoped to the active menu;
+missing mapping/loading does not expand access to all companies. A successful
+validation that excludes the company resets both company and project. Pages
+without selectors retain candidates. Restore/reset synchronizes value-change
+callbacks; `onOptionSelected` remains user-only.
+
+`selection` stores only company ID/project key in the reserved `shared.selection`
+session namespace. Use `setCompany`/`setProject` for changes. On company/menu
+changes, call `beginProjects`, load authoritative options in the remote, and call
+`resolveProjects(token, canonicalKeys)` or `rejectProjects(token, message)`.
+Check the returned boolean before accepting rows; stale responses are rejected.
+Cancel page-owned requests or ignore their results on cleanup. Candidate project
+keys survive a company change if still available. Do not validate absence using
+only a search result page. Require both selected IDs and ready statuses before
+business requests.
+
+`loading` is supported by selects and form-control variants and combines with
+`options$` loading. Company selectors derive authorization loading automatically;
+remote-owned project selects receive explicit loading/disabled states.
+
+See the [platform integration guide](../docs-sso-web/public/docs/sso/iam-sso-integration-guide_v2.md#ihstate-shared-state-and-companyproject-selection)
+and both atlas-remote Host Integration examples. New exports require an updated
+library dependency before consumer compilation; no version is implied by this source change.
+
 ## Company selects
 
 `ISelectCompany` and `IFCSelectCompany` read company options reactively from the
@@ -10,13 +69,20 @@ the components never fetch data themselves. See
 
 ```tsx
 import { useState } from 'react';
-import { IFCSelectCompany, ISelectCompany, type IMenuCompanyDto } from '@insight/ui-react';
+import {
+  IFCSelectCompany,
+  ISelectCompany,
+  type IMenuCompanyDto,
+} from '@insight/ui-react';
 
 export function CompanyFilter() {
   const [company, setCompany] = useState<IMenuCompanyDto | null>(null);
   return (
     <>
-      <ISelectCompany value={company} onChange={({ value }) => setCompany(value)} />
+      <ISelectCompany
+        value={company}
+        onChange={({ value }) => setCompany(value)}
+      />
       <ISelectCompany
         menuCode="sales"
         value={company}
@@ -35,7 +101,7 @@ export function CompanyFilter() {
 }
 ```
 
-Omitting `menuCode`, or passing a blank value, shows all `store.companies`.
+In local mode, omitting `menuCode`, or passing a blank value, shows all `store.companies`.
 A nonblank code is trimmed and restricts options through
 `store.menuCompanies[menuCode]`. An unknown menu shows no options. Store ordering
 and deduplication are preserved.
@@ -49,9 +115,9 @@ types are `ISelectCompanyProps` and `IFCSelectCompanyProps`; options are store-o
 so neither accepts `options` or `options$`.
 
 Selection invokes `onChange`, `onChanged`, and `onOptionSelected` with
-`ISelectChange<IMenuCompanyDto>`. No company is selected automatically. Refresh
+`ISelectChange<IMenuCompanyDto>`. No company is selected automatically. In local mode, refresh
 matches a selected option by `id` without emitting events or replacing the
-consumer's value. If a menu change, refresh, or reset removes the selected company
+consumer's value. In local mode, if a menu change, refresh, or reset removes the selected company
 from the options, its value remains until the consumer resets it.
 
 `IFCSelectCompany` adds `label`, `errors`, `errorMessage`, `submitted`, `touched`,
@@ -623,10 +689,11 @@ below the minimum is raised to the minimum.
 
 ## Sidebar menu state
 
-`IHSidebar` persists explicit expand/collapse choices for groups, legacy modules
-and Favorites in localStorage per browser origin. The `menuStateStorageKey` prop
-defaults to `'insight.sidebar.menu-state'`; use a custom key to isolate consumers
-or `null` to keep choices in memory only. This does not enable `collapsible`.
+`IHSidebar` persists explicit expand/collapse choices only for top-level headers,
+including legacy modules and Favorites, in localStorage per browser origin.
+The `menuStateStorageKey` prop defaults to `'insight.sidebar.menu-state'`;
+use a custom key to isolate consumers or `null` to keep choices in memory only.
+This does not enable `collapsible`.
 
 ```tsx
 <IHSidebar
@@ -639,6 +706,15 @@ or `null` to keep choices in memory only. This does not enable `collapsible`.
 
 Choices are keyed by modern `id` or legacy `menuId`; Favorites has its own
 namespace. ID-less groups work in memory but do not persist across mounts.
+In collapsible mode, nested containers start collapsed on each mount, even when
+their payload or an older stored preference marks them expanded. Their manual
+choices remain in memory across navigation, replacement arrays and temporary empty
+emissions, and reset on remount. Root headers retain their existing default
+visibility unless a saved or manual choice overrides it. Nesting is determined
+from the tree, independently of payload `level` values.
+The version 1 storage format is unchanged; old nested entries are ignored and
+the next toggle saves only preferences for known top-level headers from both
+the main and Favorites sections.
 Versioned storage ignores invalid entries and missing IDs. Blocked/full storage
 does not prevent menu interaction. Changing the storage key loads its preferences;
 temporary empty emissions and replacement menu arrays do not erase choices.
@@ -661,7 +737,10 @@ saved choices, and users may collapse those groups again until the next refresh.
 Subsequent page navigation cancels any pending restoration. Hidden sidebars and
 search filters that hide the target defer scrolling until it is visible; search
 text and URL filters remain intact. Temporary search expansion is not persisted.
-
+Search opens every ancestor of a match, including collapsed legacy modules.
+Matching a container displays and opens its entire descendant branch. Clearing
+the search restores the previous expansion state. Flat mode
+(`collapsible=false`) continues to display every level.
 
 ### Active route highlighting
 
@@ -684,3 +763,102 @@ Load the matching `insight-ui-css` stylesheet for the gray active background,
 darker left accent, label and icon colors, semibold label and stronger hover
 backgrounds. Favorite star colors and actions keep their existing styles. No
 additional sidebar properties or menu contract fields are required.
+
+## Shared presentation components
+
+The React package exports `IActionPlaceholder`, `IBanner`, `IEmptyState`,
+`IHighlightSearch`, `ILoadError`, `ILoadingRegion`, and `IImageCropper`.
+Load the matching insight-ui-css build; these components share its tokens and surface rules.
+
+- `IButton.placeholder` defaults to false. When true, it renders only an inert,
+  decorative placeholder using the button's current `size`. No button/link, icon,
+  spinner, children, submit/reset, or navigation is rendered. `IActionPlaceholder`
+  is also available independently; its default size matches IButton (`md`).
+- `IBanner` accepts `message` and projected content/children, plus `prefixIcon`
+  and `suffixIcon`. Content renders after the message. Variants are `neutral`,
+  `primary`, `success`, `info` (default), `warning`, and `danger`.
+  Neutral is unaccented gray. Primary follows --i-color-primary; info follows
+  --i-color-info (cyan in the default theme). Messages are text;
+  rich content is supplied as framework children, never an HTML string.
+- `closable` defaults to false. Without `open`, banner state starts at
+  `defaultOpen` (true) and Close immediately dismisses it. With `open`, visibility
+  is controlled by the parent. Angular exposes `openChange` for `[(open)]`;
+  React exposes `onOpenChange`. Both expose `onClose` and `closeLabel` (default
+  `Close`). Changing content does not reopen a dismissed instance.
+- `IEmptyState` supports `empty`, `search`, `filter`, `search-filter`, and
+  `prerequisite`, with title/description/icon overrides, density, and children/CTA.
+- `IGrid.emptyState` configures the built-in empty state. Angular provides an
+  `ng-template iGridEmptyDef` slot; React provides `renderEmptyState`. The slot
+  receives the resolved config. Keep business prerequisites outside the grid.
+  Initial empty data hides grid chrome. Search/filter no-result keeps headers
+  and pagination, reserving pageSize times `--i-grid-empty-row-height`
+  (default `--i-size-md`) inside the scrolling viewport. Tree/non-paginated
+  empty states use the shared default state height. Keep the grid mounted when search returns no rows.
+  `IGridDataSource.filteredLength` exposes the total before local pagination;
+  `length` retains its existing raw/server meaning. Server-owned search state
+  and copy must follow the successful response that populated the displayed rows.
+- `IHighlightSearch` accepts `value` (string/number/null/undefined) and `search`.
+  It renders plain text and highlights literal, case-insensitive matches. The
+  Angular `IHighlightSearchPipe` remains available with its existing contract.
+- `ILoadError` accepts message/title, `density` (`default`, `compact`, `inline`),
+  retryDisabled/retryLoading, and `onRetry`. The application owns recovery requests.
+- `ILoadingRegion` retains DOM and measured height during refresh, sets aria-busy,
+  and blocks content with inert. Its inputs/props include loading, error, label,
+  contextKey, initialMinHeight, height, containerClass, contentClass, and layout.
+  Angular exposes `hasLoaded`; React also accepts children as `({hasLoaded}) => ...`.
+  Owners retain data and reject stale responses when context changes.
+- `IImageCropper` supplies zoom/pan and keyboard repositioning without a dialog,
+  picker, or upload. Inputs/props include src, disabled, viewportSize (240), shape
+  (`square`/`circle`), minZoom (1), maxZoom (3), alt, zoomLabel, and panLabel.
+  `onReady`/`onError` report image state. Angular component references and the React
+  `IImageCropperHandle` ref expose `exportImage({mimeType, quality})`, returning
+  a Promise with blob/dataUrl/mimeType/width/height. Exports preserve source crop
+  resolution without upscaling; circle is a preview mask and output stays square.
+  Source changes/destruction invalidate pending exports. Remote images must permit
+  canvas export; export failures reject the Promise. File limits remain app-owned.
+
+### Automatic surface layout
+
+Section body and loading region default to `layout="auto"`, with `padded` and
+`flush` overrides. Section owns padding and corner radii. A sole child marked
+`data-i-surface="delegate"` receives the padding responsibility; a sole `flush`
+child takes the full area. Loading regions delegate and grids are flush.
+Nested wrappers consume padding once. Content, grid, and overlays share per-corner
+surface radii, while form focus rings and dropdowns retain their normal overflow.
+App wrappers can implement the same marker contract or use an explicit override.
+
+The shared --i-state-min-height token defaults to min(40vh, 240px).
+Initial loading and default-density empty presentations reserve the same height.
+An explicit initialMinHeight on a loading region also applies to its empty content.
+Padding is counted once, including standalone prerequisites inside a region.
+Compact empty states retain natural height. Paginated search/filter no-result still
+uses pageSize times the nominal row height; bounded grids can shrink to their viewport.
+Content larger than the baseline can expand normally.
+
+### Migration from local IAM components
+
+Use the exported components instead of the removed IAM presentation wrappers.
+Replace `iam-error-banner` with `i-banner variant="danger"`; map icon to prefixIcon.
+Replace `iam-load-error` retry bindings with `onRetry`. Remove `seamlessGrid` and
+IAM-specific surface CSS when switching to ILoadingRegion.
+
+**Breaking removal:** `IInfoNotice`, `IInfoNoticeProps`, `i-info-notice`, and its
+CSS tokens have been removed. Use IBanner with variant info and prefixIcon info.
+Preserve a notice title as a strong element in projected content/children.
+The session-specific IHImpersonationBanner API remains available.
+
+Component playground pages are independent:
+
+- `/demos/action-placeholder`: Action Placeholder.
+- `/demos/banner`: Banner.
+- `/demos/empty-state`: Empty State.
+- `/demos/highlight-search`: Highlight Search.
+- `/demos/load-error`: Load Error.
+- `/demos/loading-region`: Loading Region.
+- `/demos/image-cropper`: Image Cropper.
+
+The former `/demos/shared-ui` route redirects to `/demos/action-placeholder`.
+These library playground routes require no IAM menu or access code.
+
+**Banner rename:** use `neutral` instead of the former `default` variant.
+Omitting variant still selects info.

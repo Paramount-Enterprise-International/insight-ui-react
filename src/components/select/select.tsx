@@ -72,6 +72,7 @@ export type ISelectProps<T = any> = Omit<
 > & {
   placeholder?: string;
   disabled?: boolean;
+  loading?: boolean;
   invalid?: boolean;
 
   /** debounce delay (ms) */
@@ -176,6 +177,7 @@ export type IFCSelectProps<T = any> = Omit<
   dirty?: boolean;
 
   disabled?: boolean;
+  loading?: boolean;
 
   /** controlled */
   value?: T | null;
@@ -297,6 +299,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   const {
     placeholder = '',
     disabled = false,
+    loading = false,
     invalid = false,
 
     filterDelay = 200,
@@ -1175,7 +1178,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   }, [isOpen]);
 
   // ---------- append addon ----------
-  const appendAddon: IInputAddonButton | IInputAddonLoading = isLoading
+  const appendAddon: IInputAddonButton | IInputAddonLoading = (loading || isLoading)
     ? { type: 'loading', visible: true }
     : {
       type: 'button',
@@ -1293,6 +1296,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
     dirty,
 
     disabled = false,
+    loading = false,
 
     value,
     defaultValue = null,
@@ -1368,6 +1372,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
           innerSelectRef.current = api ?? null;
         }}
         disabled={disabled}
+        loading={loading}
         invalid={invalid || controlInvalid}
         placeholder={placeholder}
         options={options}

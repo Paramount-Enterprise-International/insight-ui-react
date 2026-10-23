@@ -7,6 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { IIcon, type IIconSize } from '../icon';
+import type { ISurfaceLayout } from '../loading-region';
 
 export type ISectionTabBadge =
   | boolean
@@ -124,9 +125,17 @@ export function ISectionFilter(props: React.HTMLAttributes<HTMLElement>) {
   return <i-section-filter class={className} {...rest} />;
 }
 
-export function ISectionBody(props: React.HTMLAttributes<HTMLElement>) {
-  const { className, ...rest } = props;
-  return <i-section-body class={className} {...rest} />;
+export function ISectionBody(
+  props: React.HTMLAttributes<HTMLElement> & { layout?: ISurfaceLayout }
+) {
+  const { className, layout = 'auto', ...rest } = props;
+  return (
+    <i-section-body
+      class={['i-surface-content', className].filter(Boolean).join(' ')}
+      data-layout={layout}
+      {...rest}
+    />
+  );
 }
 
 export function ISectionFooter(props: React.HTMLAttributes<HTMLElement>) {
@@ -366,8 +375,10 @@ export function ISectionTabs(props: ISectionTabsProps) {
       const lastIndex = tabs.length - 1;
       let nextIndex: number | null = null;
 
-      if (event.key === 'ArrowLeft') nextIndex = index === 0 ? lastIndex : index - 1;
-      if (event.key === 'ArrowRight') nextIndex = index === lastIndex ? 0 : index + 1;
+      if (event.key === 'ArrowLeft')
+        nextIndex = index === 0 ? lastIndex : index - 1;
+      if (event.key === 'ArrowRight')
+        nextIndex = index === lastIndex ? 0 : index + 1;
       if (event.key === 'Home') nextIndex = 0;
       if (event.key === 'End') nextIndex = lastIndex;
       if (nextIndex === null) return;
@@ -375,30 +386,25 @@ export function ISectionTabs(props: ISectionTabsProps) {
       event.preventDefault();
       setActive(nextIndex, true);
 
-      const headers = event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-        '.i-section-tabs-header'
-      );
+      const headers =
+        event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+          '.i-section-tabs-header'
+        );
       headers?.[nextIndex]?.focus();
     },
     [setActive, tabs.length]
   );
 
-  const scrollBy = useCallback(
-    (left: number) => {
-      const container = scrollContainerRef.current;
-      if (typeof container?.scrollBy === 'function') {
-        container.scrollBy({ left, behavior: 'smooth' });
-      }
-    },
-    []
-  );
+  const scrollBy = useCallback((left: number) => {
+    const container = scrollContainerRef.current;
+    if (typeof container?.scrollBy === 'function') {
+      container.scrollBy({ left, behavior: 'smooth' });
+    }
+  }, []);
 
   return (
     <i-section-tabs
-      class={[
-        styleVariant === 'bar' ? 'i-section-tabs--bar' : null,
-        className,
-      ]
+      class={[styleVariant === 'bar' ? 'i-section-tabs--bar' : null, className]
         .filter(Boolean)
         .join(' ')}
       {...rest}>
@@ -413,7 +419,9 @@ export function ISectionTabs(props: ISectionTabsProps) {
         role="tablist"
         style={
           sticky
-            ? { '--i-section-tabs-sticky-top': stickyTopOffset } as React.CSSProperties
+            ? ({
+                '--i-section-tabs-sticky-top': stickyTopOffset,
+              } as React.CSSProperties)
             : undefined
         }>
         {scrollable ? (

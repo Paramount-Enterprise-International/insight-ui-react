@@ -1,4 +1,3 @@
-import { ImpersonationDemo } from './demos/impersonation/impersonation';
 /* App.tsx */
 import {
   createBrowserRouter,
@@ -7,10 +6,19 @@ import {
   Route,
   RouterProvider,
 } from 'react-router-dom';
+
 import './App.css';
 
 import { IDialogOutlet, IDialogProvider } from './components';
+import { ActionPlaceholderDemo } from './demos/action-placeholder/action-placeholder';
+import { BannerDemo } from './demos/banner/banner';
+import { EmptyStateDemo } from './demos/empty-state/empty-state';
 import { Create } from './demos/heracles/create/Create';
+import { HighlightSearchDemo } from './demos/highlight-search/highlight-search';
+import { ImageCropperDemo } from './demos/image-cropper/image-cropper';
+import { ImpersonationDemo } from './demos/impersonation/impersonation';
+import { LoadErrorDemo } from './demos/load-error/load-error';
+import { LoadingRegionDemo } from './demos/loading-region/loading-region';
 import { Docs1Page } from './docs/docs1/docs1';
 import { Docs2Page } from './docs/docs2/docs2';
 import { IHRootLayout } from './ih-root-layout';
@@ -36,6 +44,45 @@ const router = createBrowserRouter(
     <>
       {/* Layout wrapper (like Angular ih-root) */}
       <Route element={<IHRootLayout />}>
+        <Route
+          path="demos/image-cropper"
+          element={<ImageCropperDemo />}
+          handle={{ title: 'Image Cropper' }}
+        />
+        <Route
+          path="demos/loading-region"
+          element={<LoadingRegionDemo />}
+          handle={{ title: 'Loading Region' }}
+        />
+        <Route
+          path="demos/load-error"
+          element={<LoadErrorDemo />}
+          handle={{ title: 'Load Error' }}
+        />
+        <Route
+          path="demos/highlight-search"
+          element={<HighlightSearchDemo />}
+          handle={{ title: 'Highlight Search' }}
+        />
+        <Route
+          path="demos/empty-state"
+          element={<EmptyStateDemo />}
+          handle={{ title: 'Empty State' }}
+        />
+        <Route
+          path="demos/banner"
+          element={<BannerDemo />}
+          handle={{ title: 'Banner' }}
+        />
+        <Route
+          path="demos/action-placeholder"
+          element={<ActionPlaceholderDemo />}
+          handle={{ title: 'Action Placeholder' }}
+        />
+        <Route
+          path="demos/shared-ui"
+          element={<Navigate to="/demos/action-placeholder" replace />}
+        />
         <Route
           path="demos/impersonation"
           element={<ImpersonationDemo />}

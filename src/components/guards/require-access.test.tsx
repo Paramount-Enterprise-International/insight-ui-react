@@ -178,6 +178,26 @@ describe('IRequireAccess', () => {
       }
     );
     expect(screen.getByText('Loading session...')).toBeTruthy();
+    expect(screen.getByText('Loading session...')).toHaveAttribute(
+      'mode',
+      'container'
+    );
+    expect(screen.getByText('Loading session...')).toHaveAttribute(
+      'role',
+      'status'
+    );
+  });
+
+  it('preserves the custom access fallback while authorizations are pending', () => {
+    const { container } = renderGuard(
+      <IRequireAccess value="admin-iam" loading={<p>Custom access progress</p>}>
+        <div>protected-content</div>
+      </IRequireAccess>,
+      { session: makeSession(), store: makeStore({ initializing: true }) }
+    );
+    expect(screen.getByText('Custom access progress')).toBeTruthy();
+    expect(container.querySelector('i-loading')).toBeNull();
+    expect(screen.queryByText('protected-content')).toBeNull();
   });
 
   it('triggers the menu load when menus have not been fetched yet, then renders on success', async () => {

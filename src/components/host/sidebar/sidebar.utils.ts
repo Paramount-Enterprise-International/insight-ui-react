@@ -13,25 +13,28 @@ export function filterMenuTree(menus: IMenu[], rawTerm: string): IMenu[] {
   return filtered;
 }
 
-function filterMenuBranch(menu: IMenu, term: string): IMenu | null {
+function filterMenuBranch(
+  menu: IMenu,
+  term: string,
+  includeBranch = false
+): IMenu | null {
   const name = (menu.menuName ?? '').toLowerCase();
-  const selfMatches = name.includes(term);
+  const selfMatches = includeBranch || name.includes(term);
 
   const originalChildren = menu.child ?? [];
 
   const filteredChildren: IMenu[] = [];
   for (const child of originalChildren) {
-    const childResult = filterMenuBranch(child, term);
+    const childResult = filterMenuBranch(child, term, selfMatches);
     if (childResult) filteredChildren.push(childResult);
   }
 
   const childMatches = filteredChildren.length > 0;
   if (!selfMatches && !childMatches) return null;
 
-  const childrenToUse = selfMatches ? originalChildren : filteredChildren;
-  const cloned: IMenu = { ...menu, child: childrenToUse };
+  const cloned: IMenu = { ...menu, child: filteredChildren };
 
-  if (Number(cloned.menuTypeId) === 3 && (selfMatches || childMatches)) {
+  if (originalChildren.length && menu.visibility !== 'no-child') {
     cloned.visibility = 'expanded';
   }
 

@@ -5,6 +5,7 @@ import {
   useISessionExpired,
   useIUserMenuStore,
 } from '../auth/insight-auth-context';
+import { ILoading } from '../loading';
 import { IRouteAccessDenied } from '../permission/route-access-denied';
 import type { IPermissionSource } from '../permission/use-permission';
 
@@ -94,7 +95,7 @@ export function IRequireAccess({
   if (isInitializing) {
     return (
       (loading as ReactNode) ?? (
-        <div className="ih-route-loading">Loading session...</div>
+        <ILoading mode="container" label="Loading session..." />
       )
     );
   }
@@ -113,7 +114,7 @@ export function IRequireAccess({
   ) {
     return (
       (loading as ReactNode) ?? (
-        <div className="ih-route-loading">Loading access...</div>
+        <ILoading mode="container" label="Loading access..." />
       )
     );
   }

@@ -10,8 +10,14 @@ export type IFormControlErrorMessage = {
   [key: string]: string | undefined; // custom validators welcome (e.g., usernameTaken)
 };
 
-export type IUISize = '2xs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
-export type IUIVariant = 'primary' | 'info' | 'warning' | 'danger' | 'success' | 'outline';
+export type IUISize = '3xs' | '2xs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+export type IUIVariant =
+  | 'primary'
+  | 'info'
+  | 'warning'
+  | 'danger'
+  | 'success'
+  | 'outline';
 
 export type IErrorContext = {
   label: string;
