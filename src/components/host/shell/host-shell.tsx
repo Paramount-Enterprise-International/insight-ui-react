@@ -4,8 +4,9 @@ import { IHostApiProvider } from '../host-api.context';
 import type { IHostApi } from '../host-api.types';
 import { IHostUiProvider, useHostUi } from '../host-ui.context';
 import { toRouterUrl } from '../router-breadcrumbs';
+import type { IHStateApi } from '../../state/state-core';
 
-function HostApiBridge(props: { children: React.ReactNode }) {
+function HostApiBridge(props: { children: React.ReactNode; state?: IHStateApi }) {
   const navigate = useNavigate();
   const baseHref = useHref('/');
   const {
@@ -19,6 +20,7 @@ function HostApiBridge(props: { children: React.ReactNode }) {
 
   const hostApi = useMemo<IHostApi>(
     () => ({
+      state: props.state,
       navigate: (url) => navigate(toRouterUrl(url, baseHref)),
       setTitle,
       setBreadcrumbs,
@@ -28,6 +30,7 @@ function HostApiBridge(props: { children: React.ReactNode }) {
       setRouteMetadata,
     }),
     [
+      props.state,
       navigate,
       baseHref,
       setTitle,
@@ -44,10 +47,10 @@ function HostApiBridge(props: { children: React.ReactNode }) {
   );
 }
 
-export function HostShell(props: { children: React.ReactNode }) {
+export function HostShell(props: { children: React.ReactNode; state?: IHStateApi }) {
   return (
     <IHostUiProvider>
-      <HostApiBridge>{props.children}</HostApiBridge>
+      <HostApiBridge state={props.state}>{props.children}</HostApiBridge>
     </IHostUiProvider>
   );
 }

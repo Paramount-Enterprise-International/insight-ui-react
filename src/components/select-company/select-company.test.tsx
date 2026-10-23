@@ -19,6 +19,8 @@ import {
   type IFCSelectCompanyProps,
 } from './fc-select-company';
 import { ISelectCompany, type ISelectCompanyProps } from './select-company';
+import { IHStateOwner } from '../state/state-core';
+import { IHostApiProvider } from '../host/host-api.context';
 
 const jakarta: IMenuCompanyDto = { id: 'c1', code: 'JKT', name: 'Jakarta' };
 const bandung: IMenuCompanyDto = { id: 'c2', code: 'BDG', name: 'Bandung' };
@@ -35,7 +37,7 @@ function authorizations(company = jakarta): IEffectiveAuthorizationDto[] {
   ];
 }
 
-function mount(props: IFCSelectCompanyProps = {}, wrapped = false) {
+function mount(props: IFCSelectCompanyProps = {}, wrapped = false, state?: IHStateOwner) {
   const getAuthorizations =
     vi.fn<() => Promise<IEffectiveAuthorizationDto[]>>();
   const store = new IUserMenuStore(
@@ -47,9 +49,11 @@ function mount(props: IFCSelectCompanyProps = {}, wrapped = false) {
   const ref = createRef<ISelectHandle>();
   const Select = wrapped ? IFCSelectCompany : ISelectCompany;
   const tree = (next: IFCSelectCompanyProps) => (
+    <IHostApiProvider hostApi={{ state, navigate: () => undefined, setTitle: () => undefined, setBreadcrumbs: () => undefined }}>
     <IAuthContext.Provider value={context}>
       <Select ref={ref} portalToBody={false} {...next} />
     </IAuthContext.Provider>
+    </IHostApiProvider>
   );
   const view = render(tree(props));
   return {
@@ -270,5 +274,52 @@ describe('IFCSelectCompany validation', () => {
     ).toBe('Choose a company.');
     view.update({ ...props, errors: null, submitted: true });
     expect(view.container.querySelector('.i-fc-select__error')).toBeNull();
+  });
+});
+
+
+describe.each([false, true])('hosted company select with wrapped=%s', (wrapped) => {
+  afterEach(cleanup);
+
+  it('restores the host value, resets invalid menu selections, and keeps local fields independent', async () => {
+    sessionStorage.clear();
+    const state = new IHStateOwner('hosted-selector-test');
+    state.setIdentity('user');
+    state.selection.activateMenu('report');
+    state.selection.validateCompanies('report', ['c1', 'c2'], 'ready');
+    state.selection.setCompany('c2');
+    const changed = vi.fn();
+    const selected = vi.fn();
+    const view = mount({ value: jakarta, onChanged: changed, onOptionSelected: selected }, wrapped, state);
+    vi.spyOn(view.store, 'initialized', 'get').mockReturnValue(true);
+    await view.hydrate();
+    expect(view.input().value).toBe('Bandung');
+    expect(state.selection.getSnapshot().companyId).toBe('c2');
+    expect(selected).not.toHaveBeenCalled();
+    expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ value: bandung }));
+    act(() => state.selection.activateMenu('sales'));
+    expect(state.selection.getSnapshot().companyId).toBeNull();
+    expect(view.input().value).toBe('');
+    expect(selected).not.toHaveBeenCalled();
+    view.update({ stateScope: 'local', value: bandung });
+    expect(view.input().value).toBe('Bandung');
+    expect(state.selection.getSnapshot().companyId).toBeNull();
+  });
+
+  it('blocks interaction while authorization or explicit loading is pending', async () => {
+    sessionStorage.clear();
+    const state = new IHStateOwner('hosted-loading-test');
+    state.setIdentity('user');
+    state.selection.activateMenu('report');
+    const view = mount({}, wrapped, state);
+    await view.hydrate();
+    expect(state.selection.getSnapshot().companyStatus).toBe('loading');
+    view.open();
+    expect(view.labels()).toEqual([]);
+    vi.spyOn(view.store, 'initialized', 'get').mockReturnValue(true);
+    view.update({ loading: true });
+    expect(state.selection.getSnapshot().companyStatus).toBe('loading');
+    view.update({ loading: false });
+    expect(state.selection.getSnapshot().companyStatus).toBe('ready');
   });
 });
