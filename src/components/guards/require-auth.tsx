@@ -8,6 +8,7 @@ import {
   useISessionExpired,
 } from '../auth/insight-auth-context';
 import { getSessionReturnUrl } from '../auth/session-return-url';
+import { ILoading } from '../loading';
 
 /**
  * Cross-domain auth guard for @insight/ui consumer apps — the React analog of
@@ -66,7 +67,7 @@ export function IRequireAuth({
   if (isInitializing) {
     return (
       (loading as ReactNode) ?? (
-        <div className="ih-route-loading">Loading session...</div>
+        <ILoading mode="container" label="Loading session..." />
       )
     );
   }

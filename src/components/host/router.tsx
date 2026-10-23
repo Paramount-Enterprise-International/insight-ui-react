@@ -23,6 +23,7 @@ import {
 } from 'react-router-dom';
 import { IAuthContext } from '../auth/insight-auth-context';
 import { IErrorPage } from '../error-page/error-page';
+import { ILoading } from '../loading';
 import { IRouteAccessContext } from '../permission/route-access-context';
 import { useHostApiOptional } from './host-api.context';
 import type { IMenu } from './host-api.types';
@@ -172,7 +173,7 @@ function renderRouteTree(routes: IRoutes): React.ReactNode {
 export function IRouter(props: IRouterProps) {
   const {
     routes,
-    loading = <div style={{ padding: 16 }}>Loading…</div>,
+    loading = <ILoading mode="container" label="Loading…" />,
     notFound = <IErrorPage kind="not-found" />,
   } = props;
 

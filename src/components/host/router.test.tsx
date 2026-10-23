@@ -1,9 +1,27 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import { Component, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { IHostApiProvider } from './host-api.context';
 import { IRouter } from './router';
-import type { IRoutes } from './router.types';
+import type { IRouteComponent, IRoutes } from './router.types';
+
+class RouteFailureBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    return this.state.failed ? (
+      <p role="alert">Page unavailable</p>
+    ) : (
+      this.props.children
+    );
+  }
+}
 
 function fixture(routes: IRoutes, path: string) {
   const hostApi = {
@@ -100,5 +118,66 @@ describe('React breadcrumb suppression', () => {
       expect(hostApi.setTitle).toHaveBeenLastCalledWith('Reports');
       expect(hostApi.setBreadcrumbs).toHaveBeenLastCalledWith(null);
     });
+  });
+});
+
+describe('route loading', () => {
+  it('hands a rejected lazy import to the consumer error boundary', async () => {
+    let reject!: (reason: Error) => void;
+    const pending = new Promise<IRouteComponent>((_, fail) => {
+      reject = fail;
+    });
+    const logged = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    try {
+      render(
+        <MemoryRouter>
+          <RouteFailureBoundary>
+            <IRouter routes={[{ index: true, loadComponent: () => pending }]} />
+          </RouteFailureBoundary>
+        </MemoryRouter>
+      );
+      expect(screen.getByRole('status')).toBeTruthy();
+      await act(async () => {
+        reject(new Error('Import failed'));
+      });
+      expect(screen.getByRole('alert')).toHaveTextContent('Page unavailable');
+      expect(screen.queryByRole('status')).toBeNull();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('replaces the centered spinner with the resolved lazy page', async () => {
+    let resolve!: (page: IRouteComponent) => void;
+    const pending = new Promise<IRouteComponent>((done) => {
+      resolve = done;
+    });
+    render(
+      <MemoryRouter>
+        <IRouter routes={[{ index: true, loadComponent: () => pending }]} />
+      </MemoryRouter>
+    );
+    expect(screen.getByRole('status')).toHaveAttribute('mode', 'container');
+    expect(screen.getByRole('status')).toHaveTextContent('Loading…');
+    await act(async () => {
+      resolve(() => <p>Resolved page</p>);
+    });
+    expect(screen.getByText('Resolved page')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('preserves a custom router fallback', () => {
+    render(
+      <MemoryRouter>
+        <IRouter
+          loading={<p>Custom page progress</p>}
+          routes={[{ index: true, loadComponent: () => new Promise(() => {}) }]}
+        />
+      </MemoryRouter>
+    );
+    expect(screen.getByText('Custom page progress')).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
   });
 });

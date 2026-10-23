@@ -10,6 +10,7 @@ export type IFCSelectCompanyProps = Omit<
   'options' | 'options$' | 'defaultValue'
 > & {
   menuCode?: string | null;
+  stateScope?: 'auto' | 'local';
   defaultValue?: IMenuCompanyDto | null;
 };
 
@@ -20,6 +21,8 @@ export const IFCSelectCompany = forwardRef<
   {
     label = '',
     menuCode,
+    stateScope,
+    loading,
     placeholder,
     displayWith,
     filterDelay,
@@ -79,6 +82,8 @@ export const IFCSelectCompany = forwardRef<
       <ISelectCompany
         ref={innerSelectRef}
         menuCode={menuCode}
+        stateScope={stateScope}
+        loading={loading}
         placeholder={placeholder}
         displayWith={displayWith}
         filterDelay={filterDelay}

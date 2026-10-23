@@ -31,12 +31,14 @@ import React, {
   type ReactNode,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from 'react';
 
 import { IButton } from '../button/button';
+import { IEmptyState, type IEmptyStateConfig } from '../empty-state';
 import { IIcon } from '../icon/icon';
 import { IPaginator } from './paginator';
 
@@ -165,6 +167,7 @@ export type IGridSortAccessor<T> = (
 
 export class IGridDataSource<T = unknown> {
   private _rawData: T[] = [];
+  private _filteredLength = 0;
 
   // filter internal
   private _filter = '';
@@ -278,6 +281,12 @@ export class IGridDataSource<T = unknown> {
     this._emit();
   }
 
+  get filteredLength(): number {
+    return this._delegatesPage()
+      ? (this._serverSide?.totalRowCount ?? 0)
+      : this._filteredLength;
+  }
+
   get length(): number {
     if (this._delegatesPage()) return this._serverSide?.totalRowCount ?? 0;
     return this._rawData.length;
@@ -299,7 +308,8 @@ export class IGridDataSource<T = unknown> {
     this._rawData = rows || [];
 
     if (this._serverSide) {
-      if (options?.total !== undefined) this._serverSide.totalRowCount = options.total;
+      if (options?.total !== undefined)
+        this._serverSide.totalRowCount = options.total;
       if (options?.pageIndex !== undefined) this._pageIndex = options.pageIndex;
       if (options?.pageSize !== undefined) this._pageSize = options.pageSize;
     }
@@ -427,15 +437,21 @@ export class IGridDataSource<T = unknown> {
   }
 
   private _delegatesSort(): boolean {
-    return !!this._serverSide?.onSortChange || this._serverSortListeners.size > 0;
+    return (
+      !!this._serverSide?.onSortChange || this._serverSortListeners.size > 0
+    );
   }
 
   private _delegatesPage(): boolean {
-    return !!this._serverSide?.onPageChange || this._serverPageListeners.size > 0;
+    return (
+      !!this._serverSide?.onPageChange || this._serverPageListeners.size > 0
+    );
   }
 
   private _delegatesFilter(): boolean {
-    return !!this._serverSide?.onFilterChange || this._serverFilterListeners.size > 0;
+    return (
+      !!this._serverSide?.onFilterChange || this._serverFilterListeners.size > 0
+    );
   }
 
   private _notifyOrEmitFilter(filter: string): void {
@@ -525,6 +541,8 @@ export class IGridDataSource<T = unknown> {
       }
     }
 
+    this._filteredLength = data.length;
+
     // SORT (multi-column)
     if (this._sort && this._sort.length > 0 && !this._delegatesSort()) {
       const sorts = [...this._sort];
@@ -549,6 +567,10 @@ export class IGridDataSource<T = unknown> {
 
     // PAGINATION
     if (this._paginatorEnabled && !this._delegatesPage()) {
+      this._pageIndex = Math.min(
+        this._pageIndex,
+        Math.max(0, Math.ceil(data.length / this._pageSize) - 1)
+      );
       const start = this._pageIndex * this._pageSize;
       data = data.slice(start, start + this._pageSize);
     }
@@ -653,7 +675,14 @@ function IndeterminateCheckbox(props: {
   className?: string;
   stopRowClick?: boolean;
 }) {
-  const { checked, indeterminate, disabled = false, onChange, className, stopRowClick } = props;
+  const {
+    checked,
+    indeterminate,
+    disabled = false,
+    onChange,
+    className,
+    stopRowClick,
+  } = props;
   const ref = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -677,9 +706,7 @@ function IndeterminateCheckbox(props: {
 
 function defaultHighlightSearch(text: string, rawTerm: string): ReactNode {
   const term =
-    typeof rawTerm === 'string'
-      ? rawTerm.trim()
-      : String(rawTerm ?? '').trim();
+    typeof rawTerm === 'string' ? rawTerm.trim() : String(rawTerm ?? '').trim();
   if (!text || !term) return text ?? '';
 
   const value = String(text);
@@ -731,6 +758,10 @@ function renderCellDef<T>(
 
 export type IGridProps<T> = {
   dataSource: IGridDataSource<T> | T[];
+  emptyState?: IEmptyStateConfig;
+  renderEmptyState?: (state: IEmptyStateConfig) => ReactNode;
+  className?: string;
+  style?: React.CSSProperties;
 
   selectionMode?: IGridSelectionMode;
   selectionRowHidden?: (row: T) => boolean;
@@ -783,6 +814,10 @@ function IGridInner<T>(
 ) {
   const {
     dataSource,
+    emptyState = {},
+    renderEmptyState,
+    className,
+    style,
     selectionMode = false,
     selectionRowHidden,
     selectionRowDisabled,
@@ -861,7 +896,12 @@ function IGridInner<T>(
     ].filter((unsubscribe): unsubscribe is () => void => !!unsubscribe);
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [dataSource, onServerFilterChange, onServerPageChange, onServerSortChange]);
+  }, [
+    dataSource,
+    onServerFilterChange,
+    onServerPageChange,
+    onServerSortChange,
+  ]);
 
   // tree meta
   const treeMetaRef = useRef<
@@ -1171,7 +1211,7 @@ function IGridInner<T>(
 
   /* ---------------- connect data ---------------- */
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const updateFilterText = () => {
       setCurrentFilterText(
         dataSource instanceof IGridDataSource ? dataSource.filter : ''
@@ -1311,13 +1351,16 @@ function IGridInner<T>(
   };
 
   const isSelectionHidden = (row: T): boolean => !!selectionRowHidden?.(row);
-  const isSelectionDisabled = (row: T): boolean => !!selectionRowDisabled?.(row);
+  const isSelectionDisabled = (row: T): boolean =>
+    !!selectionRowDisabled?.(row);
   const isRowSelectable = (row: T): boolean =>
     !isSelectionHidden(row) && !isSelectionDisabled(row);
 
   const getAllDataRows = (): T[] => {
     if (!treeEnabled) {
-      return dataSource instanceof IGridDataSource ? dataSource.data : dataSource;
+      return dataSource instanceof IGridDataSource
+        ? dataSource.data
+        : dataSource;
     }
 
     const rows: T[] = [];
@@ -1511,7 +1554,9 @@ function IGridInner<T>(
     if (!selectionMode) return;
 
     const validRows = new Set(getAllDataRows());
-    const next = new Set(rows.filter((row) => validRows.has(row) && isRowSelectable(row)));
+    const next = new Set(
+      rows.filter((row) => validRows.has(row) && isRowSelectable(row))
+    );
 
     if (selectionMode === 'single' && next.size > 1) {
       const first = next.values().next().value as T;
@@ -1529,13 +1574,10 @@ function IGridInner<T>(
     emitSelectionChange(null, next);
   };
 
-  useImperativeHandle(
-    ref,
-    () => ({
-      setSelected,
-      getSelected: () => Array.from(selectionSetRef.current),
-    })
-  );
+  useImperativeHandle(ref, () => ({
+    setSelected,
+    getSelected: () => Array.from(selectionSetRef.current),
+  }));
 
   /* ---------------- tree helpers ---------------- */
 
@@ -1783,7 +1825,7 @@ function IGridInner<T>(
 
   const totalLength =
     dataSource instanceof IGridDataSource
-      ? dataSource.length
+      ? dataSource.filteredLength
       : renderedData.length;
   const pageIndex =
     dataSource instanceof IGridDataSource ? dataSource.pageIndex : 0;
@@ -1858,8 +1900,10 @@ function IGridInner<T>(
     // ✅ allow special columns to override (expand/selection/number)
     const stickyEnabled = sticky?.sticky ?? computedFrozen;
     const frozenClass = sticky?.addFrozenClass ?? computedFrozen;
-    const stickyLeft = stickyEnabled ? sticky?.stickyLeft ?? computedLeft : null;
-    const zIndex = stickyEnabled ? sticky?.zIndex ?? computedZ : null;
+    const stickyLeft = stickyEnabled
+      ? (sticky?.stickyLeft ?? computedLeft)
+      : null;
+    const zIndex = stickyEnabled ? (sticky?.zIndex ?? computedZ) : null;
 
     const isSortable =
       !disableSortClick &&
@@ -1998,8 +2042,10 @@ function IGridInner<T>(
 
     const stickyEnabled = sticky?.sticky ?? computedFrozen;
     const frozenClass = sticky?.addFrozenClass ?? computedFrozen;
-    const stickyLeft = stickyEnabled ? sticky?.stickyLeft ?? computedLeft : null;
-    const zIndex = stickyEnabled ? sticky?.zIndex ?? computedZ : null;
+    const stickyLeft = stickyEnabled
+      ? (sticky?.stickyLeft ?? computedLeft)
+      : null;
+    const zIndex = stickyEnabled ? (sticky?.zIndex ?? computedZ) : null;
 
     const flex =
       typeof fixedWidth === 'number'
@@ -2039,19 +2085,32 @@ function IGridInner<T>(
     [highlightSearch]
   );
 
+  const resolvedEmptyState: IEmptyStateConfig = {
+    ...emptyState,
+    kind: emptyState.kind ?? (currentFilterText ? 'search' : 'empty'),
+  };
+  const showGridChrome =
+    renderedData.length > 0 ||
+    ['search', 'filter', 'search-filter'].includes(resolvedEmptyState.kind!);
   /* ---------------- render ---------------- */
 
   return (
-    <i-grid class="i-grid" role="table">
+    <i-grid
+      class={['i-grid', className].filter(Boolean).join(' ')}
+      style={style}
+      role={showGridChrome ? 'table' : undefined}
+      data-i-surface="flush">
       <i-grid-viewport class="i-grid-viewport">
         {/* HEADER */}
-        {effectiveHeaderItems.length ? (
+        {effectiveHeaderItems.length && showGridChrome ? (
           <i-grid-header-row class="i-grid-header-row">
             {/* FLAT: expand-all (only when expandable row exists AND not single) */}
-          {!treeEnabled &&
+            {!treeEnabled &&
             hasExpandableRow &&
-            !(expandableRowDef?.expandSingle ??
-              expandableRowDef?.iRowDefExpandSingle) ? (
+            !(
+              expandableRowDef?.expandSingle ??
+              expandableRowDef?.iRowDefExpandSingle
+            ) ? (
               <HeaderCell
                 className="i-grid-expand-cell i-grid-expand-cell--header i-grid-header-cell--frozen"
                 fixedWidth={expandColumnWidth}
@@ -2089,7 +2148,9 @@ function IGridInner<T>(
                     <IndeterminateCheckbox
                       checked={allVisibleSelected()}
                       indeterminate={someVisibleSelected()}
-                      disabled={renderedData.filter(isRowSelectable).length === 0}
+                      disabled={
+                        renderedData.filter(isRowSelectable).length === 0
+                      }
                       onChange={() => onToggleAllVisible()}
                       stopRowClick
                     />
@@ -2150,7 +2211,9 @@ function IGridInner<T>(
                             className="i-grid-tree-header-checkbox"
                             checked={allVisibleSelected()}
                             indeterminate={someVisibleSelected()}
-                            disabled={renderedData.filter(isRowSelectable).length === 0}
+                            disabled={
+                              renderedData.filter(isRowSelectable).length === 0
+                            }
                             onChange={() => onToggleAllVisible()}
                             stopRowClick
                           />
@@ -2192,8 +2255,7 @@ function IGridInner<T>(
                   {/* Group title cell (NOT frozen in Angular) */}
                   <HeaderCell disableSortClick>{item.title}</HeaderCell>
 
-                  <i-grid-header-cell-group-columns
-                    class="i-grid-header-cell-group-columns">
+                  <i-grid-header-cell-group-columns class="i-grid-header-cell-group-columns">
                     {item.columns.map((col, cIdx) => {
                       if (col.headerDef) {
                         return (
@@ -2276,7 +2338,10 @@ function IGridInner<T>(
                       stickyLeft: getStickyLeftForSelectionColumn(),
                     }}>
                     {isSelectionHidden(row) ? (
-                      <span aria-hidden="true" className="i-grid-selection-spacer" />
+                      <span
+                        aria-hidden="true"
+                        className="i-grid-selection-spacer"
+                      />
                     ) : selectionMode === 'multiple' ? (
                       <IndeterminateCheckbox
                         checked={getRowChecked(row)}
@@ -2383,13 +2448,18 @@ function IGridInner<T>(
                               column: col,
                             })
                           ) : (
-                            <span className="i-grid-tree-text" truncatedtooltip="">
+                            <span
+                              className="i-grid-tree-text"
+                              truncatedtooltip="">
                               {col.fieldName
                                 ? highlightSearchFn(
                                     String(
-                                      (row as unknown as Record<string, unknown>)?.[
-                                        col.fieldName
-                                      ] ?? ''
+                                      (
+                                        row as unknown as Record<
+                                          string,
+                                          unknown
+                                        >
+                                      )?.[col.fieldName] ?? ''
                                     ),
                                     currentFilterText
                                   )
@@ -2414,7 +2484,9 @@ function IGridInner<T>(
                           column: col,
                         })
                       ) : (
-                        <span className="i-grid-cell__content" truncatedtooltip="">
+                        <span
+                          className="i-grid-cell__content"
+                          truncatedtooltip="">
                           {col.fieldName
                             ? highlightSearchFn(
                                 String(
@@ -2441,10 +2513,44 @@ function IGridInner<T>(
             </React.Fragment>
           );
         })}
+        {!renderedData.length ? (
+          <div
+            className="i-grid-empty"
+            data-empty-density={resolvedEmptyState.density ?? 'default'}
+            data-page-sized={hasPagination && showGridChrome ? '' : undefined}
+            role={showGridChrome ? 'row' : undefined}
+            style={
+              {
+                '--i-grid-empty-rows':
+                  hasPagination && showGridChrome ? pageSize : 0,
+              } as React.CSSProperties
+            }>
+            <div
+              className="i-grid-empty__cell"
+              role={showGridChrome ? 'cell' : undefined}
+              aria-colspan={
+                showGridChrome
+                  ? Math.max(
+                      1,
+                      effectiveColumns.length +
+                        (showNumberColumnEffective ? 1 : 0) +
+                        (!treeEnabled && selectionMode ? 1 : 0) +
+                        (!treeEnabled && hasExpandableRow ? 1 : 0)
+                    )
+                  : undefined
+              }>
+              {renderEmptyState ? (
+                renderEmptyState(resolvedEmptyState)
+              ) : (
+                <IEmptyState {...resolvedEmptyState} />
+              )}
+            </div>
+          </div>
+        ) : null}
       </i-grid-viewport>
 
       {/* FOOTER */}
-      {hasPagination ? (
+      {hasPagination && showGridChrome ? (
         <div className="i-grid-footer">
           <IPaginator
             length={totalLength}

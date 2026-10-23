@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import {
   createIRuntime,
   IAuthProvider,
+  IBanner,
   IHImpersonationBanner,
-  IInfoNotice,
   type IApiClient,
 } from '../../components';
 export function ImpersonationDemo() {
@@ -62,7 +62,7 @@ export function ImpersonationDemo() {
           Local fixture. End Session demonstrates the retryable error state.
         </p>
         <IHImpersonationBanner />
-        <IInfoNotice
+        <IBanner
           title="Not available."
           message="This action cannot be performed during an impersonation session."
         />

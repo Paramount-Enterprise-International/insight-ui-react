@@ -1,4 +1,4 @@
-// host-api.types.ts
+import type { IHStateApi } from '../state/state-core';
 
 export type IBreadcrumbItem = {
   label: string;
@@ -12,6 +12,7 @@ export type IHostRouteMetadata = {
 };
 
 export type IHostApi = {
+  state?: IHStateApi;
   navigate: (url: string) => void | Promise<void>;
   setTitle: (title: string | null) => void;
   setBreadcrumbs: (items: IBreadcrumbItem[] | null) => void;

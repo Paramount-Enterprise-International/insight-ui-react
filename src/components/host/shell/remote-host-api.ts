@@ -28,6 +28,7 @@ export function useRemoteHostApi(): IHostApi {
       if (active.current) setRemoteBreadcrumbs(items);
     };
     return {
+      state: hostApi.state,
       navigate: hostApi.navigate,
       setTitle,
       setBreadcrumbs,
@@ -42,6 +43,7 @@ export function useRemoteHostApi(): IHostApi {
     };
   }, [
     hostApi.navigate,
+    hostApi.state,
     setRemoteTitle,
     setRemoteBreadcrumbs,
     setRemoteRouteMetadata,

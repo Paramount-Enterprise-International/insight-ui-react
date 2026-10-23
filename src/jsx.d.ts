@@ -13,6 +13,48 @@ declare module 'react' {
 
   namespace JSX {
     interface IntrinsicElements {
+      'i-action-placeholder': import('react').HTMLAttributes<HTMLElement> & {
+        class?: string;
+        variant?: string;
+        density?: string;
+        layout?: string;
+      };
+      'i-banner': import('react').HTMLAttributes<HTMLElement> & {
+        class?: string;
+        variant?: string;
+        density?: string;
+        layout?: string;
+      };
+      'i-empty-state': import('react').HTMLAttributes<HTMLElement> & {
+        class?: string;
+        variant?: string;
+        density?: string;
+        layout?: string;
+      };
+      'i-highlight-search': import('react').HTMLAttributes<HTMLElement> & {
+        class?: string;
+        variant?: string;
+        density?: string;
+        layout?: string;
+      };
+      'i-load-error': import('react').HTMLAttributes<HTMLElement> & {
+        class?: string;
+        variant?: string;
+        density?: string;
+        layout?: string;
+      };
+      'i-loading-region': import('react').HTMLAttributes<HTMLElement> & {
+        class?: string;
+        variant?: string;
+        density?: string;
+        layout?: string;
+      };
+      'i-image-cropper': import('react').HTMLAttributes<HTMLElement> & {
+        class?: string;
+        variant?: string;
+        density?: string;
+        layout?: string;
+      };
       'i-notification': import('react').DetailedHTMLProps<
         import('react').HTMLAttributes<HTMLElement>,
         HTMLElement
@@ -42,6 +84,7 @@ declare module 'react' {
         HTMLElement
       > & {
         light?: '' | 'true';
+        mode?: import('./components/loading').ILoadingMode;
       };
 
       'i-icon': import('react').DetailedHTMLProps<
