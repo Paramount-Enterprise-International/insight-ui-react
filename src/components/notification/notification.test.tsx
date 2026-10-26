@@ -181,36 +181,80 @@ describe('Notification presentation parity', () => {
     expect(readRetry).toHaveBeenCalledOnce();
   });
 
-  it('renders snackbar copy as text and delegates item, dismissal and generic messages', () => {
-    const open = vi.fn();
-    const dismiss = vi.fn();
-    const { container, rerender } = render(
+  it('renders info summaries as text and delegates drawer/dismiss actions', () => {
+    vi.useFakeTimers();
+    const open = vi.fn(),
+      dismiss = vi.fn();
+    const { rerender } = render(
       <INotificationSnackbar
         message={{
           key: 1,
           title: '<b>Action</b>',
           moduleName: 'Account',
           item,
+          newCount: 4,
         }}
+        options={{ id: 'summary-test', durationMs: 0, position: 'top-left' }}
         onOpenRequested={open}
         onDismissRequested={dismiss}
       />
     );
-    expect(container.querySelector('b')).toBeNull();
-    fireEvent.click(container.querySelector('.snackbar-content')!);
+    const host = document.querySelector<HTMLElement>(
+      '[data-snackbar-id="summary-test"]'
+    )!;
+    expect(host.querySelector('b')).toBeNull();
+    expect(host.textContent).toContain('and 3 other new notifications');
+    expect(host.querySelector('i-banner')?.getAttribute('variant')).toBe(
+      'info'
+    );
+    expect(host.parentElement?.getAttribute('data-i-snackbar-viewport')).toBe(
+      'top-left'
+    );
+    fireEvent.click(host.querySelector('.snackbar-content')!);
     expect(open).toHaveBeenCalledOnce();
     fireEvent.click(
       screen.getByRole('button', { name: 'Dismiss notification' })
     );
+    act(() => vi.advanceTimersByTime(180));
     expect(dismiss).toHaveBeenCalledOnce();
     rerender(
-      <INotificationSnackbar message={{ key: 2, title: 'New notifications' }} />
+      <INotificationSnackbar
+        message={{ key: 2, title: 'New notifications', newCount: 2 }}
+        options={{ id: 'summary-test', durationMs: 0 }}
+        onOpenRequested={open}
+      />
     );
-    expect(container.querySelector('.snackbar-content')).toBeNull();
+    const generic = document.querySelector<HTMLElement>(
+      '[data-snackbar-id="summary-test"]'
+    )!;
+    expect(generic.textContent).toContain('and 1 other new notification');
+    fireEvent.click(generic.querySelector('.snackbar-content')!);
+    expect(open).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 });
 
 describe('Notification modal parity', () => {
+  it('opens the drawer from a snackbar without emitting open-item', () => {
+    const action = vi.fn();
+    render(
+      <INotification
+        state={{
+          unreadCount: 8,
+          snackbar: { key: 1, title: item.title, item },
+          snackbarOptions: { durationMs: 0 },
+        }}
+        onAction={action}
+      />
+    );
+    fireEvent.click(
+      document.querySelector(
+        '[data-snackbar-id="notification-summary"] .snackbar-content'
+      )!
+    );
+    expect(action).toHaveBeenCalledExactlyOnceWith({ type: 'open-drawer' });
+  });
+
   function Controlled() {
     const [state, setState] = useState<INotificationState>({
       unreadCount: 4,
