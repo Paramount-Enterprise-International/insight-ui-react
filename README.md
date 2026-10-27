@@ -835,6 +835,22 @@ Load the matching insight-ui-css build; these components share its tokens and su
   Angular `IHighlightSearchPipe` remains available with its existing contract.
 - `ILoadError` accepts message/title, `density` (`default`, `compact`, `inline`),
   retryDisabled/retryLoading, and `onRetry`. The application owns recovery requests.
+  Host class/style remain configurable. `contentClass` and `contentStyle` style
+  the inner content while preserving its built-in class. Default minimum height
+  follows `--i-load-error-min-height`, then `--i-region-state-min-height`, then
+  `--i-state-min-height`, then `min(40vh, 240px)`. Compact and inline densities
+  retain a zero minimum height. Longer content can expand naturally.
+
+  ```tsx
+  <ILoadError
+    message="Unable to load records."
+    style={{ '--i-load-error-min-height': '280px' } as CSSProperties}
+    contentClass="rounded-lg"
+    contentStyle={{ padding: '24px', gap: '16px' }}
+  />
+  ```
+
+  Import `CSSProperties` from React when setting CSS custom properties inline.
 - `ILoadingRegion` retains DOM and measured height during refresh, sets aria-busy,
   and blocks content with inert. Its inputs/props include loading, error, label,
   contextKey, initialMinHeight, height, containerClass, contentClass, and layout.

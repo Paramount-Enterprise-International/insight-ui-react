@@ -1,4 +1,4 @@
-import type { HTMLAttributes } from 'react';
+import type { CSSProperties, HTMLAttributes } from 'react';
 import { IButton } from '../button';
 import { IIcon } from '../icon';
 export type ILoadErrorDensity = 'default' | 'compact' | 'inline';
@@ -6,6 +6,8 @@ export interface ILoadErrorProps extends HTMLAttributes<HTMLElement> {
   message?: string | null;
   title?: string;
   density?: ILoadErrorDensity;
+  contentClass?: string;
+  contentStyle?: CSSProperties;
   retryDisabled?: boolean;
   retryLoading?: boolean;
   onRetry?: () => void;
@@ -14,6 +16,8 @@ export function ILoadError({
   message,
   title = '',
   density = 'default',
+  contentClass = '',
+  contentStyle = {},
   retryDisabled = false,
   retryLoading = false,
   onRetry,
@@ -26,7 +30,10 @@ export function ILoadError({
       {...rest}
       class={['i-load-error', className].filter(Boolean).join(' ')}
       density={density}>
-      <div className="i-load-error__content" role="alert">
+      <div
+        className={['i-load-error__content', contentClass].filter(Boolean).join(' ')}
+        style={contentStyle}
+        role="alert">
         <IIcon
           icon="fa-solid fa-circle-exclamation"
           size={density === 'inline' ? 'sm' : 'lg'}
