@@ -738,9 +738,20 @@ Subsequent page navigation cancels any pending restoration. Hidden sidebars and
 search filters that hide the target defer scrolling until it is visible; search
 text and URL filters remain intact. Temporary search expansion is not persisted.
 Search opens every ancestor of a match, including collapsed legacy modules.
-Matching a container displays and opens its entire descendant branch. Clearing
+Matching a container displays and opens its entire descendant branch. Search
+results can then be collapsed or expanded without changing normal menu choices
+or localStorage. These temporary choices survive menu hydration for the same
+trimmed term and reset when the applied term changes. Clearing
 the search restores the previous expansion state. Flat mode
 (`collapsible=false`) continues to display every level.
+
+Search input updates immediately. Filtering, highlighting, and the `menu-filter`
+URL parameter update together after 200 ms without further input; initial URL
+filters apply immediately. URL updates replace the history entry and preserve
+other query parameters and the fragment. Page navigation and unmount cancel
+pending search work. Arrow keys and Enter flush a pending filter before acting;
+Enter still requires an explicitly selected result. Keyboard navigation skips
+leaves inside collapsed search groups. Favorites retain their existing behavior.
 
 ### Active route highlighting
 

@@ -200,11 +200,14 @@ describe('IHSidebar menu persistence and restoration', () => {
   });
 
   for (const term of ['Active page', 'Root']) {
-    it(`temporarily opens the complete search branch for ${term}`, () => {
+    it(`temporarily opens the complete search branch for ${term}`, async () => {
       const before = localStorage.getItem(key);
       const { container, getByPlaceholderText } = render(view({}, '/unknown'));
       const search = getByPlaceholderText('Search Menu..');
       fireEvent.change(search, { target: { value: term } });
+      await waitFor(() =>
+        expect(container.querySelector('.highlight-search')).not.toBeNull()
+      );
       expect(collapsed(container, 'Root')).toBe(false);
       expect(collapsed(container, 'Nested')).toBe(false);
       const row = container.querySelector(
@@ -213,6 +216,9 @@ describe('IHSidebar menu persistence and restoration', () => {
       expect(row.closest('ul.collapsed')).toBeNull();
       expect(localStorage.getItem(key)).toBe(before);
       fireEvent.change(search, { target: { value: '' } });
+      await waitFor(() =>
+        expect(container.querySelector('.highlight-search')).toBeNull()
+      );
       expect(collapsed(container, 'Root')).toBe(true);
       expect(collapsed(container, 'Nested')).toBe(true);
       expect(localStorage.getItem(key)).toBe(before);
@@ -220,7 +226,7 @@ describe('IHSidebar menu persistence and restoration', () => {
   }
 
   for (const term of ['Legacy page', 'Legacy module']) {
-    it(`opens a saved collapsed legacy module and its descendants for ${term}`, () => {
+    it(`opens a saved collapsed legacy module and its descendants for ${term}`, async () => {
       const nodes: IHSidebarProps['menus'] = [
         {
           menuId: 1,
@@ -255,13 +261,24 @@ describe('IHSidebar menu persistence and restoration', () => {
           .parentElement!.querySelector('ul')!;
       expect(module()).toHaveClass('collapsed');
       fireEvent.change(search, { target: { value: term } });
+      await waitFor(() =>
+        expect(container.querySelector('.highlight-search')).not.toBeNull()
+      );
       expect(module()).toHaveClass('expanded');
       expect(collapsed(container, 'Legacy group')).toBe(false);
       const row = container.querySelector(
         'a[data-sidebar-menu-key="main:menuId:3"]'
       )!;
       expect(row.closest('ul.collapsed')).toBeNull();
+      fireEvent.click(container.querySelector('.ih-menu-module')!);
+      expect(module()).toHaveClass('collapsed');
+      fireEvent.click(container.querySelector('.ih-menu-module')!);
+      expect(module()).toHaveClass('expanded');
+      expect(localStorage.getItem(key)).toBe(before);
       fireEvent.change(search, { target: { value: '' } });
+      await waitFor(() =>
+        expect(container.querySelector('.highlight-search')).toBeNull()
+      );
       expect(module()).toHaveClass('collapsed');
       expect(collapsed(container, 'Legacy group')).toBe(true);
       expect(localStorage.getItem(key)).toBe(before);
