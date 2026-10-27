@@ -29,8 +29,6 @@ import {
 import { IHMenu } from '../menu/menu';
 import { appendMenuFilterToUrl } from '../menu/menu.utils';
 import { FavoritesSection } from './favorites-section';
-import { SidebarResizeController } from './sidebar-resize';
-import { filterMenuTree, flattenNavigableMenus } from './sidebar.utils';
 import {
   createFavoritesMenu,
   getSidebarMenuKey,
@@ -38,8 +36,11 @@ import {
   SidebarMenuState,
   type MenuExpansionChange,
 } from './sidebar-menu-state';
+import { SidebarResizeController } from './sidebar-resize';
+import { flattenNavigableMenus, SidebarSearchState } from './sidebar.utils';
 
 const EMPTY_FAVORITES: IMenu[] = [];
+const ignoreToggleGroup = () => undefined;
 
 export type IHSidebarProps = {
   user?: IUser | null;
@@ -102,7 +103,11 @@ export function IHSidebar(props: IHSidebarProps) {
   const resizeController = useRef<SidebarResizeController | null>(null);
   const onWidthChangeRef = useRef(onWidthChange);
   const initialResizeOptions = useRef({
-    resizable, visible, minWidth, maxWidth, widthStorageKey,
+    resizable,
+    visible,
+    minWidth,
+    maxWidth,
+    widthStorageKey,
   });
 
   useLayoutEffect(() => {
@@ -122,7 +127,11 @@ export function IHSidebar(props: IHSidebarProps) {
   useLayoutEffect(() => {
     onWidthChangeRef.current = onWidthChange;
     resizeController.current?.configure({
-      resizable, visible, minWidth, maxWidth, widthStorageKey,
+      resizable,
+      visible,
+      minWidth,
+      maxWidth,
+      widthStorageKey,
     });
   }, [resizable, visible, minWidth, maxWidth, widthStorageKey, onWidthChange]);
 
@@ -190,7 +199,16 @@ export function IHSidebar(props: IHSidebarProps) {
     return sp.get('menu-filter') ?? '';
   }, [location.search]);
 
-  const [menuFilter, setMenuFilter] = useState(initialFilter);
+  const [filterInput, setFilterInput] = useState(initialFilter);
+  const filterInputRef = useRef(initialFilter);
+  const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [searchState] = useState(() => new SidebarSearchState(initialFilter));
+  const [menuFilter, setMenuFilter] = useState(initialFilter.trim());
+  const [searchRevision, refreshSearch] = useReducer(
+    (value: number) => value + 1,
+    0
+  );
+  const locationRef = useRef(location);
   const [keyboardNavActive, setKeyboardNavActive] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [selectedMenuId, setSelectedMenuId] = useState<string | number | null>(
@@ -198,10 +216,14 @@ export function IHSidebar(props: IHSidebarProps) {
   );
 
   const [menuState] = useState(() => new SidebarMenuState(menuStateStorageKey));
-  const [menuRevision, refreshMenus] = useReducer((value: number) => value + 1, 0);
+  const [menuRevision, refreshMenus] = useReducer(
+    (value: number) => value + 1,
+    0
+  );
   const sourceMenus = useMemo(() => normalizeMenuTree(menus), [menus]);
   const sourceFavorites = useMemo(
-    () => createFavoritesMenu(normalizeMenuTree(favorites)), [favorites]
+    () => createFavoritesMenu(normalizeMenuTree(favorites)),
+    [favorites]
   );
   const activeMenu = useMemo(
     () =>
@@ -217,7 +239,11 @@ export function IHSidebar(props: IHSidebarProps) {
     () => ({
       revision: menuRevision,
       menus: menuState.project(sourceMenus, 'main', activeMenu),
-      favoriteGroup: menuState.project(sourceFavorites, 'favorites', activeMenu)[0],
+      favoriteGroup: menuState.project(
+        sourceFavorites,
+        'favorites',
+        activeMenu
+      )[0],
     }),
     [menuState, sourceMenus, sourceFavorites, menuRevision, activeMenu]
   );
@@ -228,84 +254,144 @@ export function IHSidebar(props: IHSidebarProps) {
   }, [menuState, menuStateStorageKey]);
 
   useLayoutEffect(() => {
-    if (menuState.hasLocation) menuState.observeLocation(location.pathname, baseHref);
+    if (menuState.hasLocation)
+      menuState.observeLocation(location.pathname, baseHref);
   }, [menuState, location.pathname, baseHref]);
 
   // Allow initial router redirects to settle before choosing the restoration route.
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
       menuState.observeLocation(location.pathname, baseHref);
-      if (menuState.restore(sourceMenus, favoriteMode ? sourceFavorites : [])) refreshMenus();
+      if (menuState.restore(sourceMenus, favoriteMode ? sourceFavorites : []))
+        refreshMenus();
     });
     return () => cancelAnimationFrame(frame);
-  }, [menuState, sourceMenus, sourceFavorites, favoriteMode, location.pathname, baseHref]);
+  }, [
+    menuState,
+    sourceMenus,
+    sourceFavorites,
+    favoriteMode,
+    location.pathname,
+    baseHref,
+  ]);
 
-  const filteredMenus = useMemo(
-    () => filterMenuTree(menuTree, menuFilter),
-    [menuTree, menuFilter]
+  const searchSnapshot = useMemo(
+    () => ({
+      term: menuFilter,
+      revision: searchRevision,
+      menus: searchState.filter(menuTree),
+    }),
+    [searchState, menuTree, menuFilter, searchRevision]
   );
+  const filteredMenus = searchSnapshot.menus;
 
   useLayoutEffect(() => {
     const frame = requestAnimationFrame(() => {
-      if (sidebarRef.current) menuState.scrollToActive(sidebarRef.current, visible);
+      if (sidebarRef.current)
+        menuState.scrollToActive(sidebarRef.current, visible);
     });
     return () => cancelAnimationFrame(frame);
-  }, [menuState, filteredMenus, favoriteGroup, visible, menuRevision, location.pathname]);
+  }, [
+    menuState,
+    filteredMenus,
+    favoriteGroup,
+    visible,
+    menuRevision,
+    location.pathname,
+  ]);
 
   const navigableMenus = useMemo(
-    () => flattenNavigableMenus(filteredMenus),
-    [filteredMenus]
+    () => flattenNavigableMenus(filteredMenus, collapsible),
+    [filteredMenus, collapsible]
   );
+
+  const cancelFilter = useCallback(() => {
+    if (filterTimer.current !== null) clearTimeout(filterTimer.current);
+    filterTimer.current = null;
+  }, []);
+
+  useEffect(() => cancelFilter, [cancelFilter]);
+
+  useLayoutEffect(() => {
+    const previous = locationRef.current;
+    locationRef.current = location;
+    const term = new URLSearchParams(location.search).get('menu-filter') ?? '';
+    if (
+      previous.pathname === location.pathname &&
+      term.trim() === searchState.term
+    )
+      return;
+    cancelFilter();
+    filterInputRef.current = term;
+    setFilterInput(term);
+    searchState.setTerm(term);
+    setMenuFilter(term.trim());
+    setKeyboardNavActive(false);
+    setSelectedIndex(null);
+    setSelectedMenuId(null);
+  }, [location, cancelFilter, searchState]);
 
   const updateUrl = useCallback(
     (nextFilter: string) => {
-      const sp = new URLSearchParams(location.search);
+      const current = locationRef.current;
+      const sp = new URLSearchParams(current.search);
       const f = nextFilter.trim();
+
+      if ((sp.get('menu-filter') ?? '') === f && (f || !sp.has('menu-filter')))
+        return;
 
       if (f) sp.set('menu-filter', f);
       else sp.delete('menu-filter');
 
       navigate(
-        { search: sp.toString() ? `?${sp.toString()}` : '' },
+        {
+          pathname: current.pathname,
+          search: sp.toString() ? `?${sp.toString()}` : '',
+          hash: current.hash,
+        },
         { replace: true }
       );
     },
-    [location.search, navigate]
+    [navigate]
   );
 
   useEffect(() => {
-    const hasFilter = !!menuFilter.trim();
-
-    if (!navigableMenus.length || !hasFilter) {
+    if (
+      !menuFilter ||
+      !navigableMenus.some((menu) => getMenuKey(menu) === selectedMenuId)
+    ) {
       setKeyboardNavActive(false);
       setSelectedIndex(null);
       setSelectedMenuId(null);
-      return;
-    }
-
-    if (keyboardNavActive) {
-      const maxIndex = navigableMenus.length - 1;
-      let idx = selectedIndex;
-      if (idx == null || idx < 0 || idx > maxIndex) idx = 0;
-
-      setSelectedIndex(idx);
-      setSelectedMenuId(getMenuKey(navigableMenus[idx]));
     } else {
-      setSelectedIndex(null);
-      setSelectedMenuId(null);
+      setSelectedIndex(
+        navigableMenus.findIndex((menu) => getMenuKey(menu) === selectedMenuId)
+      );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigableMenus, menuFilter]);
+  }, [navigableMenus, menuFilter, selectedMenuId]);
+
+  const applyFilter = useCallback(
+    (next: string) => {
+      cancelFilter();
+      if (searchState.setTerm(next)) setMenuFilter(searchState.term);
+      updateUrl(searchState.term);
+    },
+    [cancelFilter, searchState, updateUrl]
+  );
 
   const onFilterChange = useCallback(
     (next: string) => {
-      setMenuFilter(next);
+      filterInputRef.current = next;
+      setFilterInput(next);
       setKeyboardNavActive(false);
       setSelectedIndex(null);
       setSelectedMenuId(null);
-      updateUrl(next);
+      cancelFilter();
+      if (next.trim() !== searchState.term) {
+        filterTimer.current = setTimeout(() => applyFilter(next), 200);
+      }
     },
-    [updateUrl]
+    [applyFilter, cancelFilter, searchState]
   );
 
   const navigateToMenu = useCallback(
@@ -335,68 +421,56 @@ export function IHSidebar(props: IHSidebarProps) {
 
   const onSearchKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
-      if (!navigableMenus.length) return;
-      if (!menuFilter.trim()) return;
+      if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+      const pending = filterInputRef.current.trim() !== searchState.term;
+      if (pending) applyFilter(filterInputRef.current);
+      const items = pending
+        ? flattenNavigableMenus(searchState.filter(menuTree), collapsible)
+        : navigableMenus;
+      if (!items.length || !searchState.term) return;
 
-      if (event.key === 'ArrowDown') {
+      if (event.key === 'Enter') {
+        if (pending || !keyboardNavActive || selectedIndex === null) return;
         event.preventDefault();
-
-        if (!keyboardNavActive) {
-          setKeyboardNavActive(true);
-          setSelectedIndex(0);
-          setSelectedMenuId(getMenuKey(navigableMenus[0]));
-          return;
-        }
-
-        setSelectedIndex((cur) => {
-          const current = cur ?? 0;
-          const max = navigableMenus.length - 1;
-          const next = current + 1 > max ? 0 : current + 1;
-          setSelectedMenuId(getMenuKey(navigableMenus[next]));
-          return next;
-        });
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-
-        if (!keyboardNavActive) {
-          setKeyboardNavActive(true);
-          const last = navigableMenus.length - 1;
-          setSelectedIndex(last);
-          setSelectedMenuId(getMenuKey(navigableMenus[last]));
-          return;
-        }
-
-        setSelectedIndex((cur) => {
-          const current = cur ?? 0;
-          const max = navigableMenus.length - 1;
-          const next = current - 1 < 0 ? max : current - 1;
-          setSelectedMenuId(getMenuKey(navigableMenus[next]));
-          return next;
-        });
-      } else if (event.key === 'Enter') {
-        if (!keyboardNavActive) return;
-
-        event.preventDefault();
-
-        const idx = selectedIndex;
-        if (idx == null || idx < 0 || idx >= navigableMenus.length) return;
-
-        navigateToMenu(navigableMenus[idx]);
+        if (items[selectedIndex]) navigateToMenu(items[selectedIndex]);
+        return;
       }
+
+      event.preventDefault();
+      const delta = event.key === 'ArrowDown' ? 1 : -1;
+      const next =
+        pending || !keyboardNavActive || selectedIndex === null
+          ? delta > 0
+            ? 0
+            : items.length - 1
+          : (selectedIndex + delta + items.length) % items.length;
+      setKeyboardNavActive(true);
+      setSelectedIndex(next);
+      setSelectedMenuId(getMenuKey(items[next]));
     },
     [
+      applyFilter,
+      searchState,
+      menuTree,
+      collapsible,
       navigableMenus,
-      menuFilter,
       keyboardNavActive,
       selectedIndex,
       navigateToMenu,
     ]
   );
 
-  const onExpansionChange = useCallback((event: MenuExpansionChange) => {
-    menuState.setExpanded(event);
-    refreshMenus();
-  }, [menuState]);
+  const onExpansionChange = useCallback(
+    (event: MenuExpansionChange) => {
+      if (searchState.setExpanded(event)) {
+        refreshSearch();
+        return;
+      }
+      menuState.setExpanded(event);
+      refreshMenus();
+    },
+    [menuState, searchState]
+  );
 
   return (
     <ih-sidebar
@@ -467,7 +541,7 @@ export function IHSidebar(props: IHSidebarProps) {
         <input
           placeholder="Search Menu.."
           className="form-control"
-          value={menuFilter}
+          value={filterInput}
           onChange={(e) => onFilterChange(e.target.value)}
           onKeyDown={onSearchKeyDown}
         />
@@ -493,7 +567,7 @@ export function IHSidebar(props: IHSidebarProps) {
               menu={m}
               filter={menuFilter}
               selectedMenuId={selectedMenuId}
-              onToggleGroup={() => undefined}
+              onToggleGroup={ignoreToggleGroup}
               onExpansionChange={onExpansionChange}
               collapsible={collapsible}
               favoriteMode={favoriteMode}

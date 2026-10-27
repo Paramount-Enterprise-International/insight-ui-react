@@ -64,6 +64,8 @@ export class IUserMenuStore {
   private favoritesValue: IMenu[] = [];
   private rolesValue: string[] = [];
   private authorizationsValue: IEffectiveAuthorizationDto[] = [];
+  private authorizationsLoadingValue = false;
+  private authorizationRequest = 0;
   private initializingValue = false;
   private initializedValue = false;
   private loadErrorValue: string | null = null;
@@ -147,6 +149,11 @@ export class IUserMenuStore {
   /** Raw effective authorization entries returned by iam-user-api. */
   get authorizations(): readonly IEffectiveAuthorizationDto[] {
     return this.authorizationsValue;
+  }
+
+  /** True while the authorization branch is being refreshed. */
+  get authorizationsLoading(): boolean {
+    return this.authorizationsLoadingValue;
   }
 
   /** Deduplicated item/function codes from effective authorizations. */
@@ -428,6 +435,9 @@ export class IUserMenuStore {
   ): Promise<IEffectiveAuthorizationDto[]> {
     const generation = this.generation;
     this.checkGeneration(generation);
+    const request = ++this.authorizationRequest;
+    this.authorizationsLoadingValue = true;
+    this.loadErrorsValue = { ...this.loadErrorsValue, authorizations: null };
     this.clearAuthorizationData();
     this.notify();
     try {
@@ -436,14 +446,21 @@ export class IUserMenuStore {
           applicationId
         );
       this.checkGeneration(generation);
+      if (request !== this.authorizationRequest) throw requestCancellation('abort');
       this.applyAuthorizations(items);
-      this.notify();
       return this.authorizationsValue;
     } catch (error) {
       this.checkGeneration(generation);
-      this.clearAuthorizationData();
-      this.notify();
+      if (request === this.authorizationRequest) {
+        this.clearAuthorizationData();
+        this.loadErrorsValue = { ...this.loadErrorsValue, authorizations: normalizeApiError(error) };
+      }
       throw error;
+    } finally {
+      if (generation === this.generation && request === this.authorizationRequest) {
+        this.authorizationsLoadingValue = false;
+        this.notify();
+      }
     }
   }
 
@@ -530,6 +547,8 @@ export class IUserMenuStore {
 
   private clearData(): void {
     this.generation++;
+    this.authorizationRequest++;
+    this.authorizationsLoadingValue = false;
     this.initializingValue = false;
     this.currentUserValue = null;
     this.rawCurrentUserValue = null;

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { IBanner, IButton, type IBannerVariant } from '../../components';
+import { SnackbarDemo } from './snackbar-demo';
 export function BannerDemo() {
   const variants: IBannerVariant[] = [
     'neutral',
@@ -48,6 +49,7 @@ export function BannerDemo() {
       <IButton onClick={() => setOpen(true)}>Open Controlled Banner</IButton>
       <IBanner message="Text-only message" />
       <IBanner />
+      <SnackbarDemo />
     </div>
   );
 }

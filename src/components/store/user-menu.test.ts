@@ -266,12 +266,14 @@ describe('IUserMenuStore — permissions', () => {
   it('loadAuthorizations returns DTOs and never grants navigation-only codes', async () => {
     const { store, menuSvc } = createStore();
     const service = menuSvc as unknown as { getEffectiveMenus: ReturnType<typeof vi.fn>; getAuthorizations: ReturnType<typeof vi.fn> };
-    service.getEffectiveMenus.mockResolvedValue([{ id: 'dashboard', name: 'Dashboard', type: 'item', menuCode: 'dashboard', route: '/dashboard' }]);
+    service.getEffectiveMenus.mockResolvedValue([{ id: 'dashboard', name: 'Dashboard', type: 'item', menuCode: 'dashboard', route: '/dashboard', companies: [{ id: 'only-menu', code: 'NAV', name: 'Navigation only' }] }]);
     service.getAuthorizations.mockResolvedValue([{ menuCode: 'example', menuId: 'example', type: 'function', companies: [] }]);
     await store.load();
     expect(store.hasMenuCode('dashboard')).toBe(false);
     expect(store.hasNavigableMenu('dashboard')).toBe(true);
     expect(store.hasMenuCode('example')).toBe(true);
+    expect(store.companies).toEqual([]);
+    expect(store.menuCompanies).toEqual({ example: [] });
     expect((await store.loadAuthorizations())[0].type).toBe('function');
   });
 
@@ -444,5 +446,33 @@ describe('store session lifecycle', () => {
     await assertion;
     expect(store.authorizations).toEqual([]);
     await expect(store.load()).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+
+describe('authorization refresh status', () => {
+  it('tracks errors and ignores an older response settling during retry', async () => {
+    const { store, menuSvc } = createStore();
+    const service = menuSvc as unknown as { getAuthorizations: ReturnType<typeof vi.fn> };
+    let resolve!: (items: IEffectiveAuthorizationDto[]) => void;
+    let reject!: (error: unknown) => void;
+    service.getAuthorizations
+      .mockReturnValueOnce(new Promise((done) => { resolve = done; }))
+      .mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+    const older = store.loadAuthorizations().catch(() => undefined);
+    expect(store.authorizationsLoading).toBe(true);
+    const retry = store.loadAuthorizations().catch(() => undefined);
+    resolve(AUTHORIZATIONS);
+    await older;
+    expect(store.authorizationsLoading).toBe(true);
+    expect(store.authorizations).toEqual([]);
+    reject({ status: 500 });
+    await retry;
+    expect(store.authorizationsLoading).toBe(false);
+    expect(store.loadErrors.authorizations?.status).toBe(500);
+    await store.loadAuthorizations();
+    expect(store.authorizationsLoading).toBe(false);
+    expect(store.loadErrors.authorizations).toBeNull();
+    expect(store.authorizations).toEqual(AUTHORIZATIONS);
   });
 });
