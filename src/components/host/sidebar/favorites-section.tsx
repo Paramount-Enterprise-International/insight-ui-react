@@ -1,4 +1,5 @@
 import React, {
+  memo,
   useCallback,
   useEffect,
   useMemo,
@@ -15,7 +16,7 @@ import { buildFavoritePathMap, getMenuKey, normalizeMenuTree } from '../menu';
 import { IHMenu } from '../menu/menu';
 import type { MenuExpansionChange } from './sidebar-menu-state';
 
-export function FavoritesSection({
+export const FavoritesSection = memo(function FavoritesSection({
   favorites,
   menus,
   collapsible,
@@ -71,7 +72,8 @@ export function FavoritesSection({
   // the exact same styling as the Angular sidebar (ih-menu classes + star).
   const group = useMemo<IMenu | null>(() => {
     if (!favoriteItems?.length) return null;
-    if (stateGroup) return { ...stateGroup, child: favoriteItems, children: undefined };
+    if (stateGroup)
+      return { ...stateGroup, child: favoriteItems, children: undefined };
     const node: IMenu = {
       id: SIDEBAR_FAVORITES_GROUP_ID,
       name: 'Favorites',
@@ -208,6 +210,11 @@ export function FavoritesSection({
     [computeDropIndex, reorderLive, cleanupDrag, onFavoriteReorder]
   );
 
+  const onToggleGroup = useCallback(
+    () => setFavoritesCollapsed((value) => !value),
+    []
+  );
+
   if (!group) return null;
 
   return (
@@ -221,7 +228,7 @@ export function FavoritesSection({
         menu={group}
         filter=""
         selectedMenuId={null}
-        onToggleGroup={() => setFavoritesCollapsed((c) => !c)}
+        onToggleGroup={onToggleGroup}
         onExpansionChange={onExpansionChange}
         collapsible={collapsible}
         favoriteMode
@@ -232,4 +239,4 @@ export function FavoritesSection({
       />
     </ul>
   );
-}
+});

@@ -50,7 +50,8 @@ export const ISelectCompany = forwardRef<ISelectHandle, ISelectCompanyProps>(
     const { controller, value: selection } = useIHSelection();
     const hosted = !!controller && stateScope !== 'local';
     const effectiveMenu = menuCode?.trim() || (hosted ? selection.menuCode : null);
-    const companyLoading = loading || (hosted && (!store.initialized || store.initializing || !effectiveMenu));
+    const menuActive = !hosted || (!!selection.menuCode && effectiveMenu === selection.menuCode);
+    const companyLoading = loading || store.authorizationsLoading || (hosted && (!store.initialized || store.initializing || !menuActive));
     const lastNotified = useRef<IMenuCompanyDto | null | undefined>(undefined);
     const [internalValue, setInternalValue] = useState<IMenuCompanyDto | null>(
       defaultValue
@@ -61,25 +62,24 @@ export const ISelectCompany = forwardRef<ISelectHandle, ISelectCompanyProps>(
     const options = useMemo(() => {
       const companies = [...store.companies];
       const code = effectiveMenu;
-      if (hosted && !code) return [];
-      if (!code) return companies;
+      if (!code || !menuActive) return [];
 
       const allowed = new Set(store.menuCompanies[code] ?? []);
       return companies.filter((company) => allowed.has(company.code));
       // The store mutates in place; its version invalidates the derived options.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [store, version, effectiveMenu, hosted]);
+    }, [store, version, effectiveMenu, menuActive]);
 
     const selectedCompany = hosted
       ? options.find((company) => company.id === selection.companyId) ?? null
       : options.find((company) => company.id === modelValue?.id) ?? modelValue ?? null;
 
     useEffect(() => {
-      if (!hosted || !controller) return;
+      if (!hosted || !controller || !menuActive) return;
       const error = store.loadErrors.authorizations;
       controller.validateCompanies(effectiveMenu, options.map((company) => company.id),
         companyLoading ? 'loading' : error ? 'error' : 'ready', error ? 'Unable to load company access.' : null);
-    }, [hosted, controller, effectiveMenu, options, companyLoading, store, version, selection.revision]);
+    }, [hosted, controller, effectiveMenu, menuActive, options, companyLoading, store, version, selection.revision]);
 
     useEffect(() => {
       if (!hosted || lastNotified.current === selectedCompany) return;
@@ -90,7 +90,7 @@ export const ISelectCompany = forwardRef<ISelectHandle, ISelectCompanyProps>(
     }, [hosted, selectedCompany, onChange, onChanged]);
 
     const handleChange = (change: ISelectChange<IMenuCompanyDto>) => {
-      if (hosted && !controller?.setCompany(change.value?.id ?? null)) return;
+      if (hosted && (companyLoading || !menuActive || !controller?.setCompany(change.value?.id ?? null))) return;
       lastNotified.current = change.value;
       if (!controlled) setInternalValue(change.value);
       onChange?.(change);

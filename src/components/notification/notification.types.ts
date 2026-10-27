@@ -1,3 +1,5 @@
+import type { ISnackbarOptions } from '../snackbar/snackbar.types';
+
 /** Presentation models shared by the bell, drawer, and snackbar. */
 export type INotificationEntry = {
   notificationId: string;
@@ -15,12 +17,29 @@ export type INotificationEntry = {
 
 export type INotificationSnackbarMessage = {
   key: number;
+  newCount?: number;
   title: string;
   moduleName?: string;
   item?: INotificationEntry;
 };
 
-/** Controlled presentation state. All side effects belong to the consumer. */
+export type INotificationSnackbarOptions = Pick<
+  ISnackbarOptions,
+  | 'id'
+  | 'position'
+  | 'durationMs'
+  | 'prefixIcon'
+  | 'suffixIcon'
+  | 'closable'
+  | 'closeLabel'
+  | 'dismissOnEscape'
+  | 'pauseOnHover'
+  | 'pauseOnFocus'
+  | 'pauseOnHidden'
+  | 'maxWidth'
+>;
+
+/** Controlled presentation state. Data and navigation belong to the consumer. */
 export type INotificationState = {
   unreadCount: number;
   open?: boolean;
@@ -34,12 +53,14 @@ export type INotificationState = {
   loadMoreError?: string | null;
   actionError?: string | null;
   snackbar?: INotificationSnackbarMessage | null;
+  snackbarOptions?: INotificationSnackbarOptions;
 };
 
 export type INotificationAction =
   | { type: 'toggle' }
   | { type: 'close' }
   | { type: 'open-all' }
+  | { type: 'open-drawer' }
   | { type: 'open-item'; item: INotificationEntry }
   | { type: 'load-more' }
   | { type: 'retry' }

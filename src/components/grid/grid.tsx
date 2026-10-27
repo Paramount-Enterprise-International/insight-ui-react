@@ -72,6 +72,7 @@ export type IGridColumnLike<T = any> = {
   freeze: boolean;
 
   width?: IGridColumnWidth;
+  minWidth?: number;
 
   headerDef?: (col: IGridColumnLike<T>) => ReactNode;
 
@@ -595,6 +596,7 @@ export type IGridColumnProps<T> = {
   title?: string;
 
   width?: IGridColumnWidth;
+  minWidth?: number;
   freeze?: boolean;
 
   // Angular defaults: sortable/resizable true for data columns
@@ -621,6 +623,7 @@ export type IGridCustomColumnProps<T> = {
   title?: string;
 
   width?: IGridColumnWidth;
+  minWidth?: number;
   freeze?: boolean;
 
   // Angular defaults for custom columns: sortable false, resizable true
@@ -869,7 +872,8 @@ function IGridInner<T>(
   const [currentFilterText, setCurrentFilterText] = useState<string>('');
   const [sortStates, setSortStates] = useState<ISortState[]>([]);
 
-  const columnWidthsRef = useRef<Map<IGridColumnLike<T>, number>>(new Map());
+  const columnWidthsRef = useRef<Map<IGridColumnLike<T> | string, number>>(new Map());
+  const columnWidthKeysRef = useRef(new WeakMap<IGridColumnLike<T>, string>());
   const [, setTick] = useState(0);
 
   const [selectionSet, setSelectionSet] = useState<Set<T>>(new Set());
@@ -930,7 +934,8 @@ function IGridInner<T>(
     let expandable: IGridExpandableRowProps<T> | null = null;
 
     const parseColumnEl = (
-      el: ReactElement<any>
+      el: ReactElement<any>,
+      key: string
     ): IGridColumnLike<T> | null => {
       const kind = (el.type as any)?.$$kind;
       if (kind !== 'IGridColumn' && kind !== 'IGridCustomColumn') return null;
@@ -948,12 +953,19 @@ function IGridInner<T>(
         freeze: !!p.freeze,
 
         width: p.width,
+        minWidth: p.minWidth,
 
         headerDef: p.headerDef,
         cellDef: p.cellDef,
 
         isAuto: false,
       };
+
+      // Keep resized widths when column properties such as minWidth change.
+      columnWidthKeysRef.current.set(
+        col,
+        JSON.stringify([key, kind, col.fieldName, col.width])
+      );
 
       return col;
     };
@@ -977,7 +989,7 @@ function IGridInner<T>(
 
         const gCols: IGridColumnLike<T>[] = [];
         for (const kid of kids) {
-          const c = parseColumnEl(kid as any);
+          const c = parseColumnEl(kid as any, JSON.stringify([node.key, kid.key]));
           if (c) gCols.push(c);
         }
 
@@ -989,7 +1001,7 @@ function IGridInner<T>(
         continue;
       }
 
-      const c = parseColumnEl(node as any);
+      const c = parseColumnEl(node as any, JSON.stringify([node.key]));
       if (c) header.push({ kind: 'col', col: c });
     }
 
@@ -1075,14 +1087,21 @@ function IGridInner<T>(
 
   /* ---------------- widths ---------------- */
 
-  const getColumnWidth = (col: IGridColumnLike<T>): number | null => {
-    const override = columnWidthsRef.current.get(col);
-    if (typeof override === 'number') return override;
+  const getColumnWidthKey = (col: IGridColumnLike<T>) =>
+    columnWidthKeysRef.current.get(col) ?? col;
 
-    if (typeof col.width === 'number') return col.width;
+  const getColumnMinWidth = (col: IGridColumnLike<T>): number | null =>
+    col.minWidth ?? (col.width === 'fill' ? 150 : null);
+
+  const getColumnWidth = (col: IGridColumnLike<T>): number | null => {
+    const minWidth = getColumnMinWidth(col) ?? 0;
+    const override = columnWidthsRef.current.get(getColumnWidthKey(col));
+    if (typeof override === 'number') return Math.max(override, minWidth);
+
+    if (typeof col.width === 'number') return Math.max(col.width, minWidth);
     if (col.width === 'fill') return null;
 
-    return defaultColumnWidth;
+    return Math.max(defaultColumnWidth, minWidth);
   };
 
   const getColumnFlex = (col: IGridColumnLike<T>): string => {
@@ -1092,16 +1111,20 @@ function IGridInner<T>(
   };
 
   const setColumnWidth = (col: IGridColumnLike<T>, width: number) => {
-    columnWidthsRef.current.set(col, width);
+    columnWidthsRef.current.set(
+      getColumnWidthKey(col),
+      Math.max(width, getColumnMinWidth(col) ?? 0)
+    );
     setTick((n) => n + 1);
   };
 
   useEffect(() => {
     const map = columnWidthsRef.current;
     for (const col of effectiveColumns) {
-      if (!map.has(col)) {
+      const key = getColumnWidthKey(col);
+      if (!map.has(key)) {
         const px = getColumnWidth(col);
-        if (px !== null) map.set(col, px);
+        if (px !== null) map.set(key, px);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1888,7 +1911,6 @@ function IGridInner<T>(
       sticky,
     } = p;
 
-    const minWidth = 50;
     const isResizingRef = useRef(false);
 
     // ✅ Angular-like: if col exists, compute frozen behavior via grid helpers
@@ -1939,9 +1961,7 @@ function IGridInner<T>(
 
       const onMove = (e: MouseEvent) => {
         const delta = e.clientX - startX;
-        let next = startWidth + delta;
-        if (next < minWidth) next = minWidth;
-        setColumnWidth(col, next);
+        setColumnWidth(col, startWidth + delta);
       };
 
       isResizingRef.current = true;
@@ -1978,6 +1998,8 @@ function IGridInner<T>(
         role="columnheader"
         style={{
           flex,
+          minWidth:
+            fixedWidth ?? (col ? (getColumnMinWidth(col) ?? undefined) : undefined),
           position: stickyEnabled ? 'sticky' : undefined,
           left: stickyEnabled ? (stickyLeft ?? undefined) : undefined,
           zIndex:
@@ -2067,6 +2089,8 @@ function IGridInner<T>(
         role="cell"
         style={{
           flex,
+          minWidth:
+            fixedWidth ?? (col ? (getColumnMinWidth(col) ?? undefined) : undefined),
           position: stickyEnabled ? 'sticky' : undefined,
           left: stickyEnabled ? (stickyLeft ?? undefined) : undefined,
           zIndex:

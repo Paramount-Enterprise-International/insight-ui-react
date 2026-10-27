@@ -9,7 +9,10 @@ import { IEmptyState } from '../empty-state';
 import {
   IGrid,
   IGridColumn,
+  IGridColumnGroup,
+  IGridCustomColumn,
   IGridDataSource,
+  type IGridColumnWidth,
   type IGridHandle,
   type IGridProps,
 } from './grid';
@@ -30,6 +33,132 @@ describe('IGrid', () => {
     await waitFor(() => {
       expect(container.querySelector('i-grid-row')).toBeTruthy();
     });
+  });
+});
+
+describe('IGrid column minimum widths', () => {
+  const rows = [{ name: 'Alice', status: 'Active' }];
+
+  function grid(width?: IGridColumnWidth, minWidth?: number, actionMinWidth?: number) {
+    return (
+      <IGrid dataSource={rows} showNumberColumn={false}>
+        <IGridColumn
+          fieldName="name"
+          title="Name"
+          width={width}
+          minWidth={minWidth}
+          freeze
+        />
+        <IGridColumnGroup title="Identity">
+          <IGridColumn fieldName="status" title="Status" width={80} minWidth={90} freeze />
+        </IGridColumnGroup>
+        <IGridCustomColumn title="Actions" width={45} minWidth={actionMinWidth} freeze />
+      </IGrid>
+    );
+  }
+
+  function header(title = 'Name'): HTMLElement {
+    return screen.getByText(title).closest('i-grid-header-cell') as HTMLElement;
+  }
+
+  function cell(container: HTMLElement, index = 0): HTMLElement {
+    return container.querySelectorAll<HTMLElement>('i-grid-row i-grid-cell')[index];
+  }
+
+  function expectWidth(container: HTMLElement, width: number, title = 'Name', index = 0) {
+    expect(header(title).style.flex).toBe(`0 0 ${width}px`);
+    expect(cell(container, index).style.flex).toBe(`0 0 ${width}px`);
+  }
+
+  function resize(delta: number, title = 'Name') {
+    fireEvent.mouseDown(header(title).querySelector('.i-grid-header-cell__resize-handle')!, {
+      clientX: 200,
+    });
+    fireEvent.mouseMove(window, { clientX: 200 + delta });
+    fireEvent.mouseUp(window);
+  }
+
+  it('clamps a resize to the explicit minimum and can grow again', () => {
+    const { container } = render(grid(200, 120));
+    resize(-300);
+    expectWidth(container, 120);
+    resize(60);
+    expectWidth(container, 180);
+  });
+
+  it('accepts an explicit minimum below 50', () => {
+    const { container } = render(grid(200, 30));
+    resize(-300);
+    expectWidth(container, 30);
+    expect(header().style.minWidth).toBe('30px');
+    expect(cell(container).style.minWidth).toBe('30px');
+  });
+
+  it.each([undefined, 120])('keeps fill flexible with minimum %s', (minWidth) => {
+    const { container } = render(grid('fill', minWidth));
+    const expected = minWidth ?? 150;
+    expect(header().style.flex).toBe('1 1 0%');
+    expect(cell(container).style.flex).toBe('1 1 0%');
+    expect(header().style.minWidth).toBe(`${expected}px`);
+    expect(cell(container).style.minWidth).toBe(`${expected}px`);
+    Object.defineProperty(header(), 'clientWidth', { configurable: true, value: 240 });
+    resize(-300);
+    expectWidth(container, expected);
+  });
+
+  it('gives auto-generated fill columns the same 150px minimum', () => {
+    const { container } = render(<IGrid dataSource={[{ name: 'Alice' }]} showNumberColumn={false} />);
+    const autoHeader = container.querySelector('i-grid-header-cell') as HTMLElement;
+    expect(autoHeader.style.minWidth).toBe('150px');
+    expect(cell(container).style.minWidth).toBe('150px');
+    expect(autoHeader.style.flex).toBe('1 1 0%');
+    expect(cell(container).style.flex).toBe('1 1 0%');
+  });
+
+  it('clamps initial numeric widths and aligns grouped and custom cells and frozen offsets', () => {
+    const { container } = render(grid(80, 120, 60));
+    expectWidth(container, 120);
+    expectWidth(container, 90, 'Status', 1);
+    expectWidth(container, 60, 'Actions', 2);
+    expect(header('Status').style.minWidth).toBe('90px');
+    expect(cell(container, 1).style.minWidth).toBe('90px');
+    expect(header('Actions').style.minWidth).toBe('60px');
+    expect(cell(container, 2).style.minWidth).toBe('60px');
+    expect(header('Status').style.left).toBe('120px');
+    expect(cell(container, 1).style.left).toBe('120px');
+    expect(header('Actions').style.left).toBe('210px');
+    expect(cell(container, 2).style.left).toBe('210px');
+    resize(-100, 'Actions');
+    expectWidth(container, 60, 'Actions', 2);
+  });
+
+  it('clamps a default width to an explicit minimum', () => {
+    const { container } = render(grid(undefined, 250));
+    expectWidth(container, 250);
+  });
+
+  it('updates resized widths and frozen offsets when the minimum increases', () => {
+    const { container, rerender } = render(grid(300, 100));
+    resize(-160);
+    expectWidth(container, 140);
+    rerender(grid(300, 220));
+    expectWidth(container, 220);
+    expect(header('Status').style.left).toBe('220px');
+    expect(cell(container, 1).style.left).toBe('220px');
+    expect(header('Actions').style.left).toBe('310px');
+    expect(cell(container, 2).style.left).toBe('310px');
+  });
+
+  it('preserves default and 45px action widths without adding a minimum', () => {
+    const { container } = render(grid());
+    expectWidth(container, 200);
+    expectWidth(container, 45, 'Actions', 2);
+    expect(header().style.minWidth).toBe('');
+    expect(cell(container).style.minWidth).toBe('');
+    expect(header('Actions').style.minWidth).toBe('');
+    expect(cell(container, 2).style.minWidth).toBe('');
+    resize(-15, 'Actions');
+    expectWidth(container, 30, 'Actions', 2);
   });
 });
 

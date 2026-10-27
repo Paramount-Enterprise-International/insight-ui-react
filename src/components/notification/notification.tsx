@@ -13,7 +13,7 @@ export type INotificationProps = {
   onAction?: (action: INotificationAction) => void;
 };
 
-/** Controlled notification UI; consumers own data, navigation and timers. */
+/** Controlled notification UI; consumers own data and navigation. */
 export function INotification({ state, onAction }: INotificationProps) {
   const [retained, setRetained] = useState(state?.open ?? false);
   useLayoutEffect(() => {
@@ -47,11 +47,9 @@ export function INotification({ state, onAction }: INotificationProps) {
       {state.snackbar && (
         <INotificationSnackbar
           message={state.snackbar}
+          options={state.snackbarOptions}
           onDismissRequested={() => onAction?.({ type: 'dismiss-snackbar' })}
-          onOpenRequested={() =>
-            state.snackbar?.item &&
-            onAction?.({ type: 'open-item', item: state.snackbar.item })
-          }
+          onOpenRequested={() => onAction?.({ type: 'open-drawer' })}
         />
       )}
     </i-notification>

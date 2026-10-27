@@ -1,47 +1,50 @@
-import { IButton } from '../button';
-import { IIcon } from '../icon';
-import type { INotificationSnackbarMessage } from './notification.types';
+import { ISnackbar } from '../snackbar';
+import type {
+  INotificationSnackbarMessage,
+  INotificationState,
+} from './notification.types';
 
 export type INotificationSnackbarProps = {
   message: INotificationSnackbarMessage;
+  options?: INotificationState['snackbarOptions'];
   onDismissRequested?: () => void;
   onOpenRequested?: () => void;
 };
 
 export function INotificationSnackbar({
   message,
+  options,
   onDismissRequested,
   onOpenRequested,
 }: INotificationSnackbarProps) {
   return (
     <i-notification-snackbar>
-      <div
-        className="notification-snackbar flex align-center gap-md p-lg radius-md"
-        role="status"
-        aria-live="polite">
-        <IIcon
-          icon={message.item?.icon ?? 'fa-solid fa-bell'}
-          aria-hidden="true"
-        />
-        {message.item ? (
-          <button
-            type="button"
-            className="snackbar-content text-left border-none bg-transparent p-0 min-w-0 flex-fill"
-            onClick={onOpenRequested}>
-            <span className="block font-semibold">{message.moduleName}</span>
-            <span>{message.title}</span>
-          </button>
-        ) : (
-          <span className="flex-fill">{message.title}</span>
-        )}
-        <IButton
+      <ISnackbar
+        {...options}
+        id={options?.id ?? 'notification-summary'}
+        variant="info"
+        resetKey={message.key}
+        prefixIcon={
+          options?.prefixIcon ?? message.item?.icon ?? 'fa-solid fa-bell'
+        }
+        closeLabel={options?.closeLabel ?? 'Dismiss notification'}
+        onAfterDismissed={onDismissRequested}>
+        <button
           type="button"
-          size="xs"
-          icon="fa-solid fa-xmark"
-          aria-label="Dismiss notification"
-          onClick={onDismissRequested}
-        />
-      </div>
+          className="i-snackbar__content-action snackbar-content"
+          onClick={onOpenRequested}>
+          {message.moduleName && (
+            <span className="block font-semibold">{message.moduleName}</span>
+          )}
+          <span>{message.title}</span>
+          {(message.newCount ?? 0) > 1 && (
+            <span className="block">
+              and {message.newCount! - 1} other new{' '}
+              {message.newCount === 2 ? 'notification' : 'notifications'}
+            </span>
+          )}
+        </button>
+      </ISnackbar>
     </i-notification-snackbar>
   );
 }

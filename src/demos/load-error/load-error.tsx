@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { ILoadError, type ILoadErrorDensity } from '../../components';
 export function LoadErrorDemo() {
   const densities: ILoadErrorDensity[] = ['default', 'compact', 'inline'];
@@ -36,6 +36,14 @@ export function LoadErrorDemo() {
           onRetry={() => setAttempts(attempts + 1)}
         />
       ))}
+      <h2>Custom styling</h2>
+      <ILoadError
+        message="The service is temporarily unavailable."
+        style={{ '--i-load-error-min-height': '280px' } as CSSProperties}
+        contentClass="rounded-lg"
+        contentStyle={{ gap: '16px', padding: '24px' }}
+        onRetry={() => setAttempts(attempts + 1)}
+      />
     </div>
   );
 }

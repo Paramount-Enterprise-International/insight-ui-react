@@ -59,6 +59,28 @@ See the [platform integration guide](../docs-sso-web/public/docs/sso/iam-sso-int
 and both atlas-remote Host Integration examples. New exports require an updated
 library dependency before consumer compilation; no version is implied by this source change.
 
+## Select empty states
+
+`ISelect`, `IFCSelect`, `ISelectCompany`, and `IFCSelectCompany` accept
+`emptyState: ISelectEmptyState`, where the exported type is
+`string | { empty?: string; notFound?: string }`.
+
+A string overrides only the empty-source message. An object overrides each message
+independently; omitted properties default to `"No options available"` for `empty`
+and `"No results found"` for `notFound`.
+
+```tsx
+<IFCSelect emptyState="No options yet" options={options} />
+<ISelectCompany emptyState={{ empty: 'No companies', notFound: 'Company not found' }} />
+```
+
+An empty source always uses `empty`, including during a search. A nonempty source
+with no matches uses `notFound` after the normal filter debounce (and minimum
+filter length where supported). Messages are plain, nonselectable status text in
+the dropdown and are hidden while explicit or observable loading is active.
+Company selects use their existing authorization loading state. Load matching
+Insight CSS to style the status text.
+
 ## Company selects
 
 `ISelectCompany` and `IFCSelectCompany` read company options reactively from the
@@ -101,10 +123,17 @@ export function CompanyFilter() {
 }
 ```
 
-In local mode, omitting `menuCode`, or passing a blank value, shows all `store.companies`.
-A nonblank code is trimmed and restricts options through
-`store.menuCompanies[menuCode]`. An unknown menu shows no options. Store ordering
-and deduplication are preserved.
+Company options come only from effective authorizations and are sorted by name A-Z
+using the Indonesian locale, ignoring case, with code and ID as tie breakers.
+`store.menuCompanies[menuCode]` restricts options to the requested menu.
+Without IHState, or with `stateScope="local"`, provide a nonblank `menuCode`;
+a missing, blank, or unknown menu yields no options. Hosted selectors use the
+active IHState menu by default. An explicit menu must match the active host menu;
+while navigation has no active menu or the menus differ, options and interaction
+are blocked. Navigation menus never supply company grants.
+`store.authorizationsLoading` (an Angular signal, or a React getter) tracks
+authorization refreshes independently of the full store load. Loading and errors
+preserve shared selection candidates until a successful validation.
 
 Values are company objects (`id`, `code`, `name`) or `null`. Both components support
 controlled `value` and uncontrolled `defaultValue`. Labels default to `name`;
@@ -738,9 +767,20 @@ Subsequent page navigation cancels any pending restoration. Hidden sidebars and
 search filters that hide the target defer scrolling until it is visible; search
 text and URL filters remain intact. Temporary search expansion is not persisted.
 Search opens every ancestor of a match, including collapsed legacy modules.
-Matching a container displays and opens its entire descendant branch. Clearing
+Matching a container displays and opens its entire descendant branch. Search
+results can then be collapsed or expanded without changing normal menu choices
+or localStorage. These temporary choices survive menu hydration for the same
+trimmed term and reset when the applied term changes. Clearing
 the search restores the previous expansion state. Flat mode
 (`collapsible=false`) continues to display every level.
+
+Search input updates immediately. Filtering, highlighting, and the `menu-filter`
+URL parameter update together after 200 ms without further input; initial URL
+filters apply immediately. URL updates replace the history entry and preserve
+other query parameters and the fragment. Page navigation and unmount cancel
+pending search work. Arrow keys and Enter flush a pending filter before acting;
+Enter still requires an explicitly selected result. Keyboard navigation skips
+leaves inside collapsed search groups. Favorites retain their existing behavior.
 
 ### Active route highlighting
 
@@ -802,6 +842,22 @@ Load the matching insight-ui-css build; these components share its tokens and su
   Angular `IHighlightSearchPipe` remains available with its existing contract.
 - `ILoadError` accepts message/title, `density` (`default`, `compact`, `inline`),
   retryDisabled/retryLoading, and `onRetry`. The application owns recovery requests.
+  Host class/style remain configurable. `contentClass` and `contentStyle` style
+  the inner content while preserving its built-in class. Default minimum height
+  follows `--i-load-error-min-height`, then `--i-region-state-min-height`, then
+  `--i-state-min-height`, then `min(40vh, 240px)`. Compact and inline densities
+  retain a zero minimum height. Longer content can expand naturally.
+
+  ```tsx
+  <ILoadError
+    message="Unable to load records."
+    style={{ '--i-load-error-min-height': '280px' } as CSSProperties}
+    contentClass="rounded-lg"
+    contentStyle={{ padding: '24px', gap: '16px' }}
+  />
+  ```
+
+  Import `CSSProperties` from React when setting CSS custom properties inline.
 - `ILoadingRegion` retains DOM and measured height during refresh, sets aria-busy,
   and blocks content with inert. Its inputs/props include loading, error, label,
   contextKey, initialMinHeight, height, containerClass, contentClass, and layout.
@@ -816,6 +872,27 @@ Load the matching insight-ui-css build; these components share its tokens and su
   resolution without upscaling; circle is a preview mask and output stays square.
   Source changes/destruction invalidate pending exports. Remote images must permit
   canvas export; export failures reject the Promise. File limits remain app-owned.
+
+### Grid column minimum width
+
+`IGridColumn` and `IGridCustomColumn` accept an optional numeric `minWidth` in
+pixels, including inside column groups. It applies to the initial layout and
+drag resizing, keeping header and body cells aligned. A numeric or resized width
+below the minimum is clamped, and frozen offsets use the clamped width.
+
+```tsx
+<IGridColumn fieldName="name" title="Name" width="fill" minWidth={120} />
+<IGridCustomColumn title="Actions" width={45} />
+```
+
+Without `minWidth`, only `width="fill"` gets a default minimum of **150px**,
+including auto-generated columns. Fill columns keep sharing available space;
+the viewport scrolls horizontally when the columns no longer fit. Numeric and
+omitted widths have no default minimum, so a 45px action column stays 45px and
+can resize below 50px. The initial width when `width` is omitted remains 200px.
+An explicit minimum overrides the fill default and may be below 150px.
+Changing `minWidth` also constrains an existing resized width. Keep React column
+keys and the declared `width` stable to preserve resized widths across renders.
 
 ### Automatic surface layout
 

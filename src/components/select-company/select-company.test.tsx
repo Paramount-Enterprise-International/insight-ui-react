@@ -51,7 +51,7 @@ function mount(props: IFCSelectCompanyProps = {}, wrapped = false, state?: IHSta
   const tree = (next: IFCSelectCompanyProps) => (
     <IHostApiProvider hostApi={{ state, navigate: () => undefined, setTitle: () => undefined, setBreadcrumbs: () => undefined }}>
     <IAuthContext.Provider value={context}>
-      <Select ref={ref} portalToBody={false} {...next} />
+      <Select ref={ref} portalToBody={false} menuCode={state ? undefined : "report"} {...next} />
     </IAuthContext.Provider>
     </IHostApiProvider>
   );
@@ -93,6 +93,27 @@ describe.each([false, true])('company select with wrapped=%s', (wrapped) => {
     vi.useRealTimers();
   });
 
+  it('forwards string and object messages through company wrappers', async () => {
+    const view = mountCompany({ emptyState: 'No companies', filterDelay: 0 });
+    const message = () => view.container.querySelector('.i-options__empty')?.textContent;
+    view.open();
+    expect(message()).toBe('No companies');
+    const props = { emptyState: { empty: 'Empty companies', notFound: 'Company not found' }, filterDelay: 0 };
+    view.update(props);
+    expect(message()).toBe('Empty companies');
+    await view.hydrate();
+    expect(message()).toBeUndefined();
+    fireEvent.input(view.input(), { target: { value: 'missing' } });
+    act(() => vi.advanceTimersByTime(1));
+    expect(message()).toBe('Company not found');
+    view.update({ ...props, loading: true });
+    expect(message()).toBeUndefined();
+    view.update(props);
+    expect(message()).toBe('Company not found');
+    act(() => view.store.reset());
+    expect(message()).toBe('Empty companies');
+  });
+
   it('reacts to hydration and reset without requesting data or selecting a company', async () => {
     const view = mountCompany();
     expect(view.getAuthorizations).not.toHaveBeenCalled();
@@ -100,7 +121,7 @@ describe.each([false, true])('company select with wrapped=%s', (wrapped) => {
     expect(view.labels()).toEqual([]);
 
     await view.hydrate();
-    expect(view.labels()).toEqual(['Jakarta', 'Bandung']);
+    expect(view.labels()).toEqual(['Bandung', 'Jakarta']);
     expect(view.input().value).toBe('');
     expect(view.getAuthorizations).toHaveBeenCalledTimes(1);
 
@@ -113,11 +134,11 @@ describe.each([false, true])('company select with wrapped=%s', (wrapped) => {
     await view.hydrate();
     view.open();
     for (const [menuCode, expected] of [
-      [null, ['Jakarta', 'Bandung']],
-      ['   ', ['Jakarta', 'Bandung']],
+      [null, []],
+      ['   ', []],
       [' sales ', ['Jakarta']],
       ['unknown', []],
-      ['report', ['Jakarta', 'Bandung']],
+      ['report', ['Bandung', 'Jakarta']],
     ] as const) {
       view.update({ menuCode });
       expect(view.labels()).toEqual([...expected]);
@@ -198,7 +219,7 @@ describe.each([false, true])('company select with wrapped=%s', (wrapped) => {
     expect(
       view.container.querySelector('.i-option.selected')?.textContent
     ).toContain('Jakarta');
-    fireEvent.mouseDown(view.container.querySelectorAll('.i-option')[1]);
+    fireEvent.mouseDown(view.container.querySelectorAll('.i-option')[0]);
     expect(view.input().value).toBe('Bandung');
     for (const callback of [onChange, onChanged, onOptionSelected]) {
       expect(callback).toHaveBeenCalledTimes(1);
@@ -220,7 +241,7 @@ describe.each([false, true])('company select with wrapped=%s', (wrapped) => {
     const view = mountCompany({ value: jakarta, onChange });
     await view.hydrate();
     view.open();
-    fireEvent.mouseDown(view.container.querySelectorAll('.i-option')[1]);
+    fireEvent.mouseDown(view.container.querySelectorAll('.i-option')[0]);
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ value: bandung, label: 'Bandung' });
     view.update({ value: bandung, onChange });
@@ -304,6 +325,54 @@ describe.each([false, true])('hosted company select with wrapped=%s', (wrapped) 
     view.update({ stateScope: 'local', value: bandung });
     expect(view.input().value).toBe('Bandung');
     expect(state.selection.getSnapshot().companyId).toBeNull();
+  });
+
+  it('blocks stale explicit menus during navigation without validating the new context', async () => {
+    sessionStorage.clear();
+    const state = new IHStateOwner('stale-menu-test');
+    state.setIdentity('user');
+    state.selection.activateMenu('report');
+    state.selection.validateCompanies('report', ['c2'], 'ready');
+    state.selection.setCompany('c2');
+    const view = mount({ menuCode: 'report' }, wrapped, state);
+    vi.spyOn(view.store, 'initialized', 'get').mockReturnValue(true);
+    await view.hydrate();
+    act(() => state.selection.activateMenu(null));
+    view.open();
+    expect(view.labels()).toEqual([]);
+    expect(state.selection.getSnapshot()).toMatchObject({ companyId: 'c2', companyStatus: 'loading' });
+    act(() => state.selection.activateMenu('sales'));
+    view.open();
+    expect(view.labels()).toEqual([]);
+    expect(state.selection.getSnapshot()).toMatchObject({ companyId: 'c2', companyStatus: 'loading' });
+    view.update({ menuCode: 'sales' });
+    expect(state.selection.getSnapshot()).toMatchObject({ companyId: null, companyStatus: 'ready' });
+  });
+
+  it('preserves candidates through authorization refresh and failure until successful validation', async () => {
+    sessionStorage.clear();
+    const state = new IHStateOwner('refresh-company-test');
+    state.setIdentity('user');
+    state.selection.activateMenu('report');
+    const view = mount({}, wrapped, state);
+    vi.spyOn(view.store, 'initialized', 'get').mockReturnValue(true);
+    await view.hydrate();
+    act(() => {
+      state.selection.setCompany('c2');
+      state.selection.resolveProjects(state.selection.beginProjects(), ['p']);
+      state.selection.setProject('p');
+    });
+    let reject!: (error: unknown) => void;
+    view.getAuthorizations.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
+    let pending!: Promise<unknown>;
+    act(() => { pending = view.store.loadAuthorizations().catch(() => undefined); });
+    expect(state.selection.getSnapshot()).toMatchObject({ companyId: 'c2', projectKey: 'p', companyStatus: 'loading' });
+    await act(async () => { reject({ status: 500 }); await pending; });
+    expect(state.selection.getSnapshot()).toMatchObject({ companyId: 'c2', projectKey: 'p', companyStatus: 'error' });
+    await view.hydrate();
+    expect(state.selection.getSnapshot()).toMatchObject({ companyId: 'c2', projectKey: 'p', companyStatus: 'ready' });
+    await view.hydrate([]);
+    expect(state.selection.getSnapshot()).toMatchObject({ companyId: null, projectKey: null, companyStatus: 'ready' });
   });
 
   it('blocks interaction while authorization or explicit loading is pending', async () => {
