@@ -828,6 +828,27 @@ Load the matching insight-ui-css build; these components share its tokens and su
   Source changes/destruction invalidate pending exports. Remote images must permit
   canvas export; export failures reject the Promise. File limits remain app-owned.
 
+### Grid column minimum width
+
+`IGridColumn` and `IGridCustomColumn` accept an optional numeric `minWidth` in
+pixels, including inside column groups. It applies to the initial layout and
+drag resizing, keeping header and body cells aligned. A numeric or resized width
+below the minimum is clamped, and frozen offsets use the clamped width.
+
+```tsx
+<IGridColumn fieldName="name" title="Name" width="fill" minWidth={120} />
+<IGridCustomColumn title="Actions" width={45} />
+```
+
+Without `minWidth`, only `width="fill"` gets a default minimum of **150px**,
+including auto-generated columns. Fill columns keep sharing available space;
+the viewport scrolls horizontally when the columns no longer fit. Numeric and
+omitted widths have no default minimum, so a 45px action column stays 45px and
+can resize below 50px. The initial width when `width` is omitted remains 200px.
+An explicit minimum overrides the fill default and may be below 150px.
+Changing `minWidth` also constrains an existing resized width. Keep React column
+keys and the declared `width` stable to preserve resized widths across renders.
+
 ### Automatic surface layout
 
 Section body and loading region default to `layout="auto"`, with `padded` and
