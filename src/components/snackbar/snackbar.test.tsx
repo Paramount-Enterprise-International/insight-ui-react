@@ -211,7 +211,9 @@ describe('ISnackbar', () => {
     );
     fireEvent.mouseEnter(card('unpaused'));
     card('unpaused').querySelector<HTMLButtonElement>('button')!.focus();
-    advance(280);
+    advance(100);
+    expect(card('unpaused')).toHaveClass('i-snackbar--closing');
+    advance(180);
     expect(card('unpaused')).toBeNull();
   });
 
@@ -529,7 +531,9 @@ describe('ISnackbarProvider and useISnackbar', () => {
     expect(card('queued').hidden).toBe(false);
     advance(999);
     expect(card('queued')).toBeTruthy();
-    advance(181);
+    advance(1);
+    expect(card('queued')).toHaveClass('i-snackbar--closing');
+    advance(180);
     expect(card('queued')).toBeNull();
     act(() => {
       api.show('A', { id: 'a', durationMs: 0 });
