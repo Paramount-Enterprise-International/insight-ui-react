@@ -488,7 +488,11 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   }, [isControlled, value, cancelPendingFilter]);
 
   useLayoutEffect(() => {
-    if (disabled) cancelPendingFilter();
+    if (disabled) {
+      cancelPendingFilter();
+      setIsOpen(false);
+      setHighlightIndex(-1);
+    }
   }, [disabled, cancelPendingFilter]);
 
   // ---------- subscribe options$ ----------
@@ -556,7 +560,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
   const emptyStateText = rawOptions.length === 0
     ? emptyStateConfig.empty ?? 'No options available'
     : emptyStateConfig.notFound ?? 'No results found';
-  const hasPanel = isOpen && (filteredOptions.length > 0 || !(loading || isLoading));
+  const hasPanel = isOpen && !disabled && (filteredOptions.length > 0 || !(loading || isLoading));
 
   // ---------- filter ----------
   const applyFilter = (force: boolean, nextFilterText?: string) => {
@@ -1203,6 +1207,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     ? { type: 'loading', visible: true }
     : {
       type: 'button',
+      disabled,
       icon: isOpen ? 'angle-up' : 'angle-down',
       visible: true,
       variant: 'primary',
@@ -1265,6 +1270,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     <i-select
       {...hostProps}
       class={className as any}
+      aria-disabled={disabled ? 'true' : undefined}
       ref={(el: HTMLElement | null) => {
         hostRef.current = el;
       }}
@@ -1275,6 +1281,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
         invalid={invalid || hasNoResults}
         placeholder={placeholder}
         readonly={disabled}
+        disabled={disabled}
         value={displayText}
         onInput={onHostInput}
       />

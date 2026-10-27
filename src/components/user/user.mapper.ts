@@ -174,6 +174,8 @@ export function collectAuthorizationScope(items: readonly IEffectiveAuthorizatio
       }
     }
   }
+  const compare = new Intl.Collator('id', { sensitivity: 'base' }).compare;
+  companies.sort((a, b) => compare(a.name, b.name) || compare(a.code, b.code) || compare(a.id, b.id));
   const menuCompanies: Record<string, string[]> = {};
   for (const [code, codes] of menuCompanySets) menuCompanies[code] = [...codes];
   return { companies, companyCodes: [...companyCodes], menuCompanies };

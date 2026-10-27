@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  collectAuthorizationScope,
   collectMenuCodes,
   findFirstLeafRoute,
   findMenuNameById,
@@ -10,7 +11,7 @@ import {
   toIMenus,
   toIMenuFavorite,
 } from './user.mapper';
-import type { ICurrentUserDto, IFavoriteMenuItemDto, IMenuNodeDto } from './user.types';
+import type { ICurrentUserDto, IEffectiveAuthorizationDto, IFavoriteMenuItemDto, IMenuNodeDto } from './user.types';
 
 const NODE: IMenuNodeDto = {
   id: 'm1',
@@ -110,5 +111,31 @@ describe('user.mapper', () => {
     expect(user.employeeCode).toBe('PL1');
     expect(user.fullName).toBe('Jane Doe');
     expect(user.userImagePath).toBe('');
+  });
+});
+
+
+describe('collectAuthorizationScope', () => {
+  it('sorts detached companies by name, code and id while preserving authorization mappings', () => {
+    const companies = [
+      { id: 'z', code: 'Z', name: 'beta' },
+      { id: 'b', code: 'A', name: 'ALPHA' },
+      { id: 'a', code: 'A', name: 'alpha' },
+      { id: 'c', code: 'B', name: 'Alpha' },
+    ];
+    const items: IEffectiveAuthorizationDto[] = [
+      { menuId: 'm1', menuCode: 'sales', type: 'item', companies },
+      { menuId: 'm2', menuCode: 'sales', type: 'function', companies: [companies[0]] },
+      { menuId: 'm3', menuCode: 'empty', type: 'item', companies: [] },
+    ];
+    const before = JSON.stringify(items);
+    const scope = collectAuthorizationScope(items);
+    expect(scope.companies.map((company) => company.id)).toEqual(['a', 'b', 'c', 'z']);
+    expect(scope.companyCodes).toEqual(['Z', 'A', 'B']);
+    expect(scope.menuCompanies).toEqual({ sales: ['Z', 'A', 'B'], empty: [] });
+    expect(JSON.stringify(items)).toBe(before);
+    scope.companies[0].name = 'Changed';
+    expect(JSON.stringify(items)).toBe(before);
+    expect(collectAuthorizationScope([]).companies).toEqual([]);
   });
 });

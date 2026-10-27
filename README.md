@@ -123,10 +123,17 @@ export function CompanyFilter() {
 }
 ```
 
-In local mode, omitting `menuCode`, or passing a blank value, shows all `store.companies`.
-A nonblank code is trimmed and restricts options through
-`store.menuCompanies[menuCode]`. An unknown menu shows no options. Store ordering
-and deduplication are preserved.
+Company options come only from effective authorizations and are sorted by name A-Z
+using the Indonesian locale, ignoring case, with code and ID as tie breakers.
+`store.menuCompanies[menuCode]` restricts options to the requested menu.
+Without IHState, or with `stateScope="local"`, provide a nonblank `menuCode`;
+a missing, blank, or unknown menu yields no options. Hosted selectors use the
+active IHState menu by default. An explicit menu must match the active host menu;
+while navigation has no active menu or the menus differ, options and interaction
+are blocked. Navigation menus never supply company grants.
+`store.authorizationsLoading` (an Angular signal, or a React getter) tracks
+authorization refreshes independently of the full store load. Loading and errors
+preserve shared selection candidates until a successful validation.
 
 Values are company objects (`id`, `code`, `name`) or `null`. Both components support
 controlled `value` and uncontrolled `defaultValue`. Labels default to `name`;
