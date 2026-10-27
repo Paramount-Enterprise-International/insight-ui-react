@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import { Subject } from 'rxjs';
-import { IFCSelect, ISelect } from './select';
+import { IFCSelect, ISelect, type ISelectEmptyState } from './select';
 
 function mockRect(rect: Partial<DOMRect>): DOMRect {
   return {
@@ -343,3 +343,117 @@ describe.each([ISelect, IFCSelect])('%s search', (Select) => {
     expect(document.querySelector('i-options')).toBeNull();
   });
 });
+
+for (const Select of [ISelect, IFCSelect]) {
+  describe(`${Select === ISelect ? 'ISelect' : 'IFCSelect'} empty state`, () => {
+    const message = (): HTMLElement | null => document.querySelector('.i-options__empty');
+    const advance = (ms = 50): void => { act(() => vi.advanceTimersByTime(ms)); };
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) =>
+        window.setTimeout(() => cb(performance.now()), 0)
+      );
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => window.clearTimeout(id));
+    });
+    afterEach(() => {
+      cleanup();
+      vi.runOnlyPendingTimers();
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    });
+
+    for (const [config, empty, notFound] of [
+      [{}, 'No options available', 'No results found'],
+      ['Nothing here', 'Nothing here', 'No results found'],
+      [{ empty: 'Empty' }, 'Empty', 'No results found'],
+      [{ notFound: 'No match' }, 'No options available', 'No match'],
+      [{ empty: 'Empty', notFound: 'No match' }, 'Empty', 'No match'],
+    ] as [ISelectEmptyState, string, string][]) {
+      it(`resolves ${JSON.stringify(config)} and prioritizes an empty source`, () => {
+        const props = { emptyState: config, portalToBody: false, filterDelay: 20 };
+        const view = render(<Select {...props} options={[]} />);
+        const input = view.container.querySelector('input')!;
+        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        expect(message()?.textContent).toBe(empty);
+        expect(message()?.getAttribute('role')).toBe('status');
+        fireEvent.input(input, { target: { value: 'missing' } });
+        advance(20);
+        expect(message()?.textContent).toBe(empty);
+        view.rerender(<Select {...props} options={['Jakarta']} />);
+        expect(message()?.textContent).toBe(notFound);
+        fireEvent.input(input, { target: { value: '' } });
+        advance(20);
+        expect(message()).toBeNull();
+        expect(view.container.querySelectorAll('.i-option')).toHaveLength(1);
+      });
+    }
+
+    it('waits for debounce and never selects the message', () => {
+      const changed = vi.fn();
+      const view = render(<Select options={['Jakarta']} filterDelay={20} onChanged={changed} portalToBody={false} />);
+      const input = view.container.querySelector('input')!;
+      fireEvent.keyDown(input, { key: 'ArrowDown' });
+      fireEvent.input(input, { target: { value: 'missing' } });
+      advance(19);
+      expect(message()).toBeNull();
+      advance(1);
+      expect(message()?.textContent).toBe('No results found');
+      fireEvent.mouseDown(message()!);
+      for (const key of ['ArrowDown', 'ArrowUp', 'Enter']) fireEvent.keyDown(input, { key });
+      expect(view.container.querySelector('.i-option.active')).toBeNull();
+      expect(changed).not.toHaveBeenCalled();
+      expect(message()).not.toBeNull();
+    });
+
+    it('suppresses messages during loading and handles asynchronous options', () => {
+      const source = new Subject<string[]>();
+      const view = render(<Select options$={source} portalToBody={false} />);
+      fireEvent.keyDown(view.container.querySelector('input')!, { key: 'ArrowDown' });
+      expect(message()).toBeNull();
+      view.rerender(<Select options$={source} loading portalToBody={false} />);
+      act(() => source.next([]));
+      expect(message()).toBeNull();
+      view.rerender(<Select options$={source} portalToBody={false} />);
+      expect(message()?.textContent).toBe('No options available');
+      act(() => source.next(['Jakarta']));
+      expect(message()).toBeNull();
+      expect(view.container.querySelectorAll('.i-option')).toHaveLength(1);
+      act(() => source.next([]));
+      expect(message()?.textContent).toBe('No options available');
+    });
+
+    for (const portalToBody of [false, true]) {
+      it(`positions messages and updates their text with portal=${portalToBody}`, () => {
+        const view = render(<Select options={[]} portalToBody={portalToBody} />);
+        const input = view.container.querySelector('input')!;
+        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        advance();
+        const panel = document.querySelector('i-options') as HTMLElement;
+        expect(panel.style.position).toBe('fixed');
+        expect(panel.style.visibility).toBe('visible');
+        expect(panel.parentElement === document.body).toBe(portalToBody);
+        const measured = vi.spyOn(panel, 'getBoundingClientRect');
+        view.rerender(<Select options={[]} portalToBody={portalToBody} emptyState="Updated message" />);
+        advance();
+        expect(message()?.textContent).toBe('Updated message');
+        expect(measured).toHaveBeenCalled();
+        fireEvent.keyDown(input, { key: 'Escape' });
+        expect(document.querySelector('i-options')).toBeNull();
+      });
+    }
+
+    if (Select === ISelect) {
+      it('uses the existing minimum filter length', () => {
+        const view = render(<ISelect options={['Jakarta']} filterDelay={0} filterMinLength={3} portalToBody={false} />);
+        const input = view.container.querySelector('input')!;
+        fireEvent.keyDown(input, { key: 'ArrowDown' });
+        fireEvent.input(input, { target: { value: 'xx' } });
+        advance();
+        expect(message()).toBeNull();
+        fireEvent.input(input, { target: { value: 'xxx' } });
+        advance();
+        expect(message()?.textContent).toBe('No results found');
+      });
+    }
+  });
+}

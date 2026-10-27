@@ -24,6 +24,7 @@ export const IFCSelectCompany = forwardRef<
     stateScope,
     loading,
     placeholder,
+    emptyState,
     displayWith,
     filterDelay,
     filterMinLength,
@@ -85,6 +86,7 @@ export const IFCSelectCompany = forwardRef<
         stateScope={stateScope}
         loading={loading}
         placeholder={placeholder}
+        emptyState={emptyState}
         displayWith={displayWith}
         filterDelay={filterDelay}
         filterMinLength={filterMinLength}

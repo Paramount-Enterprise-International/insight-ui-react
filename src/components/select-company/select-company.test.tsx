@@ -93,6 +93,27 @@ describe.each([false, true])('company select with wrapped=%s', (wrapped) => {
     vi.useRealTimers();
   });
 
+  it('forwards string and object messages through company wrappers', async () => {
+    const view = mountCompany({ emptyState: 'No companies', filterDelay: 0 });
+    const message = () => view.container.querySelector('.i-options__empty')?.textContent;
+    view.open();
+    expect(message()).toBe('No companies');
+    const props = { emptyState: { empty: 'Empty companies', notFound: 'Company not found' }, filterDelay: 0 };
+    view.update(props);
+    expect(message()).toBe('Empty companies');
+    await view.hydrate();
+    expect(message()).toBeUndefined();
+    fireEvent.input(view.input(), { target: { value: 'missing' } });
+    act(() => vi.advanceTimersByTime(1));
+    expect(message()).toBe('Company not found');
+    view.update({ ...props, loading: true });
+    expect(message()).toBeUndefined();
+    view.update(props);
+    expect(message()).toBe('Company not found');
+    act(() => view.store.reset());
+    expect(message()).toBe('Empty companies');
+  });
+
   it('reacts to hydration and reset without requesting data or selecting a company', async () => {
     const view = mountCompany();
     expect(view.getAuthorizations).not.toHaveBeenCalled();

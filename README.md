@@ -59,6 +59,28 @@ See the [platform integration guide](../docs-sso-web/public/docs/sso/iam-sso-int
 and both atlas-remote Host Integration examples. New exports require an updated
 library dependency before consumer compilation; no version is implied by this source change.
 
+## Select empty states
+
+`ISelect`, `IFCSelect`, `ISelectCompany`, and `IFCSelectCompany` accept
+`emptyState: ISelectEmptyState`, where the exported type is
+`string | { empty?: string; notFound?: string }`.
+
+A string overrides only the empty-source message. An object overrides each message
+independently; omitted properties default to `"No options available"` for `empty`
+and `"No results found"` for `notFound`.
+
+```tsx
+<IFCSelect emptyState="No options yet" options={options} />
+<ISelectCompany emptyState={{ empty: 'No companies', notFound: 'Company not found' }} />
+```
+
+An empty source always uses `empty`, including during a search. A nonempty source
+with no matches uses `notFound` after the normal filter debounce (and minimum
+filter length where supported). Messages are plain, nonselectable status text in
+the dropdown and are hidden while explicit or observable loading is active.
+Company selects use their existing authorization loading state. Load matching
+Insight CSS to style the status text.
+
 ## Company selects
 
 `ISelectCompany` and `IFCSelectCompany` read company options reactively from the

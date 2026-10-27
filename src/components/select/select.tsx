@@ -43,6 +43,11 @@ import { isControlRequired, resolveControlErrorMessage } from '../shared/';
  * Shared Types
  * ========================================= */
 
+export type ISelectEmptyState = string | {
+  empty?: string;
+  notFound?: string;
+};
+
 export type ISelectChange<T = any> = {
   value: T | null;
   label: string;
@@ -71,6 +76,7 @@ export type ISelectProps<T = any> = Omit<
   'children' | 'onChange'
 > & {
   placeholder?: string;
+  emptyState?: ISelectEmptyState;
   disabled?: boolean;
   loading?: boolean;
   invalid?: boolean;
@@ -152,6 +158,7 @@ export type IFCSelectProps<T = any> = Omit<
 > & {
   label?: string;
   placeholder?: string;
+  emptyState?: ISelectEmptyState;
 
   options?: T[] | null;
   options$?: Observable<T[]> | null;
@@ -298,6 +305,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
 ) {
   const {
     placeholder = '',
+    emptyState = {},
     disabled = false,
     loading = false,
     invalid = false,
@@ -543,7 +551,12 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
       ? filterText
       : '';
   const hasNoResults = isOpen && !!effectiveFilterText && filteredOptions.length === 0;
-  const hasOptionsList = isOpen && filteredOptions.length > 0;
+  const emptyStateConfig: Exclude<ISelectEmptyState, string> =
+    typeof emptyState === 'string' ? { empty: emptyState } : emptyState;
+  const emptyStateText = rawOptions.length === 0
+    ? emptyStateConfig.empty ?? 'No options available'
+    : emptyStateConfig.notFound ?? 'No results found';
+  const hasPanel = isOpen && (filteredOptions.length > 0 || !(loading || isLoading));
 
   // ---------- filter ----------
   const applyFilter = (force: boolean, nextFilterText?: string) => {
@@ -879,8 +892,14 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     // open
     wantsOpenRef.current = true;
 
-    if (!hasOptionsList) {
+    if (!hasPanel) {
+      openSeqRef.current += 1;
       setPanelHidden(false);
+      removeScrollParentListeners();
+      if (unhideTimerRef.current) {
+        window.clearTimeout(unhideTimerRef.current);
+        unhideTimerRef.current = null;
+      }
       return;
     }
 
@@ -906,12 +925,12 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     }, 0);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, hasOptionsList]);
+  }, [isOpen, hasPanel]);
 
   // reposition on changes while open
   useLayoutEffect(() => {
     if (!isOpen) return;
-    if (!hasOptionsList) return;
+    if (!hasPanel) return;
     scheduleReposition();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -920,6 +939,8 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     matchTriggerWidth,
     panelOffset,
     filteredOptions.length,
+    emptyStateText,
+    hasPanel,
   ]);
 
   // remove listeners on unmount (safety)
@@ -1189,7 +1210,7 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
     };
 
   // ---------- render options (as <i-options>) ----------
-  const optionsNode = hasOptionsList ? (
+  const optionsNode = hasPanel ? (
     <i-options
       ref={(el: HTMLElement | null) => {
         panelRef.current = el;
@@ -1207,6 +1228,9 @@ export const ISelect = forwardRef(function ISelectInner<T = any>(
         visibility: panelHidden ? 'hidden' : 'visible',
         pointerEvents: panelHidden ? 'none' : 'auto',
       }}>
+      {filteredOptions.length === 0 ? (
+        <div className="i-options__empty" role="status">{emptyStateText}</div>
+      ) : null}
       {filteredOptions.map((row, idx) => (
         <div
           key={(row as any)?.id ?? `${idx}-${String(row)}`}
@@ -1277,6 +1301,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
   const {
     label = '',
     placeholder = '',
+    emptyState = {},
 
     options = null,
     options$ = null,
@@ -1373,6 +1398,7 @@ export const IFCSelect = forwardRef(function IFCSelectInner<T = any>(
         }}
         disabled={disabled}
         loading={loading}
+        emptyState={emptyState}
         invalid={invalid || controlInvalid}
         placeholder={placeholder}
         options={options}
