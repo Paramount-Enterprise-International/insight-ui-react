@@ -1,15 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ImageCropperEngine, computeCropRect } from './image-cropper-engine';
-function mock<T extends object>(
-  owner: T,
-  key: keyof T,
-  implementation: unknown
-) {
-  return vi
-    .spyOn(owner, key as never)
-    .mockImplementation(implementation as never);
-}
-
 describe('ImageCropperEngine', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -33,16 +23,14 @@ describe('ImageCropperEngine', () => {
       imageSmoothingEnabled: false,
       imageSmoothingQuality: 'low',
     };
-    const getContext = mock(
-      canvas,
-      'getContext',
-      () => context as unknown as CanvasRenderingContext2D
+    const getContext = vi.spyOn(canvas, 'getContext').mockReturnValue(
+      context as unknown as CanvasRenderingContext2D
     );
-    const toBlob = mock(canvas, 'toBlob', (callback: BlobCallback) =>
-      callback(blob)
+    const toBlob = vi.spyOn(canvas, 'toBlob').mockImplementation(
+      (callback: BlobCallback) => callback(blob)
     );
     const original = document.createElement.bind(document);
-    mock(document, 'createElement', ((tag: string) =>
+    vi.spyOn(document, 'createElement').mockImplementation(((tag: string) =>
       tag === 'canvas'
         ? canvas
         : original(tag)) as typeof document.createElement);
@@ -87,21 +75,20 @@ describe('ImageCropperEngine', () => {
   });
   it('rejects missing canvas support', async () => {
     const { engine, getContext } = prepare();
-    getContext.mockReturnValue(null as never);
+    getContext.mockReturnValue(null);
     await expect(engine.exportImage()).rejects.toThrow();
   });
   it('rejects null exports', async () => {
     const { engine, toBlob } = prepare();
-    toBlob.mockImplementation(((callback: BlobCallback) =>
-      callback(null)) as never);
+    toBlob.mockImplementation((callback: BlobCallback) => callback(null));
     await expect(engine.exportImage()).rejects.toThrow();
   });
   it('invalidates an export when destroyed or replaced', async () => {
     const { engine, toBlob, blob } = prepare();
     let finish!: BlobCallback;
-    toBlob.mockImplementation(((callback: BlobCallback) => {
+    toBlob.mockImplementation((callback: BlobCallback) => {
       finish = callback;
-    }) as never);
+    });
     const pending = engine.exportImage();
     engine.dispose();
     finish(blob);
