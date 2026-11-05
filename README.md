@@ -464,9 +464,13 @@ dialog. All timers/listeners are released when the call settles.
 
 A 401 triggers at most one refresh and retry. Session-generated Authorization is
 replaced with the refreshed token; explicitly provided Authorization is preserved.
-CSRF is read again before retry. Retry business errors propagate without expiry.
-Refresh failure or a retry still unauthorized uses the runtime's configured
-`onUnauthorized`/dialog/redirect flow.
+CSRF is read again before retry. Retry errors, including another 401 after
+successful refresh, propagate without clearing the session or invoking
+`onUnauthorized`/dialog/redirect. Only IAM refresh rejection (401/498 or a
+recognized session-invalid code) uses the configured expiry flow. Refresh network
+errors, timeouts and 5xx failures propagate without clearing the session. Invalid
+impersonation responses and 401 from End Impersonation retain their immediate
+expiry handling; the SSO callback's missing-session dialog is unchanged.
 
 ### Backend error display
 

@@ -116,14 +116,15 @@ export type IAuthConfig = {
    */
   appId?: string;
   /**
-   * How the api client handles a failed session refresh:
+   * How the API client handles IAM session rejection:
    * - `'dialog'`: show the library session-expired dialog (default).
    * - `'redirect'`: legacy behaviour — full-page redirect to the signin page.
    * When `onUnauthorized` is provided it takes precedence and disables both.
    */
   unauthorizedHandling?: 'dialog' | 'redirect';
   /**
-   * Optional consumer-owned handler invoked when a session refresh fails.
+   * Optional consumer-owned handler invoked when IAM rejects the session,
+   * including invalid impersonation and unauthorized End Impersonation.
    * Overrides `unauthorizedHandling` — neither the dialog nor the redirect
    * runs when this is provided.
    */
