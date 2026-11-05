@@ -63,6 +63,23 @@ describe('isSessionExpiredError', () => {
     expect(isSessionExpiredError({ status: 400 })).toBe(false);
     expect(isSessionExpiredError({ status: 403 })).toBe(false);
   });
+
+  it.each([
+    { status: 0 },
+    { status: 500 },
+    { status: 503 },
+    { name: 'AbortError' },
+    { name: 'TimeoutError' },
+  ])('ignores transport/server failure %j even with a session code', (failure) => {
+    expect(
+      isSessionExpiredError({ ...failure, errorCode: 'AUTH_NO_SESSION' })
+    ).toBe(false);
+  });
+
+  it('does not classify missing or unrecognized errors as expiry', () => {
+    expect(isSessionExpiredError(null)).toBe(false);
+    expect(isSessionExpiredError(new Error('Refresh timed out'))).toBe(false);
+  });
 });
 
 describe('impersonation expiry reason', () => {
