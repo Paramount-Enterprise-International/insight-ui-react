@@ -63,12 +63,19 @@ export const toSessionExpiredReason = (
 };
 
 /**
- * True when an error is semantically a session-expiry event (HTTP 401/498 or a
- * recognized session-related error code). Other statuses are business/transport
- * errors and must be handled by the caller instead of forcing a logout.
+ * Classifies IAM session rejection (HTTP 401/498 or a recognized session code).
+ * Transport, cancellation, timeout and server errors never indicate expiry.
  */
 export const isSessionExpiredError = (error: unknown): boolean => {
-  const status = (error as { status?: number } | null)?.status;
+  const { status, name } = (error ?? {}) as { status?: number; name?: string };
+  if (
+    status === 0 ||
+    (status !== undefined && status >= 500) ||
+    name === 'AbortError' ||
+    name === 'TimeoutError'
+  ) {
+    return false;
+  }
   if (status === 401 || status === 498) {
     return true;
   }

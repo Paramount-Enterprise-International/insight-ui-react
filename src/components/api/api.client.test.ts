@@ -156,7 +156,7 @@ describe('application API transport', () => {
   );
 
   it('replaces session Authorization and reads current CSRF before the single retry', async () => {
-    const { api, session, csrf } = setup();
+    const { api, session, csrf, onSessionExpired } = setup();
     session.refreshToken.mockImplementation(async () => {
       vi.mocked(csrf.getToken).mockReturnValue('csrf-new');
       return 'new';
@@ -166,7 +166,7 @@ describe('application API transport', () => {
       .mockResolvedValueOnce(new Response('{}', { status: 401 }))
       .mockResolvedValueOnce(Response.json({ ok: true }));
     vi.stubGlobal('fetch', fetchMock);
-    await api.get('/item');
+    expect(await api.get('/item')).toEqual({ ok: true });
     expect(
       new Headers(fetchMock.mock.calls[0][1].headers).get('Authorization')
     ).toBe('Bearer old');
@@ -177,6 +177,7 @@ describe('application API transport', () => {
       new Headers(fetchMock.mock.calls[1][1].headers).get('X-CSRF-Token')
     ).toBe('csrf-new');
     expect(session.refreshToken).toHaveBeenCalledOnce();
+    expect(onSessionExpired).not.toHaveBeenCalled();
   });
 
   it('preserves caller Authorization and propagates business errors after retry without expiry', async () => {
@@ -195,6 +196,102 @@ describe('application API transport', () => {
       new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')
     ).toBe('Custom credentials');
     expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
+  it('propagates a business API retry 401 after successful refresh without expiry', async () => {
+    const { api, session, onSessionExpired } = setup();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+      .mockResolvedValueOnce(
+        Response.json(
+          {
+            errorCode: 'BUSINESS_UNAUTHORIZED',
+            message: 'Local credentials rejected',
+          },
+          { status: 401 }
+        )
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      api.get('/item', { apiUrl: 'https://business.test/api' })
+    ).rejects.toMatchObject({ status: 401, errorCode: 'BUSINESS_UNAUTHORIZED' });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://business.test/api/item',
+      'https://business.test/api/item',
+    ]);
+    expect(
+      new Headers(fetchMock.mock.calls[1][1].headers).get('Authorization')
+    ).toBe('Bearer new');
+    expect(session.refreshToken).toHaveBeenCalledOnce();
+    expect(onSessionExpired).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'AUTH_TOKEN_EXPIRED',
+    'AUTH_NO_SESSION',
+    'AUTH_SESSION_REVOKED',
+    'AUTH_SESSION_REPLACED',
+  ])('reports IAM refresh rejection %s', async (errorCode) => {
+    const { api, session, onSessionExpired } = setup();
+    const failure = { status: 401, errorCode };
+    session.refreshToken.mockRejectedValue(failure);
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 401 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(api.get('/item')).rejects.toBe(failure);
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(session.refreshToken).toHaveBeenCalledOnce();
+    expect(onSessionExpired).toHaveBeenCalledExactlyOnceWith(failure);
+  });
+
+  it.each([
+    { status: 0, errorCode: 'NETWORK_ERROR' },
+    { status: 0, name: 'TimeoutError', errorCode: 'REQUEST_TIMEOUT' },
+    { status: 0, name: 'AbortError', errorCode: 'REQUEST_ABORTED' },
+    { status: 500, errorCode: 'INTERNAL_SERVER_ERROR' },
+    { status: 503, errorCode: 'AUTH_SSO_UNAVAILABLE' },
+    { status: 503, errorCode: 'AUTH_SESSION_REVOKED' },
+    { status: 403, errorCode: 'CSRF_INVALID' },
+  ])(
+    'does not report expiry for refresh failure $status/$errorCode',
+    async (failure) => {
+      const { api, session, onSessionExpired } = setup();
+      session.refreshToken.mockRejectedValue(failure);
+      const fetchMock = vi.fn(async () => new Response('{}', { status: 401 }));
+      vi.stubGlobal('fetch', fetchMock);
+      await expect(api.get('/item')).rejects.toBe(failure);
+      expect(fetchMock).toHaveBeenCalledOnce();
+      expect(session.refreshToken).toHaveBeenCalledOnce();
+      expect(onSessionExpired).not.toHaveBeenCalled();
+    }
+  );
+
+  it('retains invalid impersonation expiry on the retry', async () => {
+    const { api, onSessionExpired } = setup();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn()
+        .mockResolvedValueOnce(new Response('{}', { status: 401 }))
+        .mockResolvedValueOnce(
+          Response.json(
+            { errorCode: 'IMPERSONATION_SESSION_INVALID' },
+            { status: 401 }
+          )
+        )
+    );
+    await expect(api.get('/item')).rejects.toMatchObject({ status: 401 });
+    expect(onSessionExpired).toHaveBeenCalledOnce();
+  });
+
+  it('retains immediate expiry for unauthorized End Impersonation', async () => {
+    const { api, session, onSessionExpired } = setup();
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })));
+    await expect(
+      api.post('/auth/impersonation/end', {})
+    ).rejects.toMatchObject({ status: 401 });
+    expect(session.refreshToken).not.toHaveBeenCalled();
+    expect(onSessionExpired).toHaveBeenCalledOnce();
   });
 
   it('normalizes non-JSON and binary-mode errors safely', async () => {

@@ -4,7 +4,10 @@ import {
   type IAuthConfig,
 } from '../auth/auth-config';
 import type { ICsrfService } from '../csrf/csrf';
-import { extractProblemDetailsErrorCode } from '../session-expired/session-expired';
+import {
+  extractProblemDetailsErrorCode,
+  isSessionExpiredError,
+} from '../session-expired/session-expired';
 import { normalizeApiError, type INormalizedApiError } from './api-error';
 import { createRequestScope, waitForRequest } from './request-scope';
 
@@ -377,11 +380,7 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
           scope.signal
         );
       } catch (error) {
-        if (
-          !scope.signal.aborted &&
-          (error as IApiError)?.name !== 'AbortError' &&
-          (error as IApiError)?.name !== 'TimeoutError'
-        ) {
+        if (!scope.signal.aborted && isSessionExpiredError(error)) {
           expiryReported = true;
           deps.onSessionExpired?.(error as IApiError);
         }
@@ -392,7 +391,12 @@ export function createApiClient(deps: IApiClientDeps): IApiClient {
       try {
         return await send();
       } catch (error) {
-        if (!scope.signal.aborted && (error as IApiError)?.status === 401) {
+        if (
+          !scope.signal.aborted &&
+          (error as IApiError)?.status === 401 &&
+          extractProblemDetailsErrorCode(error) ===
+            'IMPERSONATION_SESSION_INVALID'
+        ) {
           expiryReported = true;
           deps.onSessionExpired?.(error as IApiError);
         }

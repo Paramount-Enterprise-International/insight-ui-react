@@ -312,6 +312,57 @@ describe('application runtime lifecycle', () => {
   });
 });
 describe('runtime refresh concurrency', () => {
+  it.each(['dialog', 'redirect', 'handler'] as const)(
+    'retains the refreshed session after business API retry 401 with %s handling',
+    async (mode) => {
+      history.replaceState(null, '', '/app/reports/42?tab=roles#details');
+      const runtime = create();
+      runtime.session.setAccessToken('active');
+      await runtime.initialize();
+      const clearSession = vi.spyOn(runtime.session, 'clearSession');
+      const onUnauthorized = vi.fn();
+      if (mode === 'handler') runtime.config.onUnauthorized = onUnauthorized;
+      else runtime.config.unauthorizedHandling = mode;
+      const refresh = vi.spyOn(runtime.auth, 'refresh').mockResolvedValue({
+        accessToken: 'refreshed',
+        expiresIn: 3600,
+      });
+      const fetchMock = vi.fn(async () =>
+        Response.json({ errorCode: 'BUSINESS_UNAUTHORIZED' }, { status: 401 })
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      await expect(
+        runtime.api.get('/private', { apiUrl: 'https://business.test/api' })
+      ).rejects.toMatchObject({ status: 401, errorCode: 'BUSINESS_UNAUTHORIZED' });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(refresh).toHaveBeenCalledOnce();
+      expect(clearSession).not.toHaveBeenCalled();
+      expect(runtime.session.getAccessToken()).toBe('refreshed');
+      expect(runtime.sessionExpired.visible).toBe(false);
+      expect(onUnauthorized).not.toHaveBeenCalled();
+      expect(
+        window.location.pathname + window.location.search + window.location.hash
+      ).toBe('/app/reports/42?tab=roles#details');
+    }
+  );
+
+  it.each([
+    { status: 0, errorCode: 'NETWORK_ERROR' },
+    { status: 0, name: 'TimeoutError', errorCode: 'REQUEST_TIMEOUT' },
+    { status: 503, errorCode: 'AUTH_SSO_UNAVAILABLE' },
+  ])('keeps the active session after refresh failure $errorCode', async (failure) => {
+    const runtime = create();
+    runtime.session.setAccessToken('active');
+    await runtime.initialize();
+    const clearSession = vi.spyOn(runtime.session, 'clearSession');
+    vi.spyOn(runtime.auth, 'refresh').mockRejectedValue(failure);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 401 })));
+    await expect(runtime.api.get('/private')).rejects.toBe(failure);
+    expect(clearSession).not.toHaveBeenCalled();
+    expect(runtime.session.getAccessToken()).toBe('active');
+    expect(runtime.sessionExpired.visible).toBe(false);
+  });
+
   it('keeps a revoked session on its route and captures query and fragment without the handoff token', async () => {
     history.replaceState(
       null,
