@@ -972,8 +972,8 @@ Omitting variant still selects info.
 
 Consumers import `IEnvironment` from `@insight/ui` and declare `export const environment: IEnvironment = { ... };` directly. The documented contract lives in `src/components/auth/environment.ts`.
 
-`platformApi` contains required BFF/IAM identity, user and configuration endpoints; optional `api` contains business endpoints. `releaseStage` replaces environment production flags. Application-specific fields are optional and documented; supplying them does not activate features or modify another runtime.
+`platformApi` contains required BFF/IAM identity, user and configuration endpoints; `apiUrl` contains the optional primary API base URL and `api` provides optional named endpoints on other hosts. Consumers own service path defaults. `releaseStage` replaces environment production flags. Application-specific fields are optional and documented; supplying them does not activate features or modify another runtime.
 
-`getIEnvironmentAuthConfig(environment)` maps only auth settings and omits unspecified overrides. `requireIEnvironmentApi(environment, service)` fails clearly for a missing business endpoint instead of falling back to a platform API. Auth defaults live in tracked `auth-defaults.ts`, independently of consumer-local configuration.
+`getIEnvironmentAuthConfig(environment)` maps only auth settings and omits unspecified overrides. `requireIEnvironmentApiUrl(environment)` requires the primary business endpoint; `requireIEnvironmentApi(environment, service)` requires an explicit named override. Both fail clearly for missing configuration instead of falling back to a platform API. Auth defaults live in tracked `auth-defaults.ts`, independently of consumer-local configuration.
 
 Run `node --test --experimental-test-isolation=none test/environment.test.mjs` for focused contract/default checks. Coordinate this contract release with consumer dependency updates; do not reuse old deployment modules unchanged.
