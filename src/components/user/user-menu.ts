@@ -1,7 +1,6 @@
-import type { IAuthConfig } from '../auth/auth-config';
-import { environment as defaultEnvironment } from '../environments/environment';
 import type { IApiClient } from '../api/api.client';
-
+import type { IAuthConfig } from '../auth/auth-config';
+import { I_AUTH_DEFAULTS } from '../auth/auth-defaults';
 import type {
   IEffectiveAuthorizationDto,
   IFavoriteMenuItemDto,
@@ -9,7 +8,6 @@ import type {
   IMenuNodeDto,
   IUserMenuEnvelopeDto,
 } from './user.types';
-
 /**
  * Current-user navigation & favorites service — calls iam-user-api's
  * application-scoped `/me/applications/:applicationId/*` endpoints. These endpoints return
@@ -17,7 +15,7 @@ import type {
  * the app-wide body-as-data convention.
  *
  * Base URL: `{api.user}` from the resolved auth config (defaults to the
- * library environment file). React analog of the Angular `IUserMenuService`.
+ * shared auth defaults). React analog of the Angular `IUserMenuService`.
  */
 export class IUserMenuService {
   private readonly config: IAuthConfig;
@@ -29,14 +27,14 @@ export class IUserMenuService {
   }
 
   private get baseUrl(): string {
-    return this.config.api['user'] ?? defaultEnvironment.api.user;
+    return this.config.api['user'] ?? I_AUTH_DEFAULTS.api.user;
   }
 
   private resolveApplicationId(applicationId?: string): string {
     const id = (applicationId ?? this.config.appId)?.trim();
     if (!id) {
       throw new Error(
-        '[@insight/ui] applicationId is required to load current-user application data.',
+        '[@insight/ui] applicationId is required to load current-user application data.'
       );
     }
     return id;
@@ -47,21 +45,25 @@ export class IUserMenuService {
   }
 
   /** GET `{api.user}/me/applications/:applicationId/menus` - effective navigation tree. */
-  async getEffectiveMenus<T = IMenuNodeDto[]>(applicationId?: string): Promise<T> {
+  async getEffectiveMenus<T = IMenuNodeDto[]>(
+    applicationId?: string
+  ): Promise<T> {
     const id = this.resolveApplicationId(applicationId);
     const response = await this.api.get<IUserMenuEnvelopeDto<T>>(
       this.applicationPath(id, 'menus'),
-      { apiUrl: this.baseUrl },
+      { apiUrl: this.baseUrl }
     );
     return response.data;
   }
 
   /** GET `{api.user}/me/applications/:applicationId/menus/favorites` - effective favorites. */
-  async getFavorites<T = IFavoriteMenuItemDto[]>(applicationId?: string): Promise<T> {
+  async getFavorites<T = IFavoriteMenuItemDto[]>(
+    applicationId?: string
+  ): Promise<T> {
     const id = this.resolveApplicationId(applicationId);
     const response = await this.api.get<IUserMenuEnvelopeDto<T>>(
       this.applicationPath(id, 'menus/favorites'),
-      { apiUrl: this.baseUrl },
+      { apiUrl: this.baseUrl }
     );
     return response.data;
   }
@@ -76,12 +78,12 @@ export class IUserMenuService {
    * permission list simply stays empty).
    */
   async getAuthorizations<T = IEffectiveAuthorizationDto[]>(
-    applicationId?: string,
+    applicationId?: string
   ): Promise<T> {
     const id = this.resolveApplicationId(applicationId);
     const response = await this.api.get<IUserMenuEnvelopeDto<T>>(
       this.applicationPath(id, 'authorizations'),
-      { apiUrl: this.baseUrl },
+      { apiUrl: this.baseUrl }
     );
 
     return response.data;
@@ -89,12 +91,18 @@ export class IUserMenuService {
 
   /** PUT `{api.user}/me/menus/{menuId}/favorite` — pin an effective menu item (204 No Content). */
   addFavorite(menuId: string | number): Promise<void> {
-    return this.api.put<void>(`/me/menus/${menuId}/favorite`, {}, { apiUrl: this.baseUrl });
+    return this.api.put<void>(
+      `/me/menus/${menuId}/favorite`,
+      {},
+      { apiUrl: this.baseUrl }
+    );
   }
 
   /** DELETE `{api.user}/me/menus/{menuId}/favorite` — unpin a menu item (204 No Content). */
   removeFavorite(menuId: string | number): Promise<void> {
-    return this.api.delete<void>(`/me/menus/${menuId}/favorite`, { apiUrl: this.baseUrl });
+    return this.api.delete<void>(`/me/menus/${menuId}/favorite`, {
+      apiUrl: this.baseUrl,
+    });
   }
 
   /**
@@ -107,6 +115,10 @@ export class IUserMenuService {
       menuId: String(menuId),
       displayOrder: index + 1,
     }));
-    await this.api.put<void>('/me/menus/favorites', { items }, { apiUrl: this.baseUrl });
+    await this.api.put<void>(
+      '/me/menus/favorites',
+      { items },
+      { apiUrl: this.baseUrl }
+    );
   }
 }
