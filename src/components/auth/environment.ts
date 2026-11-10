@@ -16,7 +16,9 @@ export interface IEnvironment {
   releaseStage: string;
   /** Required BFF/session and IAM endpoints. These are passed to the auth runtime. */
   platformApi: IPlatformApi;
-  /** Business endpoints owned by this application. Omit when none are needed; URLs do not activate features. */
+  /** Primary API base URL. Required by API consumers; omit when no business API is used. Does not activate features. */
+  apiUrl?: string;
+  /** Optional named service endpoints on other hosts. Consumers own service paths and defaults; supplying a URL does not activate a feature. */
   api?: { [service: string]: string };
   /** This application's sign-in page or BFF login URL. No default. */
   signinUrl: string;
