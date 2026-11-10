@@ -47,4 +47,5 @@ export * from './store';
 export * from './user';
 
 // Environment
-export * from './environments';
+export * from './auth/environment';
+export * from './auth/environment-config';

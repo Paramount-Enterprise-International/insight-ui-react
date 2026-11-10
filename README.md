@@ -24,7 +24,11 @@ bridge must preserve this property. A React host may pass it to
 `<HostShell state={owner}>`; a hosted remote must never create another owner.
 
 ```tsx
-const { value, set, update, reset, error } = useIHState('shared.filters', 'count', 0);
+const { value, set, update, reset, error } = useIHState(
+  'shared.filters',
+  'count',
+  0
+);
 // update(count => count + 1); reset() removes the key, restoring the fallback.
 const { controller, value: selection } = useIHSelection();
 ```
@@ -91,10 +95,17 @@ the components never fetch data themselves. See
 
 ```tsx
 import { useState } from 'react';
+
 import {
   IFCSelectCompany,
-  ISelectCompany,
   type IMenuCompanyDto,
+  ISelectCompany,
+} from '@insight/ui-react';
+
+import {
+  IFCSelectCompany,
+  type IMenuCompanyDto,
+  ISelectCompany,
 } from '@insight/ui-react';
 
 export function CompanyFilter() {
@@ -235,8 +246,11 @@ You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-re
 
 ```js
 // eslint.config.js
-import reactX from 'eslint-plugin-react-x';
 import reactDom from 'eslint-plugin-react-dom';
+import reactX from 'eslint-plugin-react-x';
+
+import reactDom from 'eslint-plugin-react-dom';
+import reactX from 'eslint-plugin-react-x';
 
 export default defineConfig([
   globalIgnores(['dist']),
@@ -355,6 +369,8 @@ Create one runtime in an application-owned module. The factory validates config
 and constructs services without issuing network requests.
 
 ```ts
+import { createIRuntime } from '@insight/ui-react';
+
 import { createIRuntime } from '@insight/ui-react';
 
 export const runtime = createIRuntime({
@@ -560,8 +576,15 @@ channel so the entire displayed trail can become Unauthorized Access.
 ```tsx
 import {
   HostShell,
-  IRouter,
   IHostApiProvider,
+  IRouter,
+  useRemoteHostApi,
+} from '@insight/ui-react';
+
+import {
+  HostShell,
+  IHostApiProvider,
+  IRouter,
   useRemoteHostApi,
 } from '@insight/ui-react';
 
@@ -862,6 +885,7 @@ Load the matching insight-ui-css build; these components share its tokens and su
   ```
 
   Import `CSSProperties` from React when setting CSS custom properties inline.
+
 - `ILoadingRegion` retains DOM and measured height during refresh, sets aria-busy,
   and blocks content with inert. Its inputs/props include loading, error, label,
   contextKey, initialMinHeight, height, containerClass, contentClass, and layout.
@@ -943,3 +967,13 @@ These library playground routes require no IAM menu or access code.
 
 **Banner rename:** use `neutral` instead of the former `default` variant.
 Omitting variant still selects info.
+
+## Consumer environment contract
+
+Consumers import `IEnvironment` from `@insight/ui` and declare `export const environment: IEnvironment = { ... };` directly. The documented contract lives in `src/components/auth/environment.ts`.
+
+`platformApi` contains required BFF/IAM identity, user and configuration endpoints; optional `api` contains business endpoints. `releaseStage` replaces environment production flags. Application-specific fields are optional and documented; supplying them does not activate features or modify another runtime.
+
+`getIEnvironmentAuthConfig(environment)` maps only auth settings and omits unspecified overrides. `requireIEnvironmentApi(environment, service)` fails clearly for a missing business endpoint instead of falling back to a platform API. Auth defaults live in tracked `auth-defaults.ts`, independently of consumer-local configuration.
+
+Run `node --test --experimental-test-isolation=none test/environment.test.mjs` for focused contract/default checks. Coordinate this contract release with consumer dependency updates; do not reuse old deployment modules unchanged.
