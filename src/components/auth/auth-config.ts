@@ -2,8 +2,7 @@ import type {
   IApiErrorCatalogResolver,
   IApiErrorDisplayFormatter,
 } from '../api/api-error';
-import { environment as defaultEnvironment } from '../environments/environment';
-
+import { I_AUTH_DEFAULTS } from './auth-defaults';
 /**
  * Token lifespan configuration (seconds). Mirrors the platform-wide AC used by
  * iam-web: Access Token 1h, Refresh Token 2h, Max SSO Session 15h. Consumer
@@ -155,24 +154,24 @@ export type IAuthConfigOverrides = Partial<
  * values via `resolveIAuthConfig({ ... })` and is validated fail-fast
  * when it forgets. All other fields default sensibly: `allowedReturnOrigins`
  * to this app's own origin, `endpoints` to the platform/BFF path contract, and
- * lifespan / csrf / api-key values from the library's default environment.
+ * lifespan / csrf / api-key values from the library's shared auth defaults.
  */
 export function getDefaultIAuthConfig(): IAuthConfig {
   return {
     api: {
       identity: '', // no default identity host - the consumer app supplies its own
-      user: defaultEnvironment.api.user,
-      configuration: defaultEnvironment.api.configuration,
-      application: defaultEnvironment.api.application,
+      user: I_AUTH_DEFAULTS.api.user,
+      configuration: I_AUTH_DEFAULTS.api.configuration,
+      application: I_AUTH_DEFAULTS.api.application,
     },
     signinUrl: '', // no default sign-in page - the consumer app supplies its own
     callbackPath: '/auth/callback',
     allowedReturnOrigins: [window.location.origin],
-    tokenLifespan: { ...defaultEnvironment.tokenLifespan },
-    csrfTokenMaxAgeSeconds: defaultEnvironment.csrfTokenMaxAgeSeconds,
+    tokenLifespan: { ...I_AUTH_DEFAULTS.tokenLifespan },
+    csrfTokenMaxAgeSeconds: I_AUTH_DEFAULTS.csrfTokenMaxAgeSeconds,
     endpoints: { ...getDefaultIAuthEndpoints() },
-    apiKey: defaultEnvironment.apiKey,
-    appId: defaultEnvironment.appId,
+    apiKey: I_AUTH_DEFAULTS.apiKey,
+    appId: I_AUTH_DEFAULTS.appId,
     unauthorizedHandling: 'dialog',
   };
 }
