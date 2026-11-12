@@ -15,6 +15,7 @@ import { useISession, useIUserMenuStore } from '../auth/insight-auth-context';
 import { IErrorPage } from '../error-page/error-page';
 import type { ILoadComponent } from '../host/router.types';
 import { ILoading } from '../loading/loading';
+import { usePermissionMapState } from './permission-map';
 import { IRouteAccessContext } from './route-access-context';
 import { usePermission, type IPermissionInput } from './use-permission';
 
@@ -29,6 +30,7 @@ export function IHasMnRoute({
   const session = useISession();
   const store = useIUserMenuStore();
   const allowed = usePermission(value);
+  const permissionMap = usePermissionMapState();
   const reportAccess = useContext(IRouteAccessContext);
   const owner = useId();
   const authenticated = session.isAuth();
@@ -36,7 +38,8 @@ export function IHasMnRoute({
     !session.initializing &&
     authenticated &&
     store.initialized &&
-    !store.initializing;
+    !store.initializing &&
+    permissionMap?.status !== 'loading';
 
   useEffect(() => {
     if (

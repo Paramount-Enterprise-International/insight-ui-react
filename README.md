@@ -319,7 +319,7 @@ Backend endpoints and enforcement remain unchanged.
 | Guard source `'menu'` / `'permission'`              | `'menuCode'`                                                    |
 | `setPermissions()`                                  | Removed; refresh backend authorizations                         |
 
-No compatibility aliases or manual code override are provided.
+No compatibility aliases or direct authorization-store overrides are provided. Remote-local permission mappings are described below.
 
 ```tsx
 <IHasMn value="atlas.sales-administration.menu.451.hasmn-button-example">
@@ -333,6 +333,46 @@ No compatibility aliases or manual code override are provided.
   <button>Example for Jakarta</button>
 </IHasMn>
 ```
+
+## Remote-local runtime permission mappings
+
+`IMenuPermissionMappingProvider` is the React equivalent of Angular's scoped `provideMenuPermissionMapping`. Wrap each remote root or exported collection inside the existing auth provider. It does not create an auth runtime or change the shared `IUserMenuStore`. Hooks and components outside a mapping provider keep their existing direct menu-code behavior.
+
+Load the remote's independently applied `permission.json` from its own asset URL:
+
+```tsx
+import {
+  IHasMn,
+  IMenuPermissionMappingProvider,
+  type IPermissionMap,
+} from '@insight/ui-react';
+
+let mapping: Promise<IPermissionMap> | undefined;
+function loadPermissions(): Promise<IPermissionMap> {
+  return mapping ??= fetch(new URL('permission.json', import.meta.url), {
+    cache: 'no-store',
+  }).then(async response => {
+    if (!response.ok) throw new Error(`Permission mapping: HTTP ${response.status}`);
+    return await response.json() as IPermissionMap;
+  });
+}
+
+export function RemoteRoot() {
+  return (
+    <IMenuPermissionMappingProvider mapping={loadPermissions}>
+      <IHasMn value="can-export-excel"><button>Export</button></IHasMn>
+    </IMenuPermissionMappingProvider>
+  );
+}
+```
+
+Keep the loader at module scope so its identity is stable. The provider starts it when mounted; remote-local Promise caching shares one request across collection providers. Place the file beside the executing remote bundle or use an explicit remote asset URL if the build moves that module. The library does not fetch any file unless a consumer supplies a loader.
+
+JSON values match Angular: a string maps to one menu code; an array maps to ANY code; `true` explicitly allows; `false` and empty arrays deny. Missing keys are checked directly against user menu codes. Predicates still receive the original authorization source. The mapping is validated and copied into an immutable snapshot.
+
+`IHasMn`, `INotHasMn`, `usePermission`, and `hasMn`/`IHasMnRoute` use the closest mapping provider. Both hide-only branches stay hidden while auth data or mappings are unavailable, including invalid JSON/shape and loader failures. Route boundaries show loading while the mapping is pending and existing forbidden UI on failure. A changing loader immediately discards access from the previous mapping and ignores late results. Nested providers isolate their mappings; unmounting restores the parent's scope.
+
+React portals retain context, so dialogs opened through portals inside this provider inherit its mapping. If a host dialog service creates a separate React root, wrap that root in this remote's provider as well. Keep runtime permission ConfigMaps applied independently of app builds/deployments. UI permission mapping does not grant backend access.
 
 ## Session and access route preservation
 

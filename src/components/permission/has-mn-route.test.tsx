@@ -22,12 +22,18 @@ import { IRouter } from '../host/router';
 import type { IRouteComponent, IRoutes } from '../host/router.types';
 import type { IUserMenuStore } from '../store/user-menu';
 import { hasMn } from './has-mn-route';
+import {
+  IMenuPermissionMappingProvider,
+  type IPermissionMap,
+  type IPermissionMapConfig,
+} from './permission-map';
 
 function fixture(
   routes: IRoutes,
   path = '/reports',
   cold = false,
-  sessionInitializing = false
+  sessionInitializing = false,
+  mapping?: IPermissionMapConfig
 ) {
   let version = 0;
   const listeners = new Set<() => void>();
@@ -84,7 +90,13 @@ function fixture(
         <MemoryRouter initialEntries={[path]}>
           <div>shell</div>
           <Navigation />
-          <IRouter routes={routes} />
+          {mapping ? (
+            <IMenuPermissionMappingProvider mapping={mapping}>
+              <IRouter routes={routes} />
+            </IMenuPermissionMappingProvider>
+          ) : (
+            <IRouter routes={routes} />
+          )}
         </MemoryRouter>
       </IHostApiProvider>
     </IAuthContext.Provider>
@@ -319,5 +331,53 @@ describe('hasMn route helpers', () => {
     ).toBeTruthy();
     expect(screen.getByText('404')).toBeTruthy();
     expect(screen.queryByText('Unauthorized Access')).toBeNull();
+  });
+});
+
+describe('route runtime mapping readiness', () => {
+  it('waits for JSON before running a granted lazy page and does not flash forbidden metadata', async () => {
+    let resolve!: (value: IPermissionMap) => void;
+    const pending = new Promise<IPermissionMap>((done) => {
+      resolve = done;
+    });
+    const page = vi.fn(async () => () => <div>mapped-report</div>);
+    const { hostApi } = fixture(
+      [{ path: 'reports', loadComponent: hasMn('alias', page) }],
+      '/reports',
+      false,
+      false,
+      () => pending
+    );
+    expect(await screen.findByText('Loading access...')).toBeTruthy();
+    expect(screen.queryByText('Unauthorized Access')).toBeNull();
+    expect(page).not.toHaveBeenCalled();
+    await act(async () => resolve({ alias: true }));
+    expect(await screen.findByText('mapped-report')).toBeTruthy();
+    expect(page).toHaveBeenCalledTimes(1);
+    expect(hostApi.setTitle).not.toHaveBeenCalledWith('Unauthorized Access');
+  });
+
+  it('renders forbidden on mapping failure without mounting the protected page', async () => {
+    const error = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    try {
+      const page = vi.fn(async () => () => <div>never-mounted</div>);
+      fixture(
+        [{ path: 'reports', loadComponent: hasMn('alias', page) }],
+        '/reports',
+        false,
+        false,
+        async () => {
+          throw new Error('HTTP 404');
+        }
+      );
+      expect(await screen.findByText('Unauthorized Access')).toBeTruthy();
+      expect(screen.queryByText('Loading access...')).toBeNull();
+      expect(screen.queryByText('never-mounted')).toBeNull();
+      expect(page).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+    }
   });
 });
