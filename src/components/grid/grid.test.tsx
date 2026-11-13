@@ -103,6 +103,234 @@ describe('IGrid sort across data source replacement', () => {
   });
 });
 
+describe('IGrid checked disabled indicators', () => {
+  interface Row {
+    name: string;
+    disabled?: boolean;
+    owned?: boolean;
+    hidden?: boolean;
+    children?: Row[];
+  }
+
+  function fixture(
+    props: Partial<IGridProps<Row>> = {},
+    rows: Row[] = [
+      { name: 'Available' },
+      { name: 'Owned', disabled: true, owned: true },
+      { name: 'Unavailable', disabled: true },
+      { name: 'Hidden', disabled: true, owned: true, hidden: true },
+    ]
+  ) {
+    const ref: { current: IGridHandle<Row> | null } = { current: null };
+    const source = new IGridDataSource(rows, { paginator: false });
+    const changes = vi.fn();
+    const element = (extra: Partial<IGridProps<Row>> = {}) => (
+      <IGrid
+        ref={ref}
+        dataSource={source}
+        selectionMode="multiple"
+        showNumberColumn={false}
+        selectionRowDisabled={(row) => !!row.disabled}
+        selectionRowHidden={(row) => !!row.hidden}
+        selectionRowChecked={(row) => !!row.owned}
+        onSelectionChange={changes}
+        {...props}
+        {...extra}>
+        <IGridColumn fieldName="name" title="Name" />
+      </IGrid>
+    );
+    const view = render(element());
+    const rowInput = (name: string): HTMLInputElement => {
+      const row = Array.from(
+        view.container.querySelectorAll('i-grid-row')
+      ).find((entry) => entry.textContent?.trim() === name)!;
+      return row.querySelector('input')!;
+    };
+    const selectAll = (): HTMLInputElement =>
+      view.container.querySelector('i-grid-header-row input[type="checkbox"]')!;
+    return {
+      ...view,
+      ref,
+      rows,
+      source,
+      changes,
+      element,
+      rowInput,
+      selectAll,
+    };
+  }
+
+  it('shows checked disabled rows without selecting or counting them', () => {
+    const { ref, rows, changes, rowInput, selectAll } = fixture();
+    expect(rowInput('Owned')).toBeChecked();
+    expect(rowInput('Owned')).toBeDisabled();
+    expect(rowInput('Unavailable')).not.toBeChecked();
+    expect(selectAll()).not.toBeChecked();
+    expect(selectAll().indeterminate).toBe(false);
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(changes).not.toHaveBeenCalled();
+    fireEvent.click(rowInput('Owned'));
+    expect(changes).not.toHaveBeenCalled();
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([rows[0]]);
+    expect(changes).toHaveBeenLastCalledWith({
+      selected: [rows[0]],
+      lastChanged: null,
+    });
+    expect(selectAll()).toBeChecked();
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(rowInput('Owned')).toBeChecked();
+    act(() => ref.current?.setSelected([rows[1]]));
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(rowInput('Owned')).toBeChecked();
+  });
+
+  it('restores indicators after filtering and source replacement without selecting owned rows', () => {
+    const { source, rowInput, ref, changes, rerender, element } = fixture();
+    act(() => {
+      source.filter = 'Available';
+    });
+    act(() => {
+      source.filter = '';
+    });
+    expect(rowInput('Owned')).toBeChecked();
+    rerender(
+      element({
+        dataSource: new IGridDataSource(
+          source.data.map((row) => ({ ...row })),
+          { paginator: false }
+        ),
+      })
+    );
+    expect(rowInput('Owned')).toBeChecked();
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('applies only to disabled checkboxes and reacts to predicate changes', () => {
+    const { rowInput, rerender, element, ref } = fixture();
+    rerender(element({ selectionRowChecked: () => true }));
+    expect(rowInput('Available')).not.toBeChecked();
+    expect(rowInput('Unavailable')).toBeChecked();
+    rerender(element({ selectionRowChecked: () => false }));
+    expect(rowInput('Owned')).not.toBeChecked();
+    rerender(
+      element({ selectionRowChecked: () => true, selectionMode: 'single' })
+    );
+    expect(rowInput('Owned').type).toBe('radio');
+    expect(rowInput('Owned')).not.toBeChecked();
+    expect(ref.current?.getSelected()).toEqual([]);
+  });
+
+  it('includes disabled rows only when requested and preserves them through select-all', () => {
+    const { ref, rows, changes, rowInput, selectAll } = fixture({
+      selectionRowChecked: () => false,
+    });
+    act(() =>
+      ref.current?.setSelected(
+        [rows[1], rows[0], rows[3], { name: 'Ghost', disabled: true }],
+        { includeDisabled: true }
+      )
+    );
+    expect(ref.current?.getSelected()).toEqual([rows[1], rows[0]]);
+    expect(changes).toHaveBeenLastCalledWith({
+      selected: [rows[1], rows[0]],
+      lastChanged: null,
+    });
+    expect(rowInput('Owned')).toBeChecked();
+    expect(rowInput('Owned')).toBeDisabled();
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([rows[1]]);
+    expect(selectAll()).not.toBeChecked();
+    expect(selectAll().indeterminate).toBe(false);
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([rows[1], rows[0]]);
+    const events = changes.mock.calls.length;
+    act(() =>
+      ref.current?.setSelected([rows[1], rows[0]], { includeDisabled: true })
+    );
+    expect(changes).toHaveBeenCalledTimes(events);
+    act(() => ref.current?.setSelected([rows[1], rows[0]]));
+    expect(ref.current?.getSelected()).toEqual([rows[0]]);
+    expect(rowInput('Owned')).not.toBeChecked();
+  });
+
+  for (const hidden of [false, true]) {
+    it(`excludes ${hidden ? 'hidden' : 'disabled'} ancestors during tree selection`, () => {
+      const { rowInput, changes, ref, selectAll } = fixture(
+        { tree: true, treeInitialExpandLevel: 99 },
+        [
+          {
+            name: 'Parent',
+            disabled: true,
+            owned: true,
+            hidden,
+            children: [
+              { name: 'Child A' },
+              { name: 'Child B' },
+              { name: 'Owned child', disabled: true, owned: true },
+            ],
+          },
+        ]
+      );
+      fireEvent.click(rowInput('Child A'));
+      expect(
+        changes.mock.lastCall?.[0].selected.map((row: Row) => row.name)
+      ).toEqual(['Child A']);
+      expect(rowInput('Owned child')).toBeChecked();
+      if (!hidden) {
+        expect(rowInput('Parent')).toBeChecked();
+        expect(rowInput('Parent').indeterminate).toBe(false);
+      }
+      fireEvent.click(selectAll());
+      expect(
+        ref.current
+          ?.getSelected()
+          .map((row) => row.name)
+          .sort()
+      ).toEqual(['Child A', 'Child B']);
+      fireEvent.click(selectAll());
+      expect(ref.current?.getSelected()).toEqual([]);
+      expect(rowInput('Owned child')).toBeChecked();
+    });
+  }
+
+  it('retains explicitly included disabled tree parents and children until programmatically cleared', () => {
+    const parent: Row = {
+      name: 'Parent',
+      disabled: true,
+      children: [
+        { name: 'Child A' },
+        { name: 'Child B' },
+        { name: 'Owned child', disabled: true },
+      ],
+    };
+    const owned = parent.children![2];
+    const { ref, rowInput, selectAll } = fixture(
+      { tree: true, treeInitialExpandLevel: 99 },
+      [parent]
+    );
+    act(() =>
+      ref.current?.setSelected([parent, owned], { includeDisabled: true })
+    );
+    fireEvent.click(rowInput('Child A'));
+    expect(ref.current?.getSelected()).toEqual([
+      parent,
+      owned,
+      parent.children![0],
+    ]);
+    expect(rowInput('Parent')).toBeChecked();
+    expect(rowInput('Parent').indeterminate).toBe(false);
+    fireEvent.click(selectAll());
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([parent, owned]);
+    act(() => ref.current?.setSelected([]));
+    expect(rowInput('Parent')).not.toBeChecked();
+    expect(rowInput('Owned child')).not.toBeChecked();
+  });
+});
+
 describe('IGrid column minimum widths', () => {
   const rows = [{ name: 'Alice', status: 'Active' }];
 
