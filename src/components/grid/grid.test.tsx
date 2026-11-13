@@ -36,10 +36,81 @@ describe('IGrid', () => {
   });
 });
 
+describe('IGrid sort across data source replacement', () => {
+  const rows = [
+    { team: 'A', name: 'Zoe' },
+    { team: 'B', name: 'Ada' },
+    { team: 'A', name: 'Bea' },
+  ];
+  const grid = (dataSource: IGridDataSource<(typeof rows)[number]>) => (
+    <IGrid dataSource={dataSource} showNumberColumn={false}>
+      <IGridColumn fieldName="team" title="Team" sortable />
+      <IGridColumn fieldName="name" title="Name" sortable />
+    </IGrid>
+  );
+  const click = (title: string) =>
+    fireEvent.click(screen.getByText(title).closest('i-grid-header-cell')!);
+
+  it('retains explicit multi-sort through replacement and no-result recovery', () => {
+    let source = new IGridDataSource(rows, { paginator: { pageSize: 10 } });
+    const view = render(grid(source));
+    click('Team');
+    click('Name');
+    expect(source.sort).toEqual([
+      { active: 'team', direction: 'asc' },
+      { active: 'name', direction: 'asc' },
+    ]);
+    source = new IGridDataSource(rows, {
+      sort: source.sort,
+      paginator: { pageSize: 10 },
+    });
+    view.rerender(grid(source));
+    expect(view.container.textContent).toMatch(/Bea[\s\S]*Zoe[\s\S]*Ada/);
+    const mounted = view.container.querySelector('i-grid');
+    act(() => {
+      source.filter = 'missing';
+    });
+    expect(view.container.querySelectorAll('i-grid-row')).toHaveLength(0);
+    act(() => {
+      source.filter = '';
+    });
+    expect(view.container.querySelector('i-grid')).toBe(mounted);
+    expect(view.container.textContent).toMatch(/Bea[\s\S]*Zoe[\s\S]*Ada/);
+    click('Team');
+    expect(source.sort?.[0]).toEqual({ active: 'team', direction: 'desc' });
+    click('Name');
+    click('Name');
+    expect(source.sort).toEqual([{ active: 'team', direction: 'desc' }]);
+    click('Team');
+    expect(source.sort).toBeNull();
+  });
+
+  it('uses the replacement source sort when the data context changes', () => {
+    let source = new IGridDataSource(rows, {
+      sort: { active: 'team', direction: 'desc' },
+    });
+    const view = render(grid(source));
+    source = new IGridDataSource(rows, {
+      sort: { active: 'name', direction: 'desc' },
+    });
+    view.rerender(grid(source));
+    click('Name');
+    expect(source.sort).toBeNull();
+    source = new IGridDataSource(rows);
+    view.rerender(grid(source));
+    click('Name');
+    expect(source.sort).toEqual([{ active: 'name', direction: 'asc' }]);
+  });
+});
+
 describe('IGrid column minimum widths', () => {
   const rows = [{ name: 'Alice', status: 'Active' }];
 
-  function grid(width?: IGridColumnWidth, minWidth?: number, actionMinWidth?: number) {
+  function grid(
+    width?: IGridColumnWidth,
+    minWidth?: number,
+    actionMinWidth?: number
+  ) {
     return (
       <IGrid dataSource={rows} showNumberColumn={false}>
         <IGridColumn
@@ -50,9 +121,20 @@ describe('IGrid column minimum widths', () => {
           freeze
         />
         <IGridColumnGroup title="Identity">
-          <IGridColumn fieldName="status" title="Status" width={80} minWidth={90} freeze />
+          <IGridColumn
+            fieldName="status"
+            title="Status"
+            width={80}
+            minWidth={90}
+            freeze
+          />
         </IGridColumnGroup>
-        <IGridCustomColumn title="Actions" width={45} minWidth={actionMinWidth} freeze />
+        <IGridCustomColumn
+          title="Actions"
+          width={45}
+          minWidth={actionMinWidth}
+          freeze
+        />
       </IGrid>
     );
   }
@@ -62,18 +144,28 @@ describe('IGrid column minimum widths', () => {
   }
 
   function cell(container: HTMLElement, index = 0): HTMLElement {
-    return container.querySelectorAll<HTMLElement>('i-grid-row i-grid-cell')[index];
+    return container.querySelectorAll<HTMLElement>('i-grid-row i-grid-cell')[
+      index
+    ];
   }
 
-  function expectWidth(container: HTMLElement, width: number, title = 'Name', index = 0) {
+  function expectWidth(
+    container: HTMLElement,
+    width: number,
+    title = 'Name',
+    index = 0
+  ) {
     expect(header(title).style.flex).toBe(`0 0 ${width}px`);
     expect(cell(container, index).style.flex).toBe(`0 0 ${width}px`);
   }
 
   function resize(delta: number, title = 'Name') {
-    fireEvent.mouseDown(header(title).querySelector('.i-grid-header-cell__resize-handle')!, {
-      clientX: 200,
-    });
+    fireEvent.mouseDown(
+      header(title).querySelector('.i-grid-header-cell__resize-handle')!,
+      {
+        clientX: 200,
+      }
+    );
     fireEvent.mouseMove(window, { clientX: 200 + delta });
     fireEvent.mouseUp(window);
   }
@@ -94,21 +186,31 @@ describe('IGrid column minimum widths', () => {
     expect(cell(container).style.minWidth).toBe('30px');
   });
 
-  it.each([undefined, 120])('keeps fill flexible with minimum %s', (minWidth) => {
-    const { container } = render(grid('fill', minWidth));
-    const expected = minWidth ?? 150;
-    expect(header().style.flex).toBe('1 1 0%');
-    expect(cell(container).style.flex).toBe('1 1 0%');
-    expect(header().style.minWidth).toBe(`${expected}px`);
-    expect(cell(container).style.minWidth).toBe(`${expected}px`);
-    Object.defineProperty(header(), 'clientWidth', { configurable: true, value: 240 });
-    resize(-300);
-    expectWidth(container, expected);
-  });
+  it.each([undefined, 120])(
+    'keeps fill flexible with minimum %s',
+    (minWidth) => {
+      const { container } = render(grid('fill', minWidth));
+      const expected = minWidth ?? 150;
+      expect(header().style.flex).toBe('1 1 0%');
+      expect(cell(container).style.flex).toBe('1 1 0%');
+      expect(header().style.minWidth).toBe(`${expected}px`);
+      expect(cell(container).style.minWidth).toBe(`${expected}px`);
+      Object.defineProperty(header(), 'clientWidth', {
+        configurable: true,
+        value: 240,
+      });
+      resize(-300);
+      expectWidth(container, expected);
+    }
+  );
 
   it('gives auto-generated fill columns the same 150px minimum', () => {
-    const { container } = render(<IGrid dataSource={[{ name: 'Alice' }]} showNumberColumn={false} />);
-    const autoHeader = container.querySelector('i-grid-header-cell') as HTMLElement;
+    const { container } = render(
+      <IGrid dataSource={[{ name: 'Alice' }]} showNumberColumn={false} />
+    );
+    const autoHeader = container.querySelector(
+      'i-grid-header-cell'
+    ) as HTMLElement;
     expect(autoHeader.style.minWidth).toBe('150px');
     expect(cell(container).style.minWidth).toBe('150px');
     expect(autoHeader.style.flex).toBe('1 1 0%');
