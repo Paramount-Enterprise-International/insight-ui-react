@@ -54,7 +54,7 @@ function fixture(
       companies: [],
       menuCompanies: {},
     },
-    load: vi.fn(async () => undefined),
+    load: vi.fn<IUserMenuStore['load']>(async () => undefined),
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => {
