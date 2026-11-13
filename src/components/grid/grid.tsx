@@ -48,6 +48,11 @@ import { IPaginator } from './paginator';
 
 export type IGridSelectionMode = false | 'single' | 'multiple';
 
+export type IGridSetSelectedOptions = {
+  /** Include disabled rows in programmatic selection. Hidden rows remain excluded. */
+  includeDisabled?: boolean;
+};
+
 export type IGridSelectionChange<T = any> = {
   selected: T[];
   lastChanged: T | null;
@@ -769,6 +774,8 @@ export type IGridProps<T> = {
   selectionMode?: IGridSelectionMode;
   selectionRowHidden?: (row: T) => boolean;
   selectionRowDisabled?: (row: T) => boolean;
+  /** Checked indicator for disabled checkboxes; does not add rows to the selection. */
+  selectionRowChecked?: (row: T) => boolean;
 
   tree?: string | boolean | null;
   treeIndent?: number;
@@ -802,8 +809,8 @@ export type IGridProps<T> = {
 };
 
 export type IGridHandle<T> = {
-  /** Replaces selection atomically, ignoring rows that are unavailable or ineligible. */
-  setSelected: (rows: T[]) => void;
+  /** Replaces selection atomically. Disabled rows require explicit includeDisabled. */
+  setSelected: (rows: T[], options?: IGridSetSelectedOptions) => void;
   getSelected: () => T[];
 };
 
@@ -824,6 +831,7 @@ function IGridInner<T>(
     selectionMode = false,
     selectionRowHidden,
     selectionRowDisabled,
+    selectionRowChecked,
 
     tree = null,
     treeIndent = 16,
@@ -872,7 +880,9 @@ function IGridInner<T>(
   const [currentFilterText, setCurrentFilterText] = useState<string>('');
   const [sortStates, setSortStates] = useState<ISortState[]>([]);
 
-  const columnWidthsRef = useRef<Map<IGridColumnLike<T> | string, number>>(new Map());
+  const columnWidthsRef = useRef<Map<IGridColumnLike<T> | string, number>>(
+    new Map()
+  );
   const columnWidthKeysRef = useRef(new WeakMap<IGridColumnLike<T>, string>());
   const [, setTick] = useState(0);
 
@@ -989,7 +999,10 @@ function IGridInner<T>(
 
         const gCols: IGridColumnLike<T>[] = [];
         for (const kid of kids) {
-          const c = parseColumnEl(kid as any, JSON.stringify([node.key, kid.key]));
+          const c = parseColumnEl(
+            kid as any,
+            JSON.stringify([node.key, kid.key])
+          );
           if (c) gCols.push(c);
         }
 
@@ -1378,6 +1391,10 @@ function IGridInner<T>(
     !!selectionRowDisabled?.(row);
   const isRowSelectable = (row: T): boolean =>
     !isSelectionHidden(row) && !isSelectionDisabled(row);
+  const isDisabledCheckboxChecked = (row: T): boolean =>
+    selectionMode === 'multiple' &&
+    isSelectionDisabled(row) &&
+    (!!selectionRowChecked?.(row) || selectionSet.has(row));
 
   const getAllDataRows = (): T[] => {
     if (!treeEnabled) {
@@ -1414,6 +1431,7 @@ function IGridInner<T>(
   };
 
   const getRowChecked = (row: T): boolean => {
+    if (isDisabledCheckboxChecked(row)) return true;
     if (!treeEnabled) return selectionSet.has(row);
 
     const descendants = getTreeDescendants(row).filter(isRowSelectable);
@@ -1434,6 +1452,7 @@ function IGridInner<T>(
   };
 
   const getRowIndeterminate = (row: T): boolean => {
+    if (isDisabledCheckboxChecked(row)) return false;
     if (!treeEnabled) return false;
 
     const descendants = getTreeDescendants(row).filter(isRowSelectable);
@@ -1477,6 +1496,10 @@ function IGridInner<T>(
     let current = treeMetaRef.current.get(row)?.parent ?? null;
 
     while (current) {
+      if (!isRowSelectable(current)) {
+        current = treeMetaRef.current.get(current)?.parent ?? null;
+        continue;
+      }
       const descendants = getTreeDescendants(current).filter(isRowSelectable);
       if (!descendants.length) {
         current = treeMetaRef.current.get(current)?.parent ?? null;
@@ -1573,12 +1596,17 @@ function IGridInner<T>(
     emitSelectionChange(null, next);
   };
 
-  const setSelected = (rows: T[]) => {
+  const setSelected = (rows: T[], options: IGridSetSelectedOptions = {}) => {
     if (!selectionMode) return;
 
     const validRows = new Set(getAllDataRows());
     const next = new Set(
-      rows.filter((row) => validRows.has(row) && isRowSelectable(row))
+      rows.filter(
+        (row) =>
+          validRows.has(row) &&
+          !isSelectionHidden(row) &&
+          (options.includeDisabled === true || !isSelectionDisabled(row))
+      )
     );
 
     if (selectionMode === 'single' && next.size > 1) {
@@ -1999,7 +2027,8 @@ function IGridInner<T>(
         style={{
           flex,
           minWidth:
-            fixedWidth ?? (col ? (getColumnMinWidth(col) ?? undefined) : undefined),
+            fixedWidth ??
+            (col ? (getColumnMinWidth(col) ?? undefined) : undefined),
           position: stickyEnabled ? 'sticky' : undefined,
           left: stickyEnabled ? (stickyLeft ?? undefined) : undefined,
           zIndex:
@@ -2090,7 +2119,8 @@ function IGridInner<T>(
         style={{
           flex,
           minWidth:
-            fixedWidth ?? (col ? (getColumnMinWidth(col) ?? undefined) : undefined),
+            fixedWidth ??
+            (col ? (getColumnMinWidth(col) ?? undefined) : undefined),
           position: stickyEnabled ? 'sticky' : undefined,
           left: stickyEnabled ? (stickyLeft ?? undefined) : undefined,
           zIndex:

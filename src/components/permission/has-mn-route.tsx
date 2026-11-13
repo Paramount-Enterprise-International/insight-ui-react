@@ -7,13 +7,16 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useRef,
   type ReactElement,
   type ReactNode,
 } from 'react';
 
+import { USER_APPLICATION_MAPPING_NOT_FOUND } from '../api/error-codes';
 import { useISession, useIUserMenuStore } from '../auth/insight-auth-context';
 import { IErrorPage } from '../error-page/error-page';
 import type { ILoadComponent } from '../host/router.types';
+import { ILoadError } from '../load-error/load-error';
 import { ILoading } from '../loading/loading';
 import { usePermissionMapState } from './permission-map';
 import { IRouteAccessContext } from './route-access-context';
@@ -33,6 +36,11 @@ export function IHasMnRoute({
   const permissionMap = usePermissionMapState();
   const reportAccess = useContext(IRouteAccessContext);
   const owner = useId();
+  const retrying = useRef(false);
+  const errors = store.loadErrors;
+  const loadFailed = [errors.menus, errors.authorizations].some(
+    (error) => !!error && error.errorCode !== USER_APPLICATION_MAPPING_NOT_FOUND
+  );
   const authenticated = session.isAuth();
   const ready =
     !session.initializing &&
@@ -59,12 +67,32 @@ export function IHasMnRoute({
   ]);
 
   useLayoutEffect(() => {
-    reportAccess?.(owner, ready && !allowed);
+    reportAccess?.(owner, ready && !allowed && !loadFailed);
     return () => reportAccess?.(owner, false);
-  }, [reportAccess, owner, ready, allowed]);
+  }, [reportAccess, owner, ready, allowed, loadFailed]);
+
+  const retry = () => {
+    if (retrying.current || store.initializing) return;
+    retrying.current = true;
+    void store
+      .load()
+      .catch(() => undefined)
+      .finally(() => {
+        retrying.current = false;
+      });
+  };
 
   if (!ready) {
     return <ILoading mode="container" label="Loading access..." />;
+  }
+  if (loadFailed) {
+    return (
+      <ILoadError
+        message="Failed to load your access rights. Please try again."
+        title="Failed to load access."
+        onRetry={retry}
+      />
+    );
   }
   if (!allowed) {
     return <IErrorPage kind="forbidden" role="alert" />;

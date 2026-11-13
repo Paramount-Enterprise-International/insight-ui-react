@@ -1,5 +1,27 @@
 # React + TypeScript + Vite
 
+## Dialog description sanitization
+
+Alert and Confirm keep their existing `description` string and hook signatures.
+Descriptions support only `strong`, `b`, `em`, `i`, and `br`, without attributes.
+The implementation parses a detached, inert template and reconstructs new text
+and allowlisted HTML elements before rendering. Active content and foreign
+namespaces are dropped; other HTML wrappers are removed while their text is
+retained. No package dependency is added.
+
+Escape untrusted values before interpolating them into description markup.
+Escaped names remain literal text. This is a restriction of the existing HTML
+contract: links, images, classes, styles, and event handlers are not supported.
+
+## Route access load errors
+
+`hasMn` renders `ILoadError` with Retry when menus or effective authorizations
+fail to load. Retry uses the existing user-menu store and waits while it loads.
+Missing application mappings and successfully loaded data without the required
+permission still render forbidden. Profile/favorite failures alone do not block
+the route. Existing permission mappings and route metadata behavior are retained.
+These source changes require a separately approved library release for deployed consumers.
+
 ## Host shared state
 
 `IHStateOwner` is created once by the host. Namespaces use `session` by default;
@@ -349,18 +371,21 @@ import {
 
 let mapping: Promise<IPermissionMap> | undefined;
 function loadPermissions(): Promise<IPermissionMap> {
-  return mapping ??= fetch(new URL('permission.json', import.meta.url), {
+  return (mapping ??= fetch(new URL('permission.json', import.meta.url), {
     cache: 'no-store',
-  }).then(async response => {
-    if (!response.ok) throw new Error(`Permission mapping: HTTP ${response.status}`);
-    return await response.json() as IPermissionMap;
-  });
+  }).then(async (response) => {
+    if (!response.ok)
+      throw new Error(`Permission mapping: HTTP ${response.status}`);
+    return (await response.json()) as IPermissionMap;
+  }));
 }
 
 export function RemoteRoot() {
   return (
     <IMenuPermissionMappingProvider mapping={loadPermissions}>
-      <IHasMn value="can-export-excel"><button>Export</button></IHasMn>
+      <IHasMn value="can-export-excel">
+        <button>Export</button>
+      </IHasMn>
     </IMenuPermissionMappingProvider>
   );
 }
@@ -940,6 +965,37 @@ Load the matching insight-ui-css build; these components share its tokens and su
   resolution without upscaling; circle is a preview mask and output stays square.
   Source changes/destruction invalidate pending exports. Remote images must permit
   canvas export; export failures reject the Promise. File limits remain app-owned.
+
+### Checked disabled grid rows
+
+`selectionRowChecked` adds a checked indicator to disabled checkboxes in multiple
+selection mode. It does not select the row, change counts, or add it to selection
+events. Enabled checkboxes and radio buttons keep their existing behavior.
+
+```tsx
+<IGrid
+  ref={gridRef}
+  dataSource={dataSource}
+  selectionMode="multiple"
+  selectionRowDisabled={isOwned}
+  selectionRowChecked={isOwned}>
+  {/* Existing columns */}
+</IGrid>
+```
+
+When the owner needs old and new rows in the complete selection, explicitly use:
+
+```ts
+gridRef.current?.setSelected(rowsToSave, { includeDisabled: true });
+```
+
+The optional `IGridSetSelectedOptions.includeDisabled` defaults to false. With it
+enabled, provided disabled rows appear in `getSelected()` and `onSelectionChange`.
+User actions and Select All preserve those rows while changing eligible rows;
+disabled rows remain excluded from header and tree aggregation. Hidden rows and
+rows outside the current data are always ignored. An explicit `setSelected([])`
+or replacement resets the selection. Reapply selection using current row
+objects after replacing a data source. No dependency update is part of this source change.
 
 ### Grid column minimum width
 

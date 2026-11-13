@@ -20,7 +20,7 @@ import {
 import { IHostApiProvider } from '../host/host-api.context';
 import { IRouter } from '../host/router';
 import type { IRouteComponent, IRoutes } from '../host/router.types';
-import type { IUserMenuStore } from '../store/user-menu';
+import type { IUserMenuLoadErrors, IUserMenuStore } from '../store/user-menu';
 import { hasMn } from './has-mn-route';
 import {
   IMenuPermissionMappingProvider,
@@ -41,6 +41,12 @@ function fixture(
   const store = {
     initialized: !cold,
     initializing: false,
+    loadErrors: {
+      user: null,
+      favorites: null,
+      menus: null,
+      authorizations: null,
+    } as IUserMenuLoadErrors,
     authorizationSource: {
       menuCodes: [] as string[],
       roles: [],
@@ -48,7 +54,7 @@ function fixture(
       companies: [],
       menuCompanies: {},
     },
-    load: vi.fn(async () => undefined),
+    load: vi.fn<IUserMenuStore['load']>(async () => undefined),
     subscribe: (listener: () => void) => {
       listeners.add(listener);
       return () => {
@@ -109,10 +115,81 @@ function fixture(
       version++;
       listeners.forEach((listener) => listener());
     });
-  return { ...view, store, session, hostApi, grant };
+  const notify = async () =>
+    act(async () => {
+      version++;
+      listeners.forEach((listener) => listener());
+    });
+  return { ...view, store, session, hostApi, grant, notify };
 }
 
 describe('hasMn route helpers', () => {
+  for (const source of ['menus', 'authorizations'] as const) {
+    it(`retries a failed ${source} load without denying or mounting protected content`, async () => {
+      const mount = vi.fn();
+      function Page() {
+        mount();
+        return <p>Protected report</p>;
+      }
+      const { store, grant, hostApi, notify } = fixture([
+        {
+          path: 'reports',
+          title: 'Reports',
+          element: hasMn('reports', <Page />),
+        },
+      ]);
+      store.loadErrors[source] = { status: 500 };
+      await notify();
+      expect(screen.getByText('Failed to load access.')).toBeTruthy();
+      expect(screen.queryByText('Unauthorized Access')).toBeNull();
+      expect(mount).not.toHaveBeenCalled();
+      expect(hostApi.setTitle).toHaveBeenLastCalledWith('Reports');
+      let finish!: () => void;
+      store.load.mockImplementation(() => {
+        store.initializing = true;
+        store.initialized = false;
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      });
+      const retry = screen.getByRole('button', { name: 'Retry' });
+      fireEvent.click(retry);
+      fireEvent.click(retry);
+      await notify();
+      expect(store.load).toHaveBeenCalledTimes(1);
+      expect(screen.getByText('Loading access...')).toBeTruthy();
+      store.initializing = false;
+      store.initialized = true;
+      await act(async () => finish());
+      await notify();
+      expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
+      store.loadErrors[source] = null;
+      await grant('reports');
+      expect(screen.getByText('Protected report')).toBeTruthy();
+      expect(screen.queryByText('Failed to load access.')).toBeNull();
+      expect(hostApi.setTitle).toHaveBeenLastCalledWith('Reports');
+    });
+  }
+
+  it('keeps missing mappings forbidden and ignores profile/favorite failures', async () => {
+    const { store, grant, notify } = fixture([
+      { path: 'reports', element: hasMn('reports', <p>Protected report</p>) },
+    ]);
+    store.loadErrors = {
+      user: { status: 500 },
+      favorites: { status: 500 },
+      menus: { errorCode: 'USER_APPLICATION_MAPPING_NOT_FOUND' },
+      authorizations: { errorCode: 'USER_APPLICATION_MAPPING_NOT_FOUND' },
+    };
+    await notify();
+    expect(screen.getByText('Unauthorized Access')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+    store.loadErrors.menus = null;
+    store.loadErrors.authorizations = null;
+    await grant('reports');
+    expect(screen.getByText('Protected report')).toBeTruthy();
+  });
+
   it('shows a centered lazy-page spinner after access is granted', async () => {
     let resolve!: (page: IRouteComponent) => void;
     const pending = new Promise<IRouteComponent>((done) => {

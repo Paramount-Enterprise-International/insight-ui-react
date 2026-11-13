@@ -36,10 +36,309 @@ describe('IGrid', () => {
   });
 });
 
+describe('IGrid sort across data source replacement', () => {
+  const rows = [
+    { team: 'A', name: 'Zoe' },
+    { team: 'B', name: 'Ada' },
+    { team: 'A', name: 'Bea' },
+  ];
+  const grid = (dataSource: IGridDataSource<(typeof rows)[number]>) => (
+    <IGrid dataSource={dataSource} showNumberColumn={false}>
+      <IGridColumn fieldName="team" title="Team" sortable />
+      <IGridColumn fieldName="name" title="Name" sortable />
+    </IGrid>
+  );
+  const click = (title: string) =>
+    fireEvent.click(screen.getByText(title).closest('i-grid-header-cell')!);
+
+  it('retains explicit multi-sort through replacement and no-result recovery', () => {
+    let source = new IGridDataSource(rows, { paginator: { pageSize: 10 } });
+    const view = render(grid(source));
+    click('Team');
+    click('Name');
+    expect(source.sort).toEqual([
+      { active: 'team', direction: 'asc' },
+      { active: 'name', direction: 'asc' },
+    ]);
+    source = new IGridDataSource(rows, {
+      sort: source.sort,
+      paginator: { pageSize: 10 },
+    });
+    view.rerender(grid(source));
+    expect(view.container.textContent).toMatch(/Bea[\s\S]*Zoe[\s\S]*Ada/);
+    const mounted = view.container.querySelector('i-grid');
+    act(() => {
+      source.filter = 'missing';
+    });
+    expect(view.container.querySelectorAll('i-grid-row')).toHaveLength(0);
+    act(() => {
+      source.filter = '';
+    });
+    expect(view.container.querySelector('i-grid')).toBe(mounted);
+    expect(view.container.textContent).toMatch(/Bea[\s\S]*Zoe[\s\S]*Ada/);
+    click('Team');
+    expect(source.sort?.[0]).toEqual({ active: 'team', direction: 'desc' });
+    click('Name');
+    click('Name');
+    expect(source.sort).toEqual([{ active: 'team', direction: 'desc' }]);
+    click('Team');
+    expect(source.sort).toBeNull();
+  });
+
+  it('uses the replacement source sort when the data context changes', () => {
+    let source = new IGridDataSource(rows, {
+      sort: { active: 'team', direction: 'desc' },
+    });
+    const view = render(grid(source));
+    source = new IGridDataSource(rows, {
+      sort: { active: 'name', direction: 'desc' },
+    });
+    view.rerender(grid(source));
+    click('Name');
+    expect(source.sort).toBeNull();
+    source = new IGridDataSource(rows);
+    view.rerender(grid(source));
+    click('Name');
+    expect(source.sort).toEqual([{ active: 'name', direction: 'asc' }]);
+  });
+});
+
+describe('IGrid checked disabled indicators', () => {
+  interface Row {
+    name: string;
+    disabled?: boolean;
+    owned?: boolean;
+    hidden?: boolean;
+    children?: Row[];
+  }
+
+  function fixture(
+    props: Partial<IGridProps<Row>> = {},
+    rows: Row[] = [
+      { name: 'Available' },
+      { name: 'Owned', disabled: true, owned: true },
+      { name: 'Unavailable', disabled: true },
+      { name: 'Hidden', disabled: true, owned: true, hidden: true },
+    ]
+  ) {
+    const ref: { current: IGridHandle<Row> | null } = { current: null };
+    const source = new IGridDataSource(rows, { paginator: false });
+    const changes = vi.fn();
+    const element = (extra: Partial<IGridProps<Row>> = {}) => (
+      <IGrid
+        ref={ref}
+        dataSource={source}
+        selectionMode="multiple"
+        showNumberColumn={false}
+        selectionRowDisabled={(row) => !!row.disabled}
+        selectionRowHidden={(row) => !!row.hidden}
+        selectionRowChecked={(row) => !!row.owned}
+        onSelectionChange={changes}
+        {...props}
+        {...extra}>
+        <IGridColumn fieldName="name" title="Name" />
+      </IGrid>
+    );
+    const view = render(element());
+    const rowInput = (name: string): HTMLInputElement => {
+      const row = Array.from(
+        view.container.querySelectorAll('i-grid-row')
+      ).find((entry) => entry.textContent?.trim() === name)!;
+      return row.querySelector('input')!;
+    };
+    const selectAll = (): HTMLInputElement =>
+      view.container.querySelector('i-grid-header-row input[type="checkbox"]')!;
+    return {
+      ...view,
+      ref,
+      rows,
+      source,
+      changes,
+      element,
+      rowInput,
+      selectAll,
+    };
+  }
+
+  it('shows checked disabled rows without selecting or counting them', () => {
+    const { ref, rows, changes, rowInput, selectAll } = fixture();
+    expect(rowInput('Owned')).toBeChecked();
+    expect(rowInput('Owned')).toBeDisabled();
+    expect(rowInput('Unavailable')).not.toBeChecked();
+    expect(selectAll()).not.toBeChecked();
+    expect(selectAll().indeterminate).toBe(false);
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(changes).not.toHaveBeenCalled();
+    fireEvent.click(rowInput('Owned'));
+    expect(changes).not.toHaveBeenCalled();
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([rows[0]]);
+    expect(changes).toHaveBeenLastCalledWith({
+      selected: [rows[0]],
+      lastChanged: null,
+    });
+    expect(selectAll()).toBeChecked();
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(rowInput('Owned')).toBeChecked();
+    act(() => ref.current?.setSelected([rows[1]]));
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(rowInput('Owned')).toBeChecked();
+  });
+
+  it('restores indicators after filtering and source replacement without selecting owned rows', () => {
+    const { source, rowInput, ref, changes, rerender, element } = fixture();
+    act(() => {
+      source.filter = 'Available';
+    });
+    act(() => {
+      source.filter = '';
+    });
+    expect(rowInput('Owned')).toBeChecked();
+    rerender(
+      element({
+        dataSource: new IGridDataSource(
+          source.data.map((row) => ({ ...row })),
+          { paginator: false }
+        ),
+      })
+    );
+    expect(rowInput('Owned')).toBeChecked();
+    expect(ref.current?.getSelected()).toEqual([]);
+    expect(changes).not.toHaveBeenCalled();
+  });
+
+  it('applies only to disabled checkboxes and reacts to predicate changes', () => {
+    const { rowInput, rerender, element, ref } = fixture();
+    rerender(element({ selectionRowChecked: () => true }));
+    expect(rowInput('Available')).not.toBeChecked();
+    expect(rowInput('Unavailable')).toBeChecked();
+    rerender(element({ selectionRowChecked: () => false }));
+    expect(rowInput('Owned')).not.toBeChecked();
+    rerender(
+      element({ selectionRowChecked: () => true, selectionMode: 'single' })
+    );
+    expect(rowInput('Owned').type).toBe('radio');
+    expect(rowInput('Owned')).not.toBeChecked();
+    expect(ref.current?.getSelected()).toEqual([]);
+  });
+
+  it('includes disabled rows only when requested and preserves them through select-all', () => {
+    const { ref, rows, changes, rowInput, selectAll } = fixture({
+      selectionRowChecked: () => false,
+    });
+    act(() =>
+      ref.current?.setSelected(
+        [rows[1], rows[0], rows[3], { name: 'Ghost', disabled: true }],
+        { includeDisabled: true }
+      )
+    );
+    expect(ref.current?.getSelected()).toEqual([rows[1], rows[0]]);
+    expect(changes).toHaveBeenLastCalledWith({
+      selected: [rows[1], rows[0]],
+      lastChanged: null,
+    });
+    expect(rowInput('Owned')).toBeChecked();
+    expect(rowInput('Owned')).toBeDisabled();
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([rows[1]]);
+    expect(selectAll()).not.toBeChecked();
+    expect(selectAll().indeterminate).toBe(false);
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([rows[1], rows[0]]);
+    const events = changes.mock.calls.length;
+    act(() =>
+      ref.current?.setSelected([rows[1], rows[0]], { includeDisabled: true })
+    );
+    expect(changes).toHaveBeenCalledTimes(events);
+    act(() => ref.current?.setSelected([rows[1], rows[0]]));
+    expect(ref.current?.getSelected()).toEqual([rows[0]]);
+    expect(rowInput('Owned')).not.toBeChecked();
+  });
+
+  for (const hidden of [false, true]) {
+    it(`excludes ${hidden ? 'hidden' : 'disabled'} ancestors during tree selection`, () => {
+      const { rowInput, changes, ref, selectAll } = fixture(
+        { tree: true, treeInitialExpandLevel: 99 },
+        [
+          {
+            name: 'Parent',
+            disabled: true,
+            owned: true,
+            hidden,
+            children: [
+              { name: 'Child A' },
+              { name: 'Child B' },
+              { name: 'Owned child', disabled: true, owned: true },
+            ],
+          },
+        ]
+      );
+      fireEvent.click(rowInput('Child A'));
+      expect(
+        changes.mock.lastCall?.[0].selected.map((row: Row) => row.name)
+      ).toEqual(['Child A']);
+      expect(rowInput('Owned child')).toBeChecked();
+      if (!hidden) {
+        expect(rowInput('Parent')).toBeChecked();
+        expect(rowInput('Parent').indeterminate).toBe(false);
+      }
+      fireEvent.click(selectAll());
+      expect(
+        ref.current
+          ?.getSelected()
+          .map((row) => row.name)
+          .sort()
+      ).toEqual(['Child A', 'Child B']);
+      fireEvent.click(selectAll());
+      expect(ref.current?.getSelected()).toEqual([]);
+      expect(rowInput('Owned child')).toBeChecked();
+    });
+  }
+
+  it('retains explicitly included disabled tree parents and children until programmatically cleared', () => {
+    const parent: Row = {
+      name: 'Parent',
+      disabled: true,
+      children: [
+        { name: 'Child A' },
+        { name: 'Child B' },
+        { name: 'Owned child', disabled: true },
+      ],
+    };
+    const owned = parent.children![2];
+    const { ref, rowInput, selectAll } = fixture(
+      { tree: true, treeInitialExpandLevel: 99 },
+      [parent]
+    );
+    act(() =>
+      ref.current?.setSelected([parent, owned], { includeDisabled: true })
+    );
+    fireEvent.click(rowInput('Child A'));
+    expect(ref.current?.getSelected()).toEqual([
+      parent,
+      owned,
+      parent.children![0],
+    ]);
+    expect(rowInput('Parent')).toBeChecked();
+    expect(rowInput('Parent').indeterminate).toBe(false);
+    fireEvent.click(selectAll());
+    fireEvent.click(selectAll());
+    expect(ref.current?.getSelected()).toEqual([parent, owned]);
+    act(() => ref.current?.setSelected([]));
+    expect(rowInput('Parent')).not.toBeChecked();
+    expect(rowInput('Owned child')).not.toBeChecked();
+  });
+});
+
 describe('IGrid column minimum widths', () => {
   const rows = [{ name: 'Alice', status: 'Active' }];
 
-  function grid(width?: IGridColumnWidth, minWidth?: number, actionMinWidth?: number) {
+  function grid(
+    width?: IGridColumnWidth,
+    minWidth?: number,
+    actionMinWidth?: number
+  ) {
     return (
       <IGrid dataSource={rows} showNumberColumn={false}>
         <IGridColumn
@@ -50,9 +349,20 @@ describe('IGrid column minimum widths', () => {
           freeze
         />
         <IGridColumnGroup title="Identity">
-          <IGridColumn fieldName="status" title="Status" width={80} minWidth={90} freeze />
+          <IGridColumn
+            fieldName="status"
+            title="Status"
+            width={80}
+            minWidth={90}
+            freeze
+          />
         </IGridColumnGroup>
-        <IGridCustomColumn title="Actions" width={45} minWidth={actionMinWidth} freeze />
+        <IGridCustomColumn
+          title="Actions"
+          width={45}
+          minWidth={actionMinWidth}
+          freeze
+        />
       </IGrid>
     );
   }
@@ -62,18 +372,28 @@ describe('IGrid column minimum widths', () => {
   }
 
   function cell(container: HTMLElement, index = 0): HTMLElement {
-    return container.querySelectorAll<HTMLElement>('i-grid-row i-grid-cell')[index];
+    return container.querySelectorAll<HTMLElement>('i-grid-row i-grid-cell')[
+      index
+    ];
   }
 
-  function expectWidth(container: HTMLElement, width: number, title = 'Name', index = 0) {
+  function expectWidth(
+    container: HTMLElement,
+    width: number,
+    title = 'Name',
+    index = 0
+  ) {
     expect(header(title).style.flex).toBe(`0 0 ${width}px`);
     expect(cell(container, index).style.flex).toBe(`0 0 ${width}px`);
   }
 
   function resize(delta: number, title = 'Name') {
-    fireEvent.mouseDown(header(title).querySelector('.i-grid-header-cell__resize-handle')!, {
-      clientX: 200,
-    });
+    fireEvent.mouseDown(
+      header(title).querySelector('.i-grid-header-cell__resize-handle')!,
+      {
+        clientX: 200,
+      }
+    );
     fireEvent.mouseMove(window, { clientX: 200 + delta });
     fireEvent.mouseUp(window);
   }
@@ -94,21 +414,31 @@ describe('IGrid column minimum widths', () => {
     expect(cell(container).style.minWidth).toBe('30px');
   });
 
-  it.each([undefined, 120])('keeps fill flexible with minimum %s', (minWidth) => {
-    const { container } = render(grid('fill', minWidth));
-    const expected = minWidth ?? 150;
-    expect(header().style.flex).toBe('1 1 0%');
-    expect(cell(container).style.flex).toBe('1 1 0%');
-    expect(header().style.minWidth).toBe(`${expected}px`);
-    expect(cell(container).style.minWidth).toBe(`${expected}px`);
-    Object.defineProperty(header(), 'clientWidth', { configurable: true, value: 240 });
-    resize(-300);
-    expectWidth(container, expected);
-  });
+  it.each([undefined, 120])(
+    'keeps fill flexible with minimum %s',
+    (minWidth) => {
+      const { container } = render(grid('fill', minWidth));
+      const expected = minWidth ?? 150;
+      expect(header().style.flex).toBe('1 1 0%');
+      expect(cell(container).style.flex).toBe('1 1 0%');
+      expect(header().style.minWidth).toBe(`${expected}px`);
+      expect(cell(container).style.minWidth).toBe(`${expected}px`);
+      Object.defineProperty(header(), 'clientWidth', {
+        configurable: true,
+        value: 240,
+      });
+      resize(-300);
+      expectWidth(container, expected);
+    }
+  );
 
   it('gives auto-generated fill columns the same 150px minimum', () => {
-    const { container } = render(<IGrid dataSource={[{ name: 'Alice' }]} showNumberColumn={false} />);
-    const autoHeader = container.querySelector('i-grid-header-cell') as HTMLElement;
+    const { container } = render(
+      <IGrid dataSource={[{ name: 'Alice' }]} showNumberColumn={false} />
+    );
+    const autoHeader = container.querySelector(
+      'i-grid-header-cell'
+    ) as HTMLElement;
     expect(autoHeader.style.minWidth).toBe('150px');
     expect(cell(container).style.minWidth).toBe('150px');
     expect(autoHeader.style.flex).toBe('1 1 0%');

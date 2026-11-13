@@ -17,6 +17,7 @@ import {
 } from '../button/button';
 import { IIcon, type IIconName } from '../icon/icon';
 import { IFCTextArea } from '../textarea/textarea';
+import { sanitizeDialogDescription } from './sanitize-description';
 
 /* =========================================================
  * Types (matches Angular)
@@ -225,7 +226,12 @@ export function IDialogContainer({
   className,
   ...rest
 }: IDialogContainerProps) {
-  const { width, height, disableClose, backdropClose = true } = instance?.config ?? config;
+  const {
+    width,
+    height,
+    disableClose,
+    backdropClose = true,
+  } = instance?.config ?? config;
   const requestClose = useCallback(() => {
     if (instance) instance.ref.close(undefined);
     else onClose?.();
@@ -256,7 +262,11 @@ export function IDialogContainer({
   const Comp = instance?.component;
 
   return (
-    <i-dialog-container class={className} role="dialog" aria-modal="true" {...rest}>
+    <i-dialog-container
+      class={className}
+      role="dialog"
+      aria-modal="true"
+      {...rest}>
       <div className="i-dialog-backdrop" onClick={onBackdropClick} />
       <div className="i-dialog-wrapper">
         <div className="i-dialog-panel" style={panelStyles}>
@@ -265,7 +275,9 @@ export function IDialogContainer({
               value={{ data: instance.config.data, dialogRef: instance.ref }}>
               <Comp />
             </IDialogInstanceContext.Provider>
-          ) : children}
+          ) : (
+            children
+          )}
         </div>
       </div>
     </i-dialog-container>
@@ -545,6 +557,10 @@ export function IDialog(props: IDialogProps) {
 
 export function IAlert() {
   const data = useIDialogData<IAlertData>();
+  const sanitizedDescription = useMemo(
+    () => sanitizeDialogDescription(data.description),
+    [data.description]
+  );
   const dialog = useIDialogRef<boolean>();
 
   const alertClass = `i-alert i-alert-${data.type}`;
@@ -565,7 +581,7 @@ export function IAlert() {
         {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
 
         <h4>{data.title}</h4>
-        <p dangerouslySetInnerHTML={{ __html: data.description }} />
+        <p dangerouslySetInnerHTML={{ __html: sanitizedDescription }} />
       </IDialog>
     </i-alert>
   );
@@ -609,6 +625,10 @@ export function useIAlert() {
 
 export function IConfirm() {
   const data = useIDialogData<IConfirmData>();
+  const sanitizedDescription = useMemo(
+    () => sanitizeDialogDescription(data.description),
+    [data.description]
+  );
   const dialog = useIDialogRef<any>();
 
   const [reason, setReason] = useState<string>('');
@@ -646,7 +666,7 @@ export function IConfirm() {
         {data.type === 'danger' ? <IIcon icon="x-circle" size="3xl" /> : null}
 
         <h4>{data.title}</h4>
-        <p dangerouslySetInnerHTML={{ __html: data.description }} />
+        <p dangerouslySetInnerHTML={{ __html: sanitizedDescription }} />
 
         {data.reason ? (
           <form
